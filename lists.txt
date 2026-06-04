@@ -1,0 +1,4 @@
+http://antifilter.download/list/ip.lst
+http://antifilter.download/list/subnet.lst
+http://community.antifilter.download/list/community.lst
+https://core.telegram.org/resources/cidr.txt

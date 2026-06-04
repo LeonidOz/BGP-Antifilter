@@ -1,0 +1,16 @@
+services:
+  bird:
+    build: .
+    network_mode: host
+    restart: unless-stopped
+    volumes:
+      - ./bird.conf:/etc/bird/bird.conf:ro
+      - ./generated:/etc/bird/generated
+      - ./lists.txt:/etc/bird/lists.txt:ro
+      - ./include-domains.txt:/etc/bird/include-domains.txt:ro
+      - ./exclude-domains.txt:/etc/bird/exclude-domains.txt:ro
+    environment:
+      LISTS_FILE: /etc/bird/lists.txt
+      INCLUDE_DOMAINS_FILE: /etc/bird/include-domains.txt
+      EXCLUDE_DOMAINS_FILE: /etc/bird/exclude-domains.txt
+      UPDATE_INTERVAL: "1800"

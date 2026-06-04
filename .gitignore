@@ -1,0 +1,21 @@
+# Generated route cache
+generated/
+cache/
+.cache/
+tmp/
+
+# Runtime and temporary files
+*.log
+*.tmp
+*.pid
+
+# Python cache
+__pycache__/
+*.py[cod]
+.pytest_cache/
+
+# Editor and OS metadata
+.idea/
+.vscode/
+.DS_Store
+Thumbs.db

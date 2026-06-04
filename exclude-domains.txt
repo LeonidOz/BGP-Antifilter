@@ -1,0 +1,7 @@
+binance.com
+www.binance.com
+api.binance.com
+fapi.binance.com
+dapi.binance.com
+stream.binance.com
+p2p.binance.com
