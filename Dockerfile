@@ -6,10 +6,12 @@ RUN apt-get update \
 
 COPY entrypoint.sh /entrypoint.sh
 COPY generate-routes.py /generate-routes.py
+COPY update-routes.py /update-routes.py
+COPY healthcheck.sh /healthcheck.sh
 COPY bird.conf.template /etc/bird/bird.conf.template
-RUN chmod +x /entrypoint.sh /generate-routes.py
+RUN chmod +x /entrypoint.sh /generate-routes.py /update-routes.py /healthcheck.sh
 
 HEALTHCHECK --interval=30s --timeout=5s --start-period=15s --retries=3 \
-  CMD birdc show status >/dev/null || exit 1
+  CMD /healthcheck.sh
 
 ENTRYPOINT ["/usr/bin/tini", "--", "/entrypoint.sh"]
