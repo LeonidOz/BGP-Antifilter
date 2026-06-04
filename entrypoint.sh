@@ -15,9 +15,75 @@ BIRD_TEMPLATE="${BIRD_TEMPLATE:-/etc/bird/bird.conf.template}"
 BIRD_CONFIG="${BIRD_CONFIG:-/etc/bird/bird.conf}"
 ROUTES="/etc/bird/generated/routes.conf"
 
-mkdir -p /etc/bird/generated
-mkdir -p /run/bird
-touch "$ROUTES"
+validate_env() {
+  export MY_AS MT_AS MT_IP BIRD_IP ROUTER_ID BGP_COMMUNITY UPDATE_INTERVAL
+  python3 - <<'PY'
+import ipaddress
+import os
+import sys
+
+
+def fail(message):
+    print(f"Invalid environment: {message}", file=sys.stderr)
+    raise SystemExit(1)
+
+
+def validate_as(name):
+    value = os.environ[name]
+    try:
+        number = int(value)
+    except ValueError:
+        fail(f"{name} must be an integer AS number")
+
+    if not 1 <= number <= 4294967295:
+        fail(f"{name} must be between 1 and 4294967295")
+
+
+def validate_ipv4(name):
+    value = os.environ[name]
+    try:
+        ipaddress.IPv4Address(value)
+    except ValueError:
+        fail(f"{name} must be a valid IPv4 address")
+
+
+def validate_update_interval():
+    value = os.environ["UPDATE_INTERVAL"]
+    try:
+        seconds = int(value)
+    except ValueError:
+        fail("UPDATE_INTERVAL must be an integer number of seconds")
+
+    if seconds <= 0:
+        fail("UPDATE_INTERVAL must be greater than zero")
+
+
+def validate_community():
+    value = os.environ["BGP_COMMUNITY"]
+    parts = value.split(",")
+
+    if len(parts) != 2:
+        fail("BGP_COMMUNITY must use the BIRD tuple format AS,VALUE")
+
+    for part in parts:
+        try:
+            number = int(part)
+        except ValueError:
+            fail("BGP_COMMUNITY parts must be integers")
+
+        if not 0 <= number <= 65535:
+            fail("BGP_COMMUNITY parts must be between 0 and 65535")
+
+
+validate_as("MY_AS")
+validate_as("MT_AS")
+validate_ipv4("MT_IP")
+validate_ipv4("BIRD_IP")
+validate_ipv4("ROUTER_ID")
+validate_update_interval()
+validate_community()
+PY
+}
 
 render_bird_config() {
   export MY_AS MT_AS MT_IP BIRD_IP ROUTER_ID BGP_COMMUNITY
@@ -41,6 +107,7 @@ update_routes() {
   tmp_ex="$(mktemp)"
   tmp_add="$(mktemp)"
   tmp_out="$(mktemp)"
+  tmp_old="$(mktemp)"
 
   echo "Updating routes from $LISTS_FILE"
 
@@ -72,8 +139,15 @@ update_routes() {
     echo "Generated $count routes after include/exclude"
 
     if [ "$count" -gt 0 ]; then
+      cp "$ROUTES" "$tmp_old"
       mv "$tmp_out" "$ROUTES"
-      birdc configure || true
+      if birdc configure; then
+        echo "BIRD accepted updated routes"
+      else
+        echo "BIRD rejected updated routes, restoring previous routes" >&2
+        cp "$tmp_old" "$ROUTES"
+        birdc configure || true
+      fi
     else
       echo "Route list is empty, keeping old routes"
       rm -f "$tmp_out"
@@ -82,8 +156,14 @@ update_routes() {
     echo "Failed to download route list"
   fi
 
-  rm -f "$tmp_base" "$tmp_ex" "$tmp_add" "$tmp_out"
+  rm -f "$tmp_base" "$tmp_ex" "$tmp_add" "$tmp_out" "$tmp_old"
 }
+
+validate_env
+
+mkdir -p /etc/bird/generated
+mkdir -p /run/bird
+touch "$ROUTES"
 
 render_bird_config
 

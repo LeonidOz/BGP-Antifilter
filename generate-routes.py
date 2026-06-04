@@ -30,17 +30,7 @@ def read_networks(path, *, extract=False):
     return networks, invalid
 
 
-def main():
-    if len(sys.argv) != 5:
-        print("Usage: generate-routes.py BASE_FILE EXCLUDE_FILE INCLUDE_FILE OUT_FILE", file=sys.stderr)
-        return 2
-
-    base_file, exclude_file, include_file, out_file = sys.argv[1:5]
-
-    base, base_invalid = read_networks(base_file, extract=True)
-    exclude, exclude_invalid = read_networks(exclude_file)
-    extra, extra_invalid = read_networks(include_file)
-
+def build_routes(base, exclude, extra):
     combined = base + extra
     kept = []
     exclude_rules_applied = 0
@@ -72,6 +62,21 @@ def main():
         kept.extend(remaining)
 
     unique = sorted(set(kept), key=lambda net: (int(net.network_address), net.prefixlen))
+    return unique, exclude_rules_applied
+
+
+def main():
+    if len(sys.argv) != 5:
+        print("Usage: generate-routes.py BASE_FILE EXCLUDE_FILE INCLUDE_FILE OUT_FILE", file=sys.stderr)
+        return 2
+
+    base_file, exclude_file, include_file, out_file = sys.argv[1:5]
+
+    base, base_invalid = read_networks(base_file, extract=True)
+    exclude, exclude_invalid = read_networks(exclude_file)
+    extra, extra_invalid = read_networks(include_file)
+
+    unique, exclude_rules_applied = build_routes(base, exclude, extra)
 
     with open(out_file, "w", encoding="utf-8") as file:
         for network in unique:
