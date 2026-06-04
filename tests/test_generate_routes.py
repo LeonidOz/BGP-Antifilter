@@ -33,6 +33,19 @@ class ReadNetworksTests(unittest.TestCase):
         self.assertEqual(networks, [net("192.0.2.10/32"), net("198.51.100.0/24")])
         self.assertEqual(invalid, 2)
 
+    def test_extracts_cidr_routes_from_json_source(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            source = Path(tmp) / "source.json"
+            source.write_text(
+                '{"site":"chatgpt.com","cidr4":["192.0.2.0/24","198.51.100.10/32"]}',
+                encoding="utf-8",
+            )
+
+            networks, invalid = generate_routes.read_networks(source, extract=True)
+
+        self.assertEqual(networks, [net("192.0.2.0/24"), net("198.51.100.10/32")])
+        self.assertEqual(invalid, 0)
+
     def test_reads_one_network_per_line_without_extraction(self):
         with tempfile.TemporaryDirectory() as tmp:
             source = Path(tmp) / "source.txt"

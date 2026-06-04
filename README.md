@@ -109,6 +109,14 @@ docker compose down
 
 Добавьте новые источники IP-адресов и подсетей в `lists.txt`, по одному URL на строку.
 
+Источники могут быть обычным текстом или JSON. Генератор извлекает IPv4/CIDR из содержимого источника, поэтому URL вида `format=json&data=cidr4` тоже поддерживаются. Например:
+
+```text
+https://iplist.opencck.org/?format=json&data=cidr4&site=claude.ai&site=chatgpt.com&site=copilot&site=deepseek.com&site=grok.com
+```
+
+Если таких списков несколько, добавьте каждый URL отдельной строкой в `lists.txt`.
+
 ASN, чьи анонсированные IPv4-префиксы нужно принудительно добавить в маршруты, указываются в `include-asns.txt`. Например, `AS32934` добавляет маршруты Meta для Facebook, Instagram, WhatsApp и Messenger.
 
 Для YouTube включен отдельный источник Google ranges: при `INCLUDE_GOOGLE_RANGES=1` контейнер берет `https://www.gstatic.com/ipranges/goog.json`, вычитает `https://www.gstatic.com/ipranges/cloud.json` и добавляет оставшиеся IPv4-префиксы. Домены YouTube в `include-domains.txt` остаются как дополнительный точечный источник.
