@@ -7,6 +7,7 @@ services:
       - ./bird.conf.template:/etc/bird/bird.conf.template:ro
       - ./generated:/etc/bird/generated
       - ./lists.txt:/etc/bird/lists.txt:ro
+      - ./include-asns.txt:/etc/bird/include-asns.txt:ro
       - ./include-domains.txt:/etc/bird/include-domains.txt:ro
       - ./exclude-domains.txt:/etc/bird/exclude-domains.txt:ro
     environment:
@@ -17,6 +18,8 @@ services:
       ROUTER_ID: "${ROUTER_ID:-192.168.55.5}"
       BGP_COMMUNITY: "${BGP_COMMUNITY:-65432,500}"
       LISTS_FILE: /etc/bird/lists.txt
+      INCLUDE_ASNS_FILE: /etc/bird/include-asns.txt
       INCLUDE_DOMAINS_FILE: /etc/bird/include-domains.txt
       EXCLUDE_DOMAINS_FILE: /etc/bird/exclude-domains.txt
+      INCLUDE_GOOGLE_RANGES: "${INCLUDE_GOOGLE_RANGES:-1}"
       UPDATE_INTERVAL: "${UPDATE_INTERVAL:-1800}"

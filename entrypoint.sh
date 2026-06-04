@@ -2,8 +2,10 @@
 set -eu
 
 LISTS_FILE="${LISTS_FILE:-/etc/bird/lists.txt}"
+INCLUDE_ASNS_FILE="${INCLUDE_ASNS_FILE:-/etc/bird/include-asns.txt}"
 INCLUDE_DOMAINS_FILE="${INCLUDE_DOMAINS_FILE:-/etc/bird/include-domains.txt}"
 EXCLUDE_DOMAINS_FILE="${EXCLUDE_DOMAINS_FILE:-/etc/bird/exclude-domains.txt}"
+INCLUDE_GOOGLE_RANGES="${INCLUDE_GOOGLE_RANGES:-1}"
 UPDATE_INTERVAL="${UPDATE_INTERVAL:-1800}"
 MY_AS="${MY_AS:-64500}"
 MT_AS="${MT_AS:-65455}"
@@ -108,6 +110,8 @@ update_routes() {
   tmp_add="$(mktemp)"
   tmp_out="$(mktemp)"
   tmp_old="$(mktemp)"
+  tmp_google="$(mktemp)"
+  tmp_google_cloud="$(mktemp)"
 
   echo "Updating routes from $LISTS_FILE"
 
@@ -116,6 +120,81 @@ update_routes() {
       curl -4 --retry 5 --retry-delay 5 -fsSL "$url"
     done \
     | tr -d '\r' > "$tmp_base"; then
+
+    grep -Ev '^[[:space:]]*($|#)' "$INCLUDE_ASNS_FILE" | while read -r asn; do
+      asn_number="$(printf '%s' "$asn" | sed 's/^[Aa][Ss]//')"
+
+      case "$asn_number" in
+        ''|*[!0-9]*)
+          echo "Skipping invalid include ASN $asn" >&2
+          continue
+          ;;
+      esac
+
+      echo "Fetching include ASN AS$asn_number prefixes" >&2
+      curl -4 --retry 5 --retry-delay 5 -fsSL "https://api.routeviews.org/asn/$asn_number" || true
+    done >> "$tmp_base"
+
+    if [ "$INCLUDE_GOOGLE_RANGES" = "1" ]; then
+      echo "Fetching Google default service ranges" >&2
+
+      if curl -4 --retry 5 --retry-delay 5 -fsSL "https://www.gstatic.com/ipranges/goog.json" -o "$tmp_google" \
+        && curl -4 --retry 5 --retry-delay 5 -fsSL "https://www.gstatic.com/ipranges/cloud.json" -o "$tmp_google_cloud"; then
+        if python3 - "$tmp_google" "$tmp_google_cloud" >> "$tmp_base" <<'PY'
+import ipaddress
+import json
+import sys
+
+
+def read_ipv4_prefixes(path):
+    with open(path, encoding="utf-8") as file:
+        data = json.load(file)
+
+    networks = []
+    for item in data.get("prefixes", []):
+        prefix = item.get("ipv4Prefix")
+        if prefix:
+            networks.append(ipaddress.ip_network(prefix, strict=False))
+
+    return networks
+
+
+google = read_ipv4_prefixes(sys.argv[1])
+cloud = read_ipv4_prefixes(sys.argv[2])
+result = []
+
+for network in google:
+    remaining = [network]
+
+    for excluded in cloud:
+        next_remaining = []
+
+        for candidate in remaining:
+            if not candidate.overlaps(excluded):
+                next_remaining.append(candidate)
+            elif candidate.subnet_of(excluded):
+                continue
+            elif excluded.subnet_of(candidate):
+                next_remaining.extend(candidate.address_exclude(excluded))
+            else:
+                next_remaining.append(candidate)
+
+        remaining = next_remaining
+
+    result.extend(remaining)
+
+for network in sorted(set(result), key=lambda net: (int(net.network_address), net.prefixlen)):
+    print(network)
+PY
+        then
+          :
+        else
+          echo "Failed to process Google ranges, skipping" >&2
+        fi
+      else
+        echo "Failed to fetch Google ranges, skipping" >&2
+      fi
+    fi
 
     : > "$tmp_ex"
     : > "$tmp_add"
@@ -156,7 +235,7 @@ update_routes() {
     echo "Failed to download route list"
   fi
 
-  rm -f "$tmp_base" "$tmp_ex" "$tmp_add" "$tmp_out" "$tmp_old"
+  rm -f "$tmp_base" "$tmp_ex" "$tmp_add" "$tmp_out" "$tmp_old" "$tmp_google" "$tmp_google_cloud"
 }
 
 validate_env
