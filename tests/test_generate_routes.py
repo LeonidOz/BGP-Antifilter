@@ -75,6 +75,36 @@ class BuildRoutesTests(unittest.TestCase):
         self.assertEqual(routes, [net("192.0.2.0/24"), net("198.51.100.2/32")])
         self.assertEqual(applied, 0)
 
+    def test_removes_routes_covered_by_larger_networks(self):
+        routes, applied = generate_routes.build_routes(
+            [net("192.0.2.0/24"), net("192.0.2.10/32")],
+            [],
+            [net("192.0.2.20/32")],
+        )
+
+        self.assertEqual(routes, [net("192.0.2.0/24")])
+        self.assertEqual(applied, 0)
+
+    def test_collapses_adjacent_networks(self):
+        routes, applied = generate_routes.build_routes(
+            [net("192.0.2.0/25"), net("192.0.2.128/25")],
+            [],
+            [],
+        )
+
+        self.assertEqual(routes, [net("192.0.2.0/24")])
+        self.assertEqual(applied, 0)
+
+    def test_does_not_collapse_across_excluded_addresses(self):
+        routes, applied = generate_routes.build_routes(
+            [net("192.0.2.0/30")],
+            [net("192.0.2.1/32")],
+            [],
+        )
+
+        self.assertEqual(routes, [net("192.0.2.0/32"), net("192.0.2.2/31")])
+        self.assertEqual(applied, 1)
+
 
 class MainTests(unittest.TestCase):
     def test_main_writes_bird_static_routes(self):

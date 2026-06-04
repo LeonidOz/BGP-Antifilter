@@ -104,43 +104,81 @@ with open(config_file, "w", encoding="utf-8") as file:
 PY
 }
 
+read_non_comment_lines() {
+  source_file="$1"
+  output_file="$2"
+
+  if [ -f "$source_file" ]; then
+    grep -Ev '^[[:space:]]*($|#)' "$source_file" > "$output_file" || true
+  else
+    : > "$output_file"
+  fi
+}
+
 update_routes() {
+  apply="${1:-apply}"
   tmp_base="$(mktemp)"
   tmp_ex="$(mktemp)"
   tmp_add="$(mktemp)"
   tmp_out="$(mktemp)"
   tmp_old="$(mktemp)"
+  tmp_urls="$(mktemp)"
+  tmp_asns="$(mktemp)"
+  tmp_fetch="$(mktemp)"
   tmp_google="$(mktemp)"
   tmp_google_cloud="$(mktemp)"
+  download_failed=0
 
   echo "Updating routes from $LISTS_FILE"
 
-  if grep -Ev '^[[:space:]]*($|#)' "$LISTS_FILE" | while read -r url; do
+  read_non_comment_lines "$LISTS_FILE" "$tmp_urls"
+
+  if [ ! -s "$tmp_urls" ]; then
+    echo "No route sources configured, keeping old routes" >&2
+    download_failed=1
+  fi
+
+  : > "$tmp_base"
+
+  while IFS= read -r url; do
       echo "Fetching $url" >&2
-      curl -4 --retry 5 --retry-delay 5 -fsSL "$url"
-    done \
-    | tr -d '\r' > "$tmp_base"; then
+      if curl -4 --retry 5 --retry-delay 5 -fsSL "$url" -o "$tmp_fetch"; then
+        tr -d '\r' < "$tmp_fetch" >> "$tmp_base"
+        printf '\n' >> "$tmp_base"
+      else
+        echo "Failed to fetch $url" >&2
+        download_failed=1
+      fi
+  done < "$tmp_urls"
 
-    grep -Ev '^[[:space:]]*($|#)' "$INCLUDE_ASNS_FILE" | while read -r asn; do
-      asn_number="$(printf '%s' "$asn" | sed 's/^[Aa][Ss]//')"
+  read_non_comment_lines "$INCLUDE_ASNS_FILE" "$tmp_asns"
 
-      case "$asn_number" in
-        ''|*[!0-9]*)
-          echo "Skipping invalid include ASN $asn" >&2
-          continue
-          ;;
-      esac
+  while IFS= read -r asn; do
+    asn_number="$(printf '%s' "$asn" | sed 's/^[Aa][Ss]//')"
 
-      echo "Fetching include ASN AS$asn_number prefixes" >&2
-      curl -4 --retry 5 --retry-delay 5 -fsSL "https://api.routeviews.org/asn/$asn_number" || true
-    done >> "$tmp_base"
+    case "$asn_number" in
+      ''|*[!0-9]*)
+        echo "Skipping invalid include ASN $asn" >&2
+        continue
+        ;;
+    esac
 
-    if [ "$INCLUDE_GOOGLE_RANGES" = "1" ]; then
-      echo "Fetching Google default service ranges" >&2
+    echo "Fetching include ASN AS$asn_number prefixes" >&2
+    if curl -4 --retry 5 --retry-delay 5 -fsSL "https://api.routeviews.org/asn/$asn_number" -o "$tmp_fetch"; then
+      tr -d '\r' < "$tmp_fetch" >> "$tmp_base"
+      printf '\n' >> "$tmp_base"
+    else
+      echo "Failed to fetch include ASN AS$asn_number prefixes" >&2
+      download_failed=1
+    fi
+  done < "$tmp_asns"
 
-      if curl -4 --retry 5 --retry-delay 5 -fsSL "https://www.gstatic.com/ipranges/goog.json" -o "$tmp_google" \
-        && curl -4 --retry 5 --retry-delay 5 -fsSL "https://www.gstatic.com/ipranges/cloud.json" -o "$tmp_google_cloud"; then
-        if python3 - "$tmp_google" "$tmp_google_cloud" >> "$tmp_base" <<'PY'
+  if [ "$INCLUDE_GOOGLE_RANGES" = "1" ]; then
+    echo "Fetching Google default service ranges" >&2
+
+    if curl -4 --retry 5 --retry-delay 5 -fsSL "https://www.gstatic.com/ipranges/goog.json" -o "$tmp_google" \
+      && curl -4 --retry 5 --retry-delay 5 -fsSL "https://www.gstatic.com/ipranges/cloud.json" -o "$tmp_google_cloud"; then
+      if python3 - "$tmp_google" "$tmp_google_cloud" >> "$tmp_base" <<'PY'
 import ipaddress
 import json
 import sys
@@ -186,29 +224,46 @@ for network in google:
 for network in sorted(set(result), key=lambda net: (int(net.network_address), net.prefixlen)):
     print(network)
 PY
-        then
-          :
-        else
-          echo "Failed to process Google ranges, skipping" >&2
-        fi
+      then
+        :
       else
-        echo "Failed to fetch Google ranges, skipping" >&2
+        echo "Failed to process Google ranges, keeping old routes" >&2
+        download_failed=1
       fi
+    else
+      echo "Failed to fetch Google ranges, keeping old routes" >&2
+      download_failed=1
     fi
+  fi
 
-    : > "$tmp_ex"
-    : > "$tmp_add"
+  : > "$tmp_ex"
+  : > "$tmp_add"
 
-    grep -Ev '^[[:space:]]*($|#)' "$EXCLUDE_DOMAINS_FILE" | while read -r domain; do
-      echo "Resolving exclude domain $domain" >&2
-      getent ahostsv4 "$domain" | awk '{print $1 "/32"}' >> "$tmp_ex" || true
-    done
+  read_non_comment_lines "$EXCLUDE_DOMAINS_FILE" "$tmp_urls"
 
-    grep -Ev '^[[:space:]]*($|#)' "$INCLUDE_DOMAINS_FILE" | while read -r domain; do
-      echo "Resolving include domain $domain" >&2
-      getent ahostsv4 "$domain" | awk '{print $1 "/32"}' >> "$tmp_add" || true
-    done
+  while IFS= read -r domain; do
+    echo "Resolving exclude domain $domain" >&2
+    if getent ahostsv4 "$domain" > "$tmp_fetch" && [ -s "$tmp_fetch" ]; then
+      awk '{print $1 "/32"}' "$tmp_fetch" >> "$tmp_ex"
+    else
+      echo "Failed to resolve exclude domain $domain, keeping old routes" >&2
+      download_failed=1
+    fi
+  done < "$tmp_urls"
 
+  read_non_comment_lines "$INCLUDE_DOMAINS_FILE" "$tmp_urls"
+
+  while IFS= read -r domain; do
+    echo "Resolving include domain $domain" >&2
+    if getent ahostsv4 "$domain" > "$tmp_fetch" && [ -s "$tmp_fetch" ]; then
+      awk '{print $1 "/32"}' "$tmp_fetch" >> "$tmp_add"
+    else
+      echo "Failed to resolve include domain $domain, keeping old routes" >&2
+      download_failed=1
+    fi
+  done < "$tmp_urls"
+
+  if [ "$download_failed" -eq 0 ]; then
     sort -u -o "$tmp_ex" "$tmp_ex"
     sort -u -o "$tmp_add" "$tmp_add"
 
@@ -220,22 +275,27 @@ PY
     if [ "$count" -gt 0 ]; then
       cp "$ROUTES" "$tmp_old"
       mv "$tmp_out" "$ROUTES"
-      if birdc configure; then
-        echo "BIRD accepted updated routes"
+
+      if [ "$apply" = "apply" ]; then
+        if birdc configure; then
+          echo "BIRD accepted updated routes"
+        else
+          echo "BIRD rejected updated routes, restoring previous routes" >&2
+          cp "$tmp_old" "$ROUTES"
+          birdc configure || true
+        fi
       else
-        echo "BIRD rejected updated routes, restoring previous routes" >&2
-        cp "$tmp_old" "$ROUTES"
-        birdc configure || true
+        echo "Routes prepared before BIRD startup"
       fi
     else
       echo "Route list is empty, keeping old routes"
       rm -f "$tmp_out"
     fi
   else
-    echo "Failed to download route list"
+    echo "Route update failed, keeping old routes" >&2
   fi
 
-  rm -f "$tmp_base" "$tmp_ex" "$tmp_add" "$tmp_out" "$tmp_old" "$tmp_google" "$tmp_google_cloud"
+  rm -f "$tmp_base" "$tmp_ex" "$tmp_add" "$tmp_out" "$tmp_old" "$tmp_urls" "$tmp_asns" "$tmp_fetch" "$tmp_google" "$tmp_google_cloud"
 }
 
 validate_env
@@ -245,12 +305,12 @@ mkdir -p /run/bird
 touch "$ROUTES"
 
 render_bird_config
+update_routes noapply
 
 bird -f -c "$BIRD_CONFIG" &
 BIRD_PID="$!"
 
 sleep 2
-update_routes
 
 while true; do
   sleep "$UPDATE_INTERVAL"

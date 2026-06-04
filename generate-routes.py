@@ -61,8 +61,17 @@ def build_routes(base, exclude, extra):
 
         kept.extend(remaining)
 
-    unique = sorted(set(kept), key=lambda net: (int(net.network_address), net.prefixlen))
-    return unique, exclude_rules_applied
+    return collapse_routes(kept), exclude_rules_applied
+
+
+def collapse_routes(networks):
+    collapsed = []
+
+    for version in (4, 6):
+        same_version = [network for network in networks if network.version == version]
+        collapsed.extend(ipaddress.collapse_addresses(same_version))
+
+    return sorted(collapsed, key=lambda net: (net.version, int(net.network_address), net.prefixlen))
 
 
 def main():
