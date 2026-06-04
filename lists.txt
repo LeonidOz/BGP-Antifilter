@@ -2,3 +2,10 @@ http://antifilter.download/list/ip.lst
 http://antifilter.download/list/subnet.lst
 http://community.antifilter.download/list/community.lst
 https://core.telegram.org/resources/cidr.txt
+https://iplist.opencck.org/?format=json&data=cidr4&site=claude.ai&site=chatgpt.com&site=copilot&site=deepseek.com&site=grok.com
+https://iplist.opencck.org/?format=json&data=cidr4&site=signal.org&site=viber.com
+https://iplist.opencck.org/?format=json&data=cidr4&site=pornhub.com&site=pornolab.net&site=redtube.com&site=xvideos.com
+https://iplist.opencck.org/?format=json&data=cidr4&site=4pda.to&site=linkedin.com&site=tiktok.com&site=x.com
+https://iplist.opencck.org/?format=json&data=cidr4&site=proton.me&site=proxy6.net&site=proxyline.net
+https://iplist.opencck.org/?format=json&data=cidr4&site=rutor.info&site=rutracker.org&site=kinozal.me&site=filmitorrent.net&site=1337x.to&site=booktracker.org&site=freetp.org&site=newstudio.tv&site=nnmclub.to&site=rustorka.com&site=thepiratebay.org&site=torrent.by
+https://iplist.opencck.org/?format=json&data=cidr4&site=daramalive.life&site=doramy.club&site=filmix.fm&site=hdrezka.ag&site=kino.pub&site=kinobase.org&site=kinovod.pro&site=kinozal.tv&site=lostfilm.tv&site=netflix.com&site=seasonvar.ru&site=stremio.com&site=themoviedb.org&site=zeflix.online
