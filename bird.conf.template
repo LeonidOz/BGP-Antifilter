@@ -1,11 +1,11 @@
 log stderr all;
 
-router id 192.168.55.5;
+router id ${ROUTER_ID};
 
-define MY_AS = 64500;
-define MT_AS = 65455;
-define MT_IP = 192.168.55.1;
-define BIRD_IP = 192.168.55.5;
+define MY_AS = ${MY_AS};
+define MT_AS = ${MT_AS};
+define MT_IP = ${MT_IP};
+define BIRD_IP = ${BIRD_IP};
 
 protocol device {
 }
@@ -16,7 +16,7 @@ protocol static static_antifilter {
 }
 
 filter export_to_mikrotik {
-    bgp_community.add((65432,500));
+    bgp_community.add((${BGP_COMMUNITY}));
     bgp_next_hop = BIRD_IP;
     accept;
 }

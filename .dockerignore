@@ -1,0 +1,11 @@
+.git/
+generated/
+cache/
+.cache/
+tmp/
+.env
+*.log
+*.tmp
+__pycache__/
+*.py[cod]
+.pytest_cache/

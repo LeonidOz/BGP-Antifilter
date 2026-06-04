@@ -5,14 +5,39 @@ LISTS_FILE="${LISTS_FILE:-/etc/bird/lists.txt}"
 INCLUDE_DOMAINS_FILE="${INCLUDE_DOMAINS_FILE:-/etc/bird/include-domains.txt}"
 EXCLUDE_DOMAINS_FILE="${EXCLUDE_DOMAINS_FILE:-/etc/bird/exclude-domains.txt}"
 UPDATE_INTERVAL="${UPDATE_INTERVAL:-1800}"
+MY_AS="${MY_AS:-64500}"
+MT_AS="${MT_AS:-65455}"
+MT_IP="${MT_IP:-192.168.55.1}"
+BIRD_IP="${BIRD_IP:-192.168.55.5}"
+ROUTER_ID="${ROUTER_ID:-$BIRD_IP}"
+BGP_COMMUNITY="${BGP_COMMUNITY:-65432,500}"
+BIRD_TEMPLATE="${BIRD_TEMPLATE:-/etc/bird/bird.conf.template}"
+BIRD_CONFIG="${BIRD_CONFIG:-/etc/bird/bird.conf}"
 ROUTES="/etc/bird/generated/routes.conf"
 
 mkdir -p /etc/bird/generated
 mkdir -p /run/bird
 touch "$ROUTES"
 
+render_bird_config() {
+  export MY_AS MT_AS MT_IP BIRD_IP ROUTER_ID BGP_COMMUNITY
+  python3 - "$BIRD_TEMPLATE" "$BIRD_CONFIG" <<'PY'
+import os
+import string
+import sys
+
+template_file, config_file = sys.argv[1:3]
+
+with open(template_file, encoding="utf-8") as file:
+    template = string.Template(file.read())
+
+with open(config_file, "w", encoding="utf-8") as file:
+    file.write(template.safe_substitute(os.environ))
+PY
+}
+
 update_routes() {
-  tmp_in="$(mktemp)"
+  tmp_base="$(mktemp)"
   tmp_ex="$(mktemp)"
   tmp_add="$(mktemp)"
   tmp_out="$(mktemp)"
@@ -23,10 +48,7 @@ update_routes() {
       echo "Fetching $url" >&2
       curl -4 --retry 5 --retry-delay 5 -fsSL "$url"
     done \
-    | tr -d '\r' \
-    | grep -Eo '([0-9]{1,3}\.){3}[0-9]{1,3}(/[0-9]{1,2})?' \
-    | awk '{ p=$1; if (p !~ /\//) p=p "/32"; print p }' \
-    | sort -u > "$tmp_in"; then
+    | tr -d '\r' > "$tmp_base"; then
 
     : > "$tmp_ex"
     : > "$tmp_add"
@@ -44,46 +66,7 @@ update_routes() {
     sort -u -o "$tmp_ex" "$tmp_ex"
     sort -u -o "$tmp_add" "$tmp_add"
 
-    python3 - "$tmp_in" "$tmp_ex" "$tmp_add" "$tmp_out" <<'PY'
-import ipaddress
-import sys
-
-include_file, exclude_file, add_file, out_file = sys.argv[1:5]
-
-def read_networks(path):
-    nets = []
-    with open(path) as f:
-        for line in f:
-            line = line.strip()
-            if line:
-                nets.append(ipaddress.ip_network(line, strict=False))
-    return nets
-
-base = read_networks(include_file)
-exclude = read_networks(exclude_file)
-extra = read_networks(add_file)
-
-combined = base + extra
-kept = []
-removed = 0
-
-for net in combined:
-    if any(net.overlaps(ex) for ex in exclude):
-        removed += 1
-        continue
-    kept.append(net)
-
-unique = sorted(set(kept), key=lambda n: (int(n.network_address), n.prefixlen))
-
-with open(out_file, "w") as f:
-    for net in unique:
-        f.write(f"    route {net} blackhole;\n")
-
-print(f"Base routes: {len(base)}")
-print(f"Added domain routes: {len(extra)}")
-print(f"Excluded overlapping routes: {removed}")
-print(f"Final routes: {len(unique)}")
-PY
+    /generate-routes.py "$tmp_base" "$tmp_ex" "$tmp_add" "$tmp_out"
 
     count="$(wc -l < "$tmp_out")"
     echo "Generated $count routes after include/exclude"
@@ -99,10 +82,12 @@ PY
     echo "Failed to download route list"
   fi
 
-  rm -f "$tmp_in" "$tmp_ex" "$tmp_add" "$tmp_out"
+  rm -f "$tmp_base" "$tmp_ex" "$tmp_add" "$tmp_out"
 }
 
-bird -f -c /etc/bird/bird.conf &
+render_bird_config
+
+bird -f -c "$BIRD_CONFIG" &
 BIRD_PID="$!"
 
 sleep 2

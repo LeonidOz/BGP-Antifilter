@@ -4,13 +4,19 @@ services:
     network_mode: host
     restart: unless-stopped
     volumes:
-      - ./bird.conf:/etc/bird/bird.conf:ro
+      - ./bird.conf.template:/etc/bird/bird.conf.template:ro
       - ./generated:/etc/bird/generated
       - ./lists.txt:/etc/bird/lists.txt:ro
       - ./include-domains.txt:/etc/bird/include-domains.txt:ro
       - ./exclude-domains.txt:/etc/bird/exclude-domains.txt:ro
     environment:
+      MY_AS: "${MY_AS:-64500}"
+      MT_AS: "${MT_AS:-65455}"
+      MT_IP: "${MT_IP:-192.168.55.1}"
+      BIRD_IP: "${BIRD_IP:-192.168.55.5}"
+      ROUTER_ID: "${ROUTER_ID:-192.168.55.5}"
+      BGP_COMMUNITY: "${BGP_COMMUNITY:-65432,500}"
       LISTS_FILE: /etc/bird/lists.txt
       INCLUDE_DOMAINS_FILE: /etc/bird/include-domains.txt
       EXCLUDE_DOMAINS_FILE: /etc/bird/exclude-domains.txt
-      UPDATE_INTERVAL: "1800"
+      UPDATE_INTERVAL: "${UPDATE_INTERVAL:-1800}"

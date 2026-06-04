@@ -1,55 +1,64 @@
 # BGP Antifilter
 
-BGP Antifilter — контейнеризированная конфигурация BIRD для публикации списков заблокированных IP-адресов и подсетей в MikroTik по BGP.
+BGP Antifilter - контейнеризированная конфигурация BIRD 2 для публикации списков заблокированных IP-адресов и подсетей в MikroTik по BGP.
 
 Проект скачивает списки маршрутов из открытых источников, дополняет их IP-адресами вручную заданных доменов, исключает маршруты для доменов из списка исключений и генерирует `blackhole`-маршруты для BIRD.
 
 ## Что входит в проект
 
-- `Dockerfile` — образ на базе Debian с BIRD 2, curl и Python.
-- `docker-compose.yml` — запуск BIRD в `host` network mode.
-- `bird.conf` — BGP-сессия с MikroTik и экспорт статических маршрутов.
-- `entrypoint.sh` — периодическое обновление списков и перезагрузка конфигурации BIRD.
-- `lists.txt` — URL-адреса исходных списков IP и подсетей.
-- `include-domains.txt` — домены, IP-адреса которых нужно добавить в маршруты.
-- `exclude-domains.txt` — домены, IP-адреса которых нужно исключить из маршрутов.
-- `generated/` — генерируемый кеш маршрутов, не хранится в репозитории.
+- `Dockerfile` - образ на базе Debian с BIRD 2, curl и Python.
+- `docker-compose.yml` - запуск BIRD в `host` network mode.
+- `bird.conf.template` - шаблон BIRD-конфигурации с параметрами из окружения.
+- `.env.example` - пример локальных настроек AS, IP-адресов и интервала обновления.
+- `entrypoint.sh` - запуск BIRD, рендеринг конфига и периодическое обновление маршрутов.
+- `generate-routes.py` - генератор и валидатор итогового файла маршрутов.
+- `lists.txt` - URL-адреса исходных списков IP и подсетей.
+- `include-domains.txt` - домены, IP-адреса которых нужно добавить в маршруты.
+- `exclude-domains.txt` - домены, IP-адреса которых нужно исключить из маршрутов.
+- `generated/` - генерируемый кеш маршрутов, не хранится в репозитории.
 
 ## Как это работает
 
-1. Контейнер запускает BIRD с конфигурацией из `bird.conf`.
-2. `entrypoint.sh` скачивает списки из `lists.txt`.
-3. Найденные IP-адреса нормализуются в CIDR-формат.
-4. Домены из `include-domains.txt` резолвятся в IPv4 и добавляются как `/32`.
-5. Домены из `exclude-domains.txt` резолвятся в IPv4 и удаляют пересекающиеся маршруты.
-6. Итоговый файл `generated/routes.conf` подключается в BIRD как статические `blackhole`-маршруты.
-7. BIRD экспортирует маршруты в MikroTik через BGP.
+1. Контейнер рендерит `/etc/bird/bird.conf` из `bird.conf.template`.
+2. BIRD запускается с полученной конфигурацией.
+3. `entrypoint.sh` скачивает списки из `lists.txt`.
+4. `generate-routes.py` извлекает и валидирует IPv4/CIDR-маршруты.
+5. Домены из `include-domains.txt` резолвятся в IPv4 и добавляются как `/32`.
+6. Домены из `exclude-domains.txt` резолвятся в IPv4 и вычитаются из итогового набора маршрутов.
+7. Итоговый файл `generated/routes.conf` подключается в BIRD как статические `blackhole`-маршруты.
+8. BIRD экспортирует маршруты в MikroTik через BGP.
 
 ## Настройка
 
-Перед запуском проверьте параметры в `bird.conf`:
+Скопируйте пример окружения и измените параметры под свою сеть:
 
-```bird
-define MY_AS = 64500;
-define MT_AS = 65455;
-define MT_IP = 192.168.55.1;
-define BIRD_IP = 192.168.55.5;
+```bash
+cp .env.example .env
+```
+
+Основные параметры:
+
+```dotenv
+MY_AS=64500
+MT_AS=65455
+MT_IP=192.168.55.1
+BIRD_IP=192.168.55.5
+ROUTER_ID=192.168.55.5
+BGP_COMMUNITY=65432,500
+UPDATE_INTERVAL=1800
 ```
 
 Где:
 
-- `MY_AS` — AS контейнера с BIRD.
-- `MT_AS` — AS MikroTik.
-- `MT_IP` — IP-адрес MikroTik.
-- `BIRD_IP` — IP-адрес хоста или интерфейса, с которого BIRD устанавливает BGP-сессию.
+- `MY_AS` - AS контейнера с BIRD.
+- `MT_AS` - AS MikroTik.
+- `MT_IP` - IP-адрес MikroTik.
+- `BIRD_IP` - IP-адрес хоста или интерфейса, с которого BIRD устанавливает BGP-сессию.
+- `ROUTER_ID` - router id BIRD, обычно совпадает с `BIRD_IP`.
+- `BGP_COMMUNITY` - community, которая добавляется к экспортируемым маршрутам.
+- `UPDATE_INTERVAL` - интервал обновления списков в секундах.
 
-При необходимости измените интервал обновления в `docker-compose.yml`:
-
-```yaml
-UPDATE_INTERVAL: "1800"
-```
-
-Значение задается в секундах.
+Если `.env` не создан, используются значения по умолчанию из `docker-compose.yml`.
 
 ## Запуск
 
@@ -61,6 +70,12 @@ docker compose up -d --build
 
 ```bash
 docker compose logs -f bird
+```
+
+Проверить состояние контейнера:
+
+```bash
+docker compose ps
 ```
 
 Остановить контейнер:
@@ -75,18 +90,29 @@ docker compose down
 
 Домены, которые нужно принудительно добавить в маршруты, указываются в `include-domains.txt`.
 
-Домены, которые нужно исключить из маршрутов, указываются в `exclude-domains.txt`.
+Домены, которые нужно исключить из маршрутов, указываются в `exclude-domains.txt`. Если исключенный IP попадает внутрь более крупной подсети, генератор разобьет подсеть на меньшие маршруты без этого IP.
 
 Пустые строки и строки с `#` игнорируются.
 
-## Публикация на GitHub
+## Пример настройки MikroTik
 
-После проверки можно добавить удаленный репозиторий и отправить проект:
+Минимальный пример для RouterOS 7:
 
-```bash
-git remote add origin git@github.com:USER/REPOSITORY.git
-git branch -M main
-git add .
-git commit -m "Initial commit"
-git push -u origin main
+```routeros
+/routing bgp template
+add name=antifilter-template as=65455 routing-table=main
+
+/routing bgp connection
+add name=antifilter-bird \
+    template=antifilter-template \
+    remote.address=192.168.55.5 \
+    remote.as=64500 \
+    local.address=192.168.55.1 \
+    multihop=yes \
+    input.filter=antifilter-in
+
+/routing filter rule
+add chain=antifilter-in rule="if (bgp-communities includes 65432:500) { accept } else { reject }"
 ```
+
+Параметры AS и IP-адресов должны совпадать со значениями в `.env`.

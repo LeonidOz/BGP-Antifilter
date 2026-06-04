@@ -3,6 +3,7 @@ generated/
 cache/
 .cache/
 tmp/
+.env
 
 # Runtime and temporary files
 *.log
