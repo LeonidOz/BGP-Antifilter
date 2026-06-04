@@ -1,5 +1,17 @@
 # BGP Antifilter
 
+[![Tests](https://github.com/LeonidOz/BGP-Antifilter/actions/workflows/tests.yml/badge.svg)](https://github.com/LeonidOz/BGP-Antifilter/actions/workflows/tests.yml)
+[![Publish Docker Image](https://github.com/LeonidOz/BGP-Antifilter/actions/workflows/deploy.yml/badge.svg)](https://github.com/LeonidOz/BGP-Antifilter/actions/workflows/deploy.yml)
+[![License](https://img.shields.io/github/license/LeonidOz/BGP-Antifilter)](LICENSE)
+[![Container Image](https://img.shields.io/badge/container-ghcr.io%2Fleonidoz%2Fbgp--antifilter-blue)](https://github.com/LeonidOz/BGP-Antifilter/pkgs/container/bgp-antifilter)
+![Python](https://img.shields.io/badge/python-3.x-blue)
+![Debian](https://img.shields.io/badge/debian-bookworm-a81d33)
+![BIRD](https://img.shields.io/badge/BIRD-2.x-green)
+![RouterOS](https://img.shields.io/badge/RouterOS-7-blue)
+![IPv4](https://img.shields.io/badge/IP-IPv4-blueviolet)
+
+[English](README.en.md) | Русский
+
 BGP Antifilter - контейнеризированная конфигурация BIRD 2 для публикации списков заблокированных IP-адресов и подсетей в MikroTik по BGP.
 
 Проект скачивает списки маршрутов из открытых источников, дополняет их IP-адресами вручную заданных доменов, исключает маршруты для доменов из списка исключений и генерирует `blackhole`-маршруты для BIRD.
