@@ -16,6 +16,7 @@ BGP_COMMUNITY="${BGP_COMMUNITY:-65432,500}"
 BIRD_TEMPLATE="${BIRD_TEMPLATE:-/etc/bird/bird.conf.template}"
 BIRD_CONFIG="${BIRD_CONFIG:-/etc/bird/bird.conf}"
 ROUTES="/etc/bird/generated/routes.conf"
+CACHE_DIR="${CACHE_DIR:-/etc/bird/generated/cache}"
 
 validate_env() {
   export MY_AS MT_AS MT_IP BIRD_IP ROUTER_ID BGP_COMMUNITY UPDATE_INTERVAL
@@ -115,6 +116,63 @@ read_non_comment_lines() {
   fi
 }
 
+cache_path() {
+  cache_namespace="$1"
+  cache_value="$2"
+  cache_key="$(printf '%s' "$cache_value" | cksum | awk '{print $1}')"
+
+  printf '%s/%s-%s.cache\n' "$CACHE_DIR" "$cache_namespace" "$cache_key"
+}
+
+append_fetch_with_cache() {
+  url="$1"
+  cache_file="$2"
+  output_file="$3"
+  tmp_file="$4"
+
+  if curl -4 --retry 5 --retry-delay 5 -fsSL "$url" -o "$tmp_file"; then
+    cp "$tmp_file" "$cache_file"
+    tr -d '\r' < "$tmp_file" >> "$output_file"
+    printf '\n' >> "$output_file"
+    echo "Updated cache for $url" >&2
+    return 0
+  fi
+
+  if [ -s "$cache_file" ]; then
+    echo "Failed to fetch $url, using cache $cache_file" >&2
+    tr -d '\r' < "$cache_file" >> "$output_file"
+    printf '\n' >> "$output_file"
+    return 0
+  fi
+
+  echo "Failed to fetch $url and no cache is available" >&2
+  return 1
+}
+
+resolve_domain_with_cache() {
+  domain="$1"
+  cache_namespace="$2"
+  output_file="$3"
+  tmp_file="$4"
+  cache_file="$(cache_path "$cache_namespace" "$domain")"
+
+  if getent ahostsv4 "$domain" > "$tmp_file" && [ -s "$tmp_file" ]; then
+    awk '{print $1 "/32"}' "$tmp_file" | sort -u > "$cache_file"
+    cat "$cache_file" >> "$output_file"
+    echo "Updated DNS cache for $domain" >&2
+    return 0
+  fi
+
+  if [ -s "$cache_file" ]; then
+    echo "Failed to resolve $domain, using DNS cache $cache_file" >&2
+    cat "$cache_file" >> "$output_file"
+    return 0
+  fi
+
+  echo "Failed to resolve $domain and no DNS cache is available" >&2
+  return 1
+}
+
 update_routes() {
   apply="${1:-apply}"
   tmp_base="$(mktemp)"
@@ -127,27 +185,22 @@ update_routes() {
   tmp_fetch="$(mktemp)"
   tmp_google="$(mktemp)"
   tmp_google_cloud="$(mktemp)"
-  download_failed=0
+  source_failed=0
 
   echo "Updating routes from $LISTS_FILE"
 
   read_non_comment_lines "$LISTS_FILE" "$tmp_urls"
 
   if [ ! -s "$tmp_urls" ]; then
-    echo "No route sources configured, keeping old routes" >&2
-    download_failed=1
+    echo "No URL route sources configured" >&2
   fi
 
   : > "$tmp_base"
 
   while IFS= read -r url; do
       echo "Fetching $url" >&2
-      if curl -4 --retry 5 --retry-delay 5 -fsSL "$url" -o "$tmp_fetch"; then
-        tr -d '\r' < "$tmp_fetch" >> "$tmp_base"
-        printf '\n' >> "$tmp_base"
-      else
-        echo "Failed to fetch $url" >&2
-        download_failed=1
+      if ! append_fetch_with_cache "$url" "$(cache_path url "$url")" "$tmp_base" "$tmp_fetch"; then
+        source_failed=1
       fi
   done < "$tmp_urls"
 
@@ -164,20 +217,40 @@ update_routes() {
     esac
 
     echo "Fetching include ASN AS$asn_number prefixes" >&2
-    if curl -4 --retry 5 --retry-delay 5 -fsSL "https://api.routeviews.org/asn/$asn_number" -o "$tmp_fetch"; then
-      tr -d '\r' < "$tmp_fetch" >> "$tmp_base"
-      printf '\n' >> "$tmp_base"
-    else
-      echo "Failed to fetch include ASN AS$asn_number prefixes" >&2
-      download_failed=1
+    asn_url="https://api.routeviews.org/asn/$asn_number"
+    if ! append_fetch_with_cache "$asn_url" "$(cache_path asn "$asn_number")" "$tmp_base" "$tmp_fetch"; then
+      source_failed=1
     fi
   done < "$tmp_asns"
 
   if [ "$INCLUDE_GOOGLE_RANGES" = "1" ]; then
     echo "Fetching Google default service ranges" >&2
+    google_cache="$(cache_path google goog.json)"
+    google_cloud_cache="$(cache_path google cloud.json)"
 
-    if curl -4 --retry 5 --retry-delay 5 -fsSL "https://www.gstatic.com/ipranges/goog.json" -o "$tmp_google" \
-      && curl -4 --retry 5 --retry-delay 5 -fsSL "https://www.gstatic.com/ipranges/cloud.json" -o "$tmp_google_cloud"; then
+    if curl -4 --retry 5 --retry-delay 5 -fsSL "https://www.gstatic.com/ipranges/goog.json" -o "$tmp_google"; then
+      cp "$tmp_google" "$google_cache"
+      echo "Updated cache for Google goog.json" >&2
+    elif [ -s "$google_cache" ]; then
+      echo "Failed to fetch Google goog.json, using cache $google_cache" >&2
+      cp "$google_cache" "$tmp_google"
+    else
+      echo "Failed to fetch Google goog.json and no cache is available" >&2
+      source_failed=1
+    fi
+
+    if curl -4 --retry 5 --retry-delay 5 -fsSL "https://www.gstatic.com/ipranges/cloud.json" -o "$tmp_google_cloud"; then
+      cp "$tmp_google_cloud" "$google_cloud_cache"
+      echo "Updated cache for Google cloud.json" >&2
+    elif [ -s "$google_cloud_cache" ]; then
+      echo "Failed to fetch Google cloud.json, using cache $google_cloud_cache" >&2
+      cp "$google_cloud_cache" "$tmp_google_cloud"
+    else
+      echo "Failed to fetch Google cloud.json and no cache is available" >&2
+      source_failed=1
+    fi
+
+    if [ -s "$tmp_google" ] && [ -s "$tmp_google_cloud" ]; then
       if python3 - "$tmp_google" "$tmp_google_cloud" >> "$tmp_base" <<'PY'
 import ipaddress
 import json
@@ -228,11 +301,8 @@ PY
         :
       else
         echo "Failed to process Google ranges, keeping old routes" >&2
-        download_failed=1
+        source_failed=1
       fi
-    else
-      echo "Failed to fetch Google ranges, keeping old routes" >&2
-      download_failed=1
     fi
   fi
 
@@ -243,11 +313,8 @@ PY
 
   while IFS= read -r domain; do
     echo "Resolving exclude domain $domain" >&2
-    if getent ahostsv4 "$domain" > "$tmp_fetch" && [ -s "$tmp_fetch" ]; then
-      awk '{print $1 "/32"}' "$tmp_fetch" >> "$tmp_ex"
-    else
-      echo "Failed to resolve exclude domain $domain, keeping old routes" >&2
-      download_failed=1
+    if ! resolve_domain_with_cache "$domain" exclude-domain "$tmp_ex" "$tmp_fetch"; then
+      source_failed=1
     fi
   done < "$tmp_urls"
 
@@ -255,15 +322,12 @@ PY
 
   while IFS= read -r domain; do
     echo "Resolving include domain $domain" >&2
-    if getent ahostsv4 "$domain" > "$tmp_fetch" && [ -s "$tmp_fetch" ]; then
-      awk '{print $1 "/32"}' "$tmp_fetch" >> "$tmp_add"
-    else
-      echo "Failed to resolve include domain $domain, keeping old routes" >&2
-      download_failed=1
+    if ! resolve_domain_with_cache "$domain" include-domain "$tmp_add" "$tmp_fetch"; then
+      source_failed=1
     fi
   done < "$tmp_urls"
 
-  if [ "$download_failed" -eq 0 ]; then
+  if [ "$source_failed" -eq 0 ]; then
     sort -u -o "$tmp_ex" "$tmp_ex"
     sort -u -o "$tmp_add" "$tmp_add"
 
@@ -292,7 +356,7 @@ PY
       rm -f "$tmp_out"
     fi
   else
-    echo "Route update failed, keeping old routes" >&2
+    echo "Route update failed because at least one source has no fresh data or cache, keeping old routes" >&2
   fi
 
   rm -f "$tmp_base" "$tmp_ex" "$tmp_add" "$tmp_out" "$tmp_old" "$tmp_urls" "$tmp_asns" "$tmp_fetch" "$tmp_google" "$tmp_google_cloud"
@@ -301,11 +365,17 @@ PY
 validate_env
 
 mkdir -p /etc/bird/generated
+mkdir -p "$CACHE_DIR"
 mkdir -p /run/bird
 touch "$ROUTES"
 
 render_bird_config
 update_routes noapply
+
+if [ ! -s "$ROUTES" ]; then
+  echo "No routes are available after initial update, refusing to start BIRD with an empty table" >&2
+  exit 1
+fi
 
 bird -f -c "$BIRD_CONFIG" &
 BIRD_PID="$!"
