@@ -163,6 +163,24 @@ docker compose exec bird birdc show status
 docker compose exec bird birdc show route protocol static_antifilter count
 ```
 
+Проверить, есть ли IP в сгенерированной базе, и увидеть источники из кеша:
+
+```bash
+docker compose exec bird /check-ip.py 1.2.3.4
+```
+
+Команда проверяет попадание IP в `generated/routes.conf`, затем ищет совпадения в кешах источников из `generated/status.json`. Если IP найден в финальной базе, команда завершится с кодом `0`; если нет - с кодом `1`.
+
+Принудительно обновить маршруты без перезапуска BIRD:
+
+```bash
+docker compose exec bird /reload-routes.sh
+```
+
+Эта команда запускает обновление источников внутри работающего контейнера. Старые маршруты остаются активными, пока новый `routes.conf` не будет сгенерирован и принят командой `birdc configure`. Если генерация или применение не удались, старый файл маршрутов восстанавливается.
+
+Во время ручного обновления и в `docker compose logs -f bird` выводится прогресс по этапам: загрузка URL/ASN/Google ranges, резолв include/exclude-доменов, парсинг, сборка итоговой таблицы, запись status/metrics.
+
 Локально проверить генератор маршрутов можно без Docker:
 
 ```bash

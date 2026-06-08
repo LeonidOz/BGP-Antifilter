@@ -111,39 +111,23 @@ PY
 
 update_routes() {
   apply="${1:-apply}"
-  tmp_old="$(mktemp)"
 
-  cp "$ROUTES" "$tmp_old"
-
-  export LISTS_FILE INCLUDE_ASNS_FILE INCLUDE_DOMAINS_FILE EXCLUDE_DOMAINS_FILE
-  export INCLUDE_GOOGLE_RANGES CACHE_DIR CACHE_MAX_AGE STATUS_FILE METRICS_FILE
-  export ROUTES_FILE="$ROUTES"
+  if [ "$apply" = "apply" ]; then
+    /reload-routes.sh
+    return $?
+  fi
 
   if /update-routes.py --output "$ROUTES" --status "$STATUS_FILE" --metrics "$METRICS_FILE"; then
     if [ ! -s "$ROUTES" ]; then
       echo "Generated route list is empty, restoring previous routes" >&2
-      cp "$tmp_old" "$ROUTES"
-      rm -f "$tmp_old"
       return 1
     fi
 
-    if [ "$apply" = "apply" ]; then
-      if birdc configure; then
-        echo "BIRD accepted updated routes"
-      else
-        echo "BIRD rejected updated routes, restoring previous routes" >&2
-        cp "$tmp_old" "$ROUTES"
-        birdc configure || true
-      fi
-    else
-      echo "Routes prepared before BIRD startup"
-    fi
+    echo "Routes prepared before BIRD startup"
   else
-    echo "Route updater failed, restoring previous routes" >&2
-    cp "$tmp_old" "$ROUTES"
+    echo "Route updater failed" >&2
+    return 1
   fi
-
-  rm -f "$tmp_old"
 }
 
 validate_env
@@ -152,6 +136,10 @@ mkdir -p /etc/bird/generated
 mkdir -p "$CACHE_DIR"
 mkdir -p /run/bird
 touch "$ROUTES"
+
+export LISTS_FILE INCLUDE_ASNS_FILE INCLUDE_DOMAINS_FILE EXCLUDE_DOMAINS_FILE
+export INCLUDE_GOOGLE_RANGES CACHE_DIR CACHE_MAX_AGE STATUS_FILE METRICS_FILE
+export ROUTES_FILE="$ROUTES"
 
 render_bird_config
 update_routes noapply

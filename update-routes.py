@@ -28,6 +28,10 @@ def load_generator():
 generate_routes = load_generator()
 
 
+def progress(message):
+    print(f"[progress] {message}", flush=True)
+
+
 def env_path(name, default):
     return Path(os.environ.get(name, default))
 
@@ -297,7 +301,20 @@ def main():
     include_text = []
     exclude_text = []
 
-    for url in read_list(lists_file):
+    url_sources = read_list(lists_file)
+    asn_sources = read_list(include_asns_file)
+    exclude_domains = read_list(exclude_domains_file)
+    include_domains = read_list(include_domains_file)
+
+    progress(
+        "starting update: "
+        f"urls={len(url_sources)}, asns={len(asn_sources)}, "
+        f"exclude_domains={len(exclude_domains)}, include_domains={len(include_domains)}, "
+        f"google={'enabled' if include_google else 'disabled'}"
+    )
+
+    for index, url in enumerate(url_sources, 1):
+        progress(f"fetching url {index}/{len(url_sources)}: {url}")
         text, record, ok = fetch_text_source("url", url, url, cache_path(cache_dir, "url", url), now, cache_max_age)
         sources.append(record)
         source_failed = source_failed or not ok
@@ -306,7 +323,8 @@ def main():
         else:
             errors.append(record)
 
-    for asn in read_list(include_asns_file):
+    for index, asn in enumerate(asn_sources, 1):
+        progress(f"fetching ASN {index}/{len(asn_sources)}: {asn}")
         asn_number = asn.upper().removeprefix("AS")
         if not asn_number.isdigit():
             record = {"kind": "asn", "name": asn, "status": "failed", "error": "invalid ASN"}
@@ -325,6 +343,7 @@ def main():
             errors.append(record)
 
     if include_google:
+        progress("fetching Google ranges: goog.json and cloud.json")
         google_text, google_record, google_ok = fetch_text_source(
             "google", "goog.json", "https://www.gstatic.com/ipranges/goog.json",
             cache_path(cache_dir, "google", "goog.json", ".json"), now, cache_max_age
@@ -338,6 +357,7 @@ def main():
 
         if google_ok and cloud_ok:
             try:
+                progress("processing Google ranges: subtracting cloud prefixes")
                 google = read_ipv4_prefixes_from_google_json(google_text)
                 cloud = read_ipv4_prefixes_from_google_json(cloud_text)
                 base_text.append("\n".join(str(network) for network in subtract_networks(google, cloud)) + "\n")
@@ -352,9 +372,11 @@ def main():
             if not cloud_ok:
                 errors.append(cloud_record)
     else:
+        progress("skipping Google ranges: disabled")
         sources.append({"kind": "google", "name": "ranges", "status": "disabled"})
 
-    for domain in read_list(exclude_domains_file):
+    for index, domain in enumerate(exclude_domains, 1):
+        progress(f"resolving exclude domain {index}/{len(exclude_domains)}: {domain}")
         text, record, ok = resolve_domain("exclude-domain", domain, cache_path(cache_dir, "exclude-domain", domain), now, cache_max_age)
         sources.append(record)
         source_failed = source_failed or not ok
@@ -363,7 +385,8 @@ def main():
         else:
             errors.append(record)
 
-    for domain in read_list(include_domains_file):
+    for index, domain in enumerate(include_domains, 1):
+        progress(f"resolving include domain {index}/{len(include_domains)}: {domain}")
         text, record, ok = resolve_domain("include-domain", domain, cache_path(cache_dir, "include-domain", domain), now, cache_max_age)
         if ok:
             include_text.append(text)
@@ -379,6 +402,7 @@ def main():
     routes = {"base": 0, "include": 0, "exclude": 0, "final": 0, "exclude_rules_applied": 0, "invalid": 0}
 
     if not source_failed:
+        progress("parsing and validating collected routes")
         tmp_dir = output.parent
         tmp_base = tmp_dir / ".routes-base.tmp"
         tmp_include = tmp_dir / ".routes-include.tmp"
@@ -391,6 +415,7 @@ def main():
         base, base_invalid = generate_routes.read_networks(tmp_base, extract=True)
         exclude, exclude_invalid = generate_routes.read_networks(tmp_exclude)
         extra, extra_invalid = generate_routes.read_networks(tmp_include)
+        progress(f"building final route set: base={len(base)}, include={len(extra)}, exclude={len(exclude)}")
         networks, applied = generate_routes.build_routes(base, exclude, extra)
 
         routes = {
@@ -403,6 +428,7 @@ def main():
         }
 
         if networks:
+            progress(f"writing generated routes: final={len(networks)}")
             write_routes(output, networks)
         else:
             record = {"kind": "routes", "name": "generated", "status": "failed", "error": "generated route list is empty"}
@@ -417,9 +443,11 @@ def main():
 
     success = not source_failed
     status = build_status(success, started_at, sources, routes, errors, cache_max_age)
+    progress("writing status and metrics")
     write_json(status_file, status)
     write_metrics(metrics_file, status)
 
+    progress(f"done: success={success}, final_routes={routes['final']}, duration={status['duration_seconds']}s")
     print(f"Final routes: {routes['final']}")
     print(
         f"Source statuses: fresh={sum(1 for s in sources if s['status'] == 'fresh')} "

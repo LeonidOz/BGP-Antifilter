@@ -162,6 +162,24 @@ Show the number of exported static routes:
 docker compose exec bird birdc show route protocol static_antifilter count
 ```
 
+Check whether an IP is present in the generated route database and show cached source matches:
+
+```bash
+docker compose exec bird /check-ip.py 1.2.3.4
+```
+
+The command checks whether the IP is covered by `generated/routes.conf`, then searches source caches referenced by `generated/status.json`. It exits with code `0` when the IP is present in the final route file and `1` when it is not.
+
+Force a route refresh without restarting BIRD:
+
+```bash
+docker compose exec bird /reload-routes.sh
+```
+
+This command refreshes sources inside the running container. Existing routes stay active until the new `routes.conf` is generated and accepted by `birdc configure`. If generation or apply fails, the previous route file is restored.
+
+During a manual refresh and in `docker compose logs -f bird`, progress is printed by stage: URL/ASN/Google ranges fetching, include/exclude domain resolving, parsing, final route table build, and status/metrics writing.
+
 Run local tests without Docker:
 
 ```bash
