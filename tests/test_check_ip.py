@@ -1,9 +1,16 @@
+import contextlib
+import io
 import json
 import tempfile
 import unittest
 from pathlib import Path
 
 from bgp_antifilter import check_ip
+
+
+def run_main_quiet(argv):
+    with contextlib.redirect_stdout(io.StringIO()), contextlib.redirect_stderr(io.StringIO()):
+        return check_ip.main(argv)
 
 
 class CheckIpTests(unittest.TestCase):
@@ -33,7 +40,7 @@ class CheckIpTests(unittest.TestCase):
                 encoding="utf-8",
             )
 
-            exit_code = check_ip.main(["192.0.2.10", "--routes", str(routes), "--status", str(status)])
+            exit_code = run_main_quiet(["192.0.2.10", "--routes", str(routes), "--status", str(status)])
 
             self.assertEqual(exit_code, 0)
 
@@ -46,7 +53,7 @@ class CheckIpTests(unittest.TestCase):
             routes.write_text("    route 192.0.2.0/24 blackhole;\n", encoding="utf-8")
             status.write_text('{"sources":[]}', encoding="utf-8")
 
-            exit_code = check_ip.main(["198.51.100.1", "--routes", str(routes), "--status", str(status)])
+            exit_code = run_main_quiet(["198.51.100.1", "--routes", str(routes), "--status", str(status)])
 
             self.assertEqual(exit_code, 1)
 

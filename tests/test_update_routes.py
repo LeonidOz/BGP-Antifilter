@@ -1,3 +1,5 @@
+import contextlib
+import io
 import ipaddress
 import os
 import socket
@@ -11,6 +13,11 @@ from bgp_antifilter import update_routes
 
 def net(value):
     return ipaddress.ip_network(value)
+
+
+def run_main_quiet(argv):
+    with contextlib.redirect_stdout(io.StringIO()), contextlib.redirect_stderr(io.StringIO()):
+        return update_routes.main(argv)
 
 
 class CacheTests(unittest.TestCase):
@@ -96,7 +103,7 @@ class MainTests(unittest.TestCase):
             socket.getaddrinfo = fake_getaddrinfo
 
             try:
-                exit_code = update_routes.main(argv)
+                exit_code = run_main_quiet(argv)
             finally:
                 os.environ.clear()
                 os.environ.update(old_env)
@@ -139,7 +146,7 @@ class MainTests(unittest.TestCase):
             )
 
             try:
-                exit_code = update_routes.main(["--output", str(output), "--status", str(status), "--metrics", str(metrics)])
+                exit_code = run_main_quiet(["--output", str(output), "--status", str(status), "--metrics", str(metrics)])
             finally:
                 os.environ.clear()
                 os.environ.update(old_env)
@@ -184,7 +191,7 @@ class MainTests(unittest.TestCase):
             )
 
             try:
-                exit_code = update_routes.main(["--output", str(output), "--status", str(status), "--metrics", str(metrics)])
+                exit_code = run_main_quiet(["--output", str(output), "--status", str(status), "--metrics", str(metrics)])
             finally:
                 os.environ.clear()
                 os.environ.update(old_env)
@@ -231,7 +238,7 @@ class MainTests(unittest.TestCase):
             socket.getaddrinfo = fake_getaddrinfo
 
             try:
-                exit_code = update_routes.main(["--output", str(output), "--status", str(status), "--metrics", str(metrics)])
+                exit_code = run_main_quiet(["--output", str(output), "--status", str(status), "--metrics", str(metrics)])
             finally:
                 os.environ.clear()
                 os.environ.update(old_env)
@@ -273,7 +280,7 @@ class MainTests(unittest.TestCase):
             )
 
             try:
-                exit_code = update_routes.main(["--output", str(output), "--status", str(status), "--metrics", str(metrics)])
+                exit_code = run_main_quiet(["--output", str(output), "--status", str(status), "--metrics", str(metrics)])
             finally:
                 os.environ.clear()
                 os.environ.update(old_env)
@@ -313,7 +320,7 @@ class MainTests(unittest.TestCase):
             )
 
             try:
-                exit_code = update_routes.main(["--dry-run", "--output", str(output), "--status", str(status), "--metrics", str(metrics)])
+                exit_code = run_main_quiet(["--dry-run", "--output", str(output), "--status", str(status), "--metrics", str(metrics)])
             finally:
                 os.environ.clear()
                 os.environ.update(old_env)

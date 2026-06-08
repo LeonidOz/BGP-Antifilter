@@ -1,3 +1,5 @@
+import contextlib
+import io
 import ipaddress
 import sys
 import tempfile
@@ -11,6 +13,11 @@ def net(value):
     return ipaddress.ip_network(value)
 
 
+def run_quiet(func, *args, **kwargs):
+    with contextlib.redirect_stdout(io.StringIO()), contextlib.redirect_stderr(io.StringIO()):
+        return func(*args, **kwargs)
+
+
 class ReadNetworksTests(unittest.TestCase):
     def test_extracts_ipv4_and_skips_invalid_entries(self):
         with tempfile.TemporaryDirectory() as tmp:
@@ -21,7 +28,7 @@ class ReadNetworksTests(unittest.TestCase):
                 encoding="utf-8",
             )
 
-            networks, invalid = generate_routes.read_networks(source, extract=True)
+            networks, invalid = run_quiet(generate_routes.read_networks, source, extract=True)
 
         self.assertEqual(networks, [net("192.0.2.10/32"), net("198.51.100.0/24")])
         self.assertEqual(invalid, 2)
@@ -128,7 +135,7 @@ class MainTests(unittest.TestCase):
             old_argv = sys.argv
             sys.argv = ["generate-routes.py"]
             try:
-                exit_code = generate_routes.main([str(base), str(exclude), str(include), str(output)])
+                exit_code = run_quiet(generate_routes.main, [str(base), str(exclude), str(include), str(output)])
             finally:
                 sys.argv = old_argv
 
