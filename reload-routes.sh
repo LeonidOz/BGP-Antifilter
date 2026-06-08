@@ -11,17 +11,29 @@ ROUTES="${ROUTES_FILE:-/etc/bird/generated/routes.conf}"
 CACHE_DIR="${CACHE_DIR:-/etc/bird/generated/cache}"
 STATUS_FILE="${STATUS_FILE:-/etc/bird/generated/status.json}"
 METRICS_FILE="${METRICS_FILE:-/etc/bird/generated/metrics.prom}"
+LOCK_DIR="${UPDATE_LOCK_DIR:-/etc/bird/generated/update.lock}"
 
 mkdir -p /etc/bird/generated "$CACHE_DIR"
 touch "$ROUTES"
 
 tmp_old="$(mktemp)"
 cp "$ROUTES" "$tmp_old"
+lock_acquired=0
 
 cleanup() {
+  if [ "$lock_acquired" = "1" ]; then
+    rmdir "$LOCK_DIR" 2>/dev/null || true
+  fi
   rm -f "$tmp_old"
 }
 trap cleanup EXIT
+
+if mkdir "$LOCK_DIR" 2>/dev/null; then
+  lock_acquired=1
+else
+  echo "Another route update is already running: $LOCK_DIR" >&2
+  exit 1
+fi
 
 export LISTS_FILE INCLUDE_ASNS_FILE INCLUDE_DOMAINS_FILE EXCLUDE_DOMAINS_FILE
 export INCLUDE_GOOGLE_RANGES CACHE_DIR CACHE_MAX_AGE STATUS_FILE METRICS_FILE

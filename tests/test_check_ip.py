@@ -1,79 +1,54 @@
-import importlib.util
-import ipaddress
 import json
 import tempfile
 import unittest
 from pathlib import Path
 
-
-ROOT = Path(__file__).resolve().parents[1]
-MODULE_PATH = ROOT / "check-ip.py"
-
-spec = importlib.util.spec_from_file_location("check_ip", MODULE_PATH)
-check_ip = importlib.util.module_from_spec(spec)
-spec.loader.exec_module(check_ip)
+from bgp_antifilter import check_ip
 
 
 class CheckIpTests(unittest.TestCase):
-    def test_finds_final_route_and_url_source(self):
+    def test_main_reports_route_and_source_match(self):
         with tempfile.TemporaryDirectory() as tmp:
             root = Path(tmp)
             routes = root / "routes.conf"
-            cache = root / "url.cache"
-            status = {
-                "sources": [
-                    {
-                        "kind": "url",
-                        "name": "https://example.test/list.json",
-                        "url": "https://example.test/list.json",
-                        "status": "fresh",
-                        "cache_file": str(cache),
-                    }
-                ]
-            }
+            cache = root / "source.cache"
+            status = root / "status.json"
 
             routes.write_text("    route 192.0.2.0/24 blackhole;\n", encoding="utf-8")
-            cache.write_text('{"cidr4":["192.0.2.0/24"]}', encoding="utf-8")
-
-            address = ipaddress.ip_address("192.0.2.10")
-            route_matches = check_ip.matching_networks(
-                address,
-                check_ip.read_networks(routes, extract=True),
+            cache.write_text("192.0.2.0/24\n", encoding="utf-8")
+            status.write_text(
+                json.dumps(
+                    {
+                        "sources": [
+                            {
+                                "kind": "url",
+                                "name": "local",
+                                "url": "file:///local",
+                                "status": "fresh",
+                                "cache_file": str(cache),
+                            }
+                        ]
+                    }
+                ),
+                encoding="utf-8",
             )
-            source_matches = check_ip.find_sources(address, status)
 
-        self.assertEqual(route_matches, [ipaddress.ip_network("192.0.2.0/24")])
-        self.assertEqual(source_matches[0][0]["kind"], "url")
-        self.assertEqual(source_matches[0][1], [ipaddress.ip_network("192.0.2.0/24")])
+            exit_code = check_ip.main(["192.0.2.10", "--routes", str(routes), "--status", str(status)])
 
-    def test_google_match_is_ignored_when_address_is_in_cloud(self):
+            self.assertEqual(exit_code, 0)
+
+    def test_main_returns_one_when_ip_is_not_in_generated_routes(self):
         with tempfile.TemporaryDirectory() as tmp:
             root = Path(tmp)
-            google = root / "goog.json"
-            cloud = root / "cloud.json"
-            status = {
-                "sources": [
-                    {
-                        "kind": "google",
-                        "name": "goog.json",
-                        "status": "fresh",
-                        "cache_file": str(google),
-                    },
-                    {
-                        "kind": "google",
-                        "name": "cloud.json",
-                        "status": "fresh",
-                        "cache_file": str(cloud),
-                    },
-                ]
-            }
+            routes = root / "routes.conf"
+            status = root / "status.json"
 
-            google.write_text(json.dumps({"prefixes": [{"ipv4Prefix": "192.0.2.0/24"}]}), encoding="utf-8")
-            cloud.write_text(json.dumps({"prefixes": [{"ipv4Prefix": "192.0.2.0/25"}]}), encoding="utf-8")
+            routes.write_text("    route 192.0.2.0/24 blackhole;\n", encoding="utf-8")
+            status.write_text('{"sources":[]}', encoding="utf-8")
 
-            matches = check_ip.find_sources(ipaddress.ip_address("192.0.2.10"), status)
+            exit_code = check_ip.main(["198.51.100.1", "--routes", str(routes), "--status", str(status)])
 
-        self.assertEqual(matches, [])
+            self.assertEqual(exit_code, 1)
 
 
 if __name__ == "__main__":

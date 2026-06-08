@@ -61,6 +61,9 @@ BGP_COMMUNITY=65432,500
 UPDATE_INTERVAL=1800
 CACHE_MAX_AGE=604800
 INCLUDE_GOOGLE_RANGES=1
+MIN_PREFIX_LENGTH=8
+ALLOW_BROAD_ROUTES=0
+UPDATE_LOCK_DIR=/etc/bird/generated/update.lock
 HEALTHCHECK_REQUIRE_BGP=1
 BGP_PROTOCOL=mikrotik
 ```
@@ -74,6 +77,9 @@ BGP_PROTOCOL=mikrotik
 - `UPDATE_INTERVAL` - route refresh interval in seconds.
 - `CACHE_MAX_AGE` - maximum source cache age in seconds; defaults to 7 days.
 - `INCLUDE_GOOGLE_RANGES` - `1` adds default Google service ranges from `goog.json` excluding Google Cloud from `cloud.json`; `0` disables this source.
+- `MIN_PREFIX_LENGTH` - shortest IPv4 prefix accepted from external sources; defaults to `8`.
+- `ALLOW_BROAD_ROUTES` - `1` disables the broad-route safety guard; defaults to `0`.
+- `UPDATE_LOCK_DIR` - lock directory used to prevent parallel route updates.
 - `HEALTHCHECK_REQUIRE_BGP` - `1` requires an established BGP session in Docker healthcheck; `0` checks only BIRD and routes.
 - `BGP_PROTOCOL` - BIRD BGP protocol name used by healthcheck; defaults to `mikrotik`.
 
@@ -148,6 +154,10 @@ After each update attempt, diagnostic files are written:
 - `generated/status.json` - update result, route counts, per-source status (`fresh`, `cache`, `skipped`, `failed`, `disabled`), and errors.
 - `generated/metrics.prom` - Prometheus text format metrics: route count, update success, last attempt time, and source status summary.
 
+Update logs are emitted as structured JSON with `ts`, `level`, `message`, and context fields for the current stage or source. Route refreshes are protected by the `generated/update.lock` directory, so manual and scheduled updates do not write `routes.conf`, `status.json`, or `metrics.prom` concurrently.
+
+By default, the generator refuses IPv4 routes broader than `/8`, such as `0.0.0.0/0`. Change the threshold with `MIN_PREFIX_LENGTH`; disable the guard only explicitly with `ALLOW_BROAD_ROUTES=1`.
+
 Docker healthcheck checks `birdc show status`, non-empty `generated/routes.conf`, non-zero route count in `status.json`, and, if `HEALTHCHECK_REQUIRE_BGP=1`, the BGP protocol state from `BGP_PROTOCOL`.
 
 Check BIRD status inside the container:
@@ -180,11 +190,43 @@ This command refreshes sources inside the running container. Existing routes sta
 
 During a manual refresh and in `docker compose logs -f bird`, progress is printed by stage: URL/ASN/Google ranges fetching, include/exclude domain resolving, parsing, final route table build, and status/metrics writing.
 
+Validate an update without writing `routes.conf`, `status.json`, or `metrics.prom`:
+
+```bash
+docker compose exec bird /update-routes.py --dry-run
+```
+
+Dry-run fetches and validates sources, builds the final table in memory, and prints a JSON summary. Source caches may be refreshed, but active routes and diagnostic files are not changed.
+
 Run local tests without Docker:
 
 ```bash
 python -m unittest discover -s tests
 ```
+
+If `make` is installed, short commands are available:
+
+```bash
+make test
+make up
+make logs
+make reload
+make dry-run
+make check-ip IP=1.2.3.4
+```
+
+## Operations Checklist
+
+- Run dry-run before changing `lists.txt`, `include-asns.txt`, `include-domains.txt`, or `exclude-domains.txt`.
+- After manual reload, check `generated/status.json`: `success` should be `true`, and `routes.final` should be greater than zero.
+- On MikroTik, accept only routes with the expected BGP community and reject everything else.
+- Keep exclude-domain caches fresh: if DNS is unavailable and no cache exists, the update intentionally fails.
+- Monitor `bgp_antifilter_update_success`, `bgp_antifilter_routes_total`, and source cache age in `metrics.prom`.
+- Do not set `ALLOW_BROAD_ROUTES=1` unless you understand which source produced the broad prefix.
+
+## Risk Model
+
+The project builds blackhole routes from external lists and DNS answers. Main risks are a bad or compromised source, DNS/API outages, overly broad prefixes, an empty final table, and parallel updates. Mitigations include bounded caches, strict exclude-source failures, empty-route refusal, rollback when BIRD rejects a config, update locking, and the broad-route guard.
 
 ## MikroTik Example
 

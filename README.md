@@ -60,6 +60,9 @@ BGP_COMMUNITY=65432,500
 UPDATE_INTERVAL=1800
 CACHE_MAX_AGE=604800
 INCLUDE_GOOGLE_RANGES=1
+MIN_PREFIX_LENGTH=8
+ALLOW_BROAD_ROUTES=0
+UPDATE_LOCK_DIR=/etc/bird/generated/update.lock
 HEALTHCHECK_REQUIRE_BGP=1
 BGP_PROTOCOL=mikrotik
 ```
@@ -75,6 +78,9 @@ BGP_PROTOCOL=mikrotik
 - `UPDATE_INTERVAL` - интервал обновления списков в секундах.
 - `CACHE_MAX_AGE` - максимальный возраст кеша источника в секундах, по умолчанию 7 дней.
 - `INCLUDE_GOOGLE_RANGES` - `1` добавляет default Google service ranges из `goog.json` за вычетом Google Cloud из `cloud.json`; `0` отключает этот источник.
+- `MIN_PREFIX_LENGTH` - минимальная длина IPv4-префикса, разрешенная из внешних источников, по умолчанию `8`.
+- `ALLOW_BROAD_ROUTES` - `1` отключает защиту от слишком широких IPv4-маршрутов; по умолчанию `0`.
+- `UPDATE_LOCK_DIR` - lock-директория, предотвращающая параллельные обновления.
 - `HEALTHCHECK_REQUIRE_BGP` - `1` требует установленную BGP-сессию в Docker healthcheck; `0` проверяет только BIRD и маршруты.
 - `BGP_PROTOCOL` - имя BGP-протокола в BIRD для healthcheck, по умолчанию `mikrotik`.
 
@@ -149,6 +155,12 @@ ASN, чьи анонсированные IPv4-префиксы нужно при
 - `generated/status.json` - итог обновления, количество маршрутов, состояние каждого источника (`fresh`, `cache`, `skipped`, `failed`, `disabled`) и ошибки.
 - `generated/metrics.prom` - метрики в Prometheus text format: количество маршрутов, успех обновления, время последней попытки и сводка по состояниям источников.
 
+Логи обновления пишутся в структурированном JSON-формате. У каждой записи есть `ts`, `level`, `message` и дополнительные поля этапа, источника или результата. Это упрощает фильтрацию в `docker compose logs`, Loki, Vector и других сборщиках логов.
+
+Обновления маршрутов защищены lock-директорией `generated/update.lock`. Если ручной `/reload-routes.sh` запущен во время периодического обновления, второй запуск завершится с ошибкой и не будет параллельно писать `routes.conf`, `status.json` или `metrics.prom`.
+
+По умолчанию генератор отказывается применять слишком широкие IPv4-маршруты короче `/8`, например `0.0.0.0/0`. Это защита от ошибочного внешнего источника. Порог можно изменить через `MIN_PREFIX_LENGTH`; полностью отключить проверку можно только явно: `ALLOW_BROAD_ROUTES=1`.
+
 Docker healthcheck проверяет `birdc show status`, непустой `generated/routes.conf`, ненулевое количество маршрутов в `status.json` и, если `HEALTHCHECK_REQUIRE_BGP=1`, состояние BGP-протокола `BGP_PROTOCOL`.
 
 Проверить состояние BIRD внутри контейнера:
@@ -181,11 +193,43 @@ docker compose exec bird /reload-routes.sh
 
 Во время ручного обновления и в `docker compose logs -f bird` выводится прогресс по этапам: загрузка URL/ASN/Google ranges, резолв include/exclude-доменов, парсинг, сборка итоговой таблицы, запись status/metrics.
 
+Проверить обновление без записи `routes.conf`, `status.json` и `metrics.prom`:
+
+```bash
+docker compose exec bird /update-routes.py --dry-run
+```
+
+Dry-run скачивает и валидирует источники, собирает итоговую таблицу в памяти и печатает JSON-сводку. Кеши источников при этом могут обновиться, но активные маршруты и диагностические файлы не меняются.
+
 Локально проверить генератор маршрутов можно без Docker:
 
 ```bash
 python -m unittest discover -s tests
 ```
+
+Если установлен `make`, доступны короткие команды:
+
+```bash
+make test
+make up
+make logs
+make reload
+make dry-run
+make check-ip IP=1.2.3.4
+```
+
+## Эксплуатационный чеклист
+
+- Перед изменением `lists.txt`, `include-asns.txt`, `include-domains.txt` или `exclude-domains.txt` запустите dry-run.
+- После ручного reload проверьте `generated/status.json`: `success` должен быть `true`, а `routes.final` больше нуля.
+- На MikroTik принимайте только маршруты с ожидаемой BGP community и отклоняйте остальные.
+- Для exclude-доменов держите свежий кеш: если DNS временно недоступен и кеша нет, обновление намеренно не применяется.
+- Следите за `bgp_antifilter_update_success`, `bgp_antifilter_routes_total` и возрастом кеша источников в `metrics.prom`.
+- Не включайте `ALLOW_BROAD_ROUTES=1`, если точно не понимаете, какой источник принес широкий префикс.
+
+## Модель рисков
+
+Проект строит blackhole-маршруты из внешних списков и DNS-ответов. Основные риски: ошибочный или скомпрометированный источник, временная недоступность DNS/API, попадание слишком широкого префикса, пустая итоговая таблица и параллельное обновление. Для снижения риска используются кеши с ограниченным возрастом, обязательный отказ при проблемах exclude-источников, запрет пустого `routes.conf`, rollback при отказе BIRD, lock обновлений и guard против широких маршрутов.
 
 ## Пример настройки MikroTik
 

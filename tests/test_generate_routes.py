@@ -1,17 +1,10 @@
-import importlib.util
 import ipaddress
 import sys
 import tempfile
 import unittest
 from pathlib import Path
 
-
-ROOT = Path(__file__).resolve().parents[1]
-MODULE_PATH = ROOT / "generate-routes.py"
-
-spec = importlib.util.spec_from_file_location("generate_routes", MODULE_PATH)
-generate_routes = importlib.util.module_from_spec(spec)
-spec.loader.exec_module(generate_routes)
+from bgp_antifilter import generate_routes
 
 
 def net(value):
@@ -133,15 +126,9 @@ class MainTests(unittest.TestCase):
             include.write_text("198.51.100.10\n", encoding="utf-8")
 
             old_argv = sys.argv
-            sys.argv = [
-                "generate-routes.py",
-                str(base),
-                str(exclude),
-                str(include),
-                str(output),
-            ]
+            sys.argv = ["generate-routes.py"]
             try:
-                exit_code = generate_routes.main()
+                exit_code = generate_routes.main([str(base), str(exclude), str(include), str(output)])
             finally:
                 sys.argv = old_argv
 
