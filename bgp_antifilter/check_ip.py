@@ -135,11 +135,30 @@ def render_result(address, route_matches, source_results):
     return "\n".join(lines)
 
 
+def build_result(address, route_matches, source_results):
+    return {
+        "ip": str(address),
+        "matched": bool(route_matches),
+        "routes": [str(network) for network in route_matches],
+        "sources": [
+            {
+                "kind": source.get("kind", "source"),
+                "name": source.get("name", ""),
+                "url": source.get("url"),
+                "status": source.get("status", "unknown"),
+                "matches": [str(network) for network in matches],
+            }
+            for source, matches in source_results
+        ],
+    }
+
+
 def main(argv=None):
     parser = argparse.ArgumentParser(description="Check whether an IPv4 address is present in generated BIRD routes.")
     parser.add_argument("ip", help="IPv4 address to check")
     parser.add_argument("--routes", default="/etc/bird/generated/routes.conf")
     parser.add_argument("--status", default="/etc/bird/generated/status.json")
+    parser.add_argument("--json", action="store_true", help="Print machine-readable JSON output.")
     args = parser.parse_args(argv)
 
     try:
@@ -157,6 +176,9 @@ def main(argv=None):
     status = load_status(Path(args.status))
     source_results = find_sources(address, status)
 
-    print(render_result(address, route_matches, source_results))
-    return 0 if route_matches else 1
+    if args.json:
+        print(json.dumps(build_result(address, route_matches, source_results), indent=2, ensure_ascii=False))
+    else:
+        print(render_result(address, route_matches, source_results))
 
+    return 0 if route_matches else 1

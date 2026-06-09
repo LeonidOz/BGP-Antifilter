@@ -270,11 +270,12 @@ def write_metrics(path, status):
     write_text(path, "\n".join(lines) + "\n")
 
 
-def build_status(success, started_at, sources, routes, errors, cache_max_age, dry_run=False):
+def build_status(success, started_at, sources, routes, errors, cache_max_age, dry_run=False, check_sources=False):
     now = int(time.time())
     return {
         "success": success,
         "dry_run": dry_run,
+        "check_sources": check_sources,
         "updated_at_unix": now,
         "updated_at": time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime(now)),
         "duration_seconds": round(time.time() - started_at, 3),
@@ -459,6 +460,7 @@ def main(argv=None):
     parser.add_argument("--status", default=os.environ.get("STATUS_FILE", "/etc/bird/generated/status.json"))
     parser.add_argument("--metrics", default=os.environ.get("METRICS_FILE", "/etc/bird/generated/metrics.prom"))
     parser.add_argument("--dry-run", action="store_true", help="Validate and summarize routes without writing routes, status or metrics files.")
+    parser.add_argument("--check-sources", action="store_true", help="Fetch/resolve sources and print their status without building or writing route files.")
     parser.add_argument("--allow-broad-routes", action="store_true", default=os.environ.get("ALLOW_BROAD_ROUTES", "0") == "1")
     parser.add_argument("--min-prefix-length", type=int, default=int(os.environ.get("MIN_PREFIX_LENGTH", DEFAULT_MIN_PREFIX_LENGTH)))
     args = parser.parse_args(argv)
@@ -477,6 +479,22 @@ def main(argv=None):
     source_failed, sources, errors, base_text, include_text, exclude_text = collect_sources(
         cache_dir, cache_max_age, include_google
     )
+
+    if args.check_sources:
+        success = not source_failed
+        status = build_status(
+            success,
+            started_at,
+            sources,
+            routes,
+            errors,
+            cache_max_age,
+            dry_run=args.dry_run,
+            check_sources=True,
+        )
+        progress("source check complete", success=success)
+        print(json.dumps(status, indent=2, ensure_ascii=False))
+        return 0 if success else 1
 
     if not source_failed:
         try:

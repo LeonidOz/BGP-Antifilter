@@ -1,6 +1,7 @@
-.PHONY: test shellcheck compose-config build up down logs ps reload dry-run check-ip
+.PHONY: test shellcheck compose-config build up down logs ps reload dry-run check-sources check-ip version
 
 IP ?= 1.2.3.4
+VERSION ?= $(shell cat VERSION)
 
 test:
 	python -m unittest discover -s tests
@@ -13,6 +14,9 @@ compose-config:
 
 build:
 	docker compose build
+
+version:
+	@echo $(VERSION)
 
 up:
 	docker compose up -d --build
@@ -31,6 +35,9 @@ reload:
 
 dry-run:
 	docker compose exec bird /update-routes.py --dry-run
+
+check-sources:
+	docker compose exec bird /update-routes.py --check-sources
 
 check-ip:
 	docker compose exec bird /check-ip.py $(IP)

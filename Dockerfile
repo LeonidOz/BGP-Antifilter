@@ -5,6 +5,7 @@ RUN apt-get update \
  && rm -rf /var/lib/apt/lists/*
 
 COPY entrypoint.sh /entrypoint.sh
+COPY VERSION /VERSION
 COPY bgp_antifilter /bgp_antifilter
 COPY generate-routes.py /generate-routes.py
 COPY update-routes.py /update-routes.py

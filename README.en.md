@@ -52,6 +52,7 @@ cp .env.example .env
 Main settings:
 
 ```dotenv
+BGP_ANTIFILTER_VERSION=0.1.0
 MY_AS=64500
 MT_AS=65455
 MT_IP=192.168.55.1
@@ -68,6 +69,7 @@ HEALTHCHECK_REQUIRE_BGP=1
 BGP_PROTOCOL=mikrotik
 ```
 
+- `BGP_ANTIFILTER_VERSION` - local Docker image tag; defaults to `0.1.0`.
 - `MY_AS` - AS number used by the BIRD container.
 - `MT_AS` - MikroTik AS number.
 - `MT_IP` - MikroTik IP address.
@@ -180,6 +182,12 @@ docker compose exec bird /check-ip.py 1.2.3.4
 
 The command checks whether the IP is covered by `generated/routes.conf`, then searches source caches referenced by `generated/status.json`. It exits with code `0` when the IP is present in the final route file and `1` when it is not.
 
+For scripts, use machine-readable output:
+
+```bash
+docker compose exec bird /check-ip.py 1.2.3.4 --json
+```
+
 Force a route refresh without restarting BIRD:
 
 ```bash
@@ -198,6 +206,12 @@ docker compose exec bird /update-routes.py --dry-run
 
 Dry-run fetches and validates sources, builds the final table in memory, and prints a JSON summary. Source caches may be refreshed, but active routes and diagnostic files are not changed.
 
+Check only source availability without parsing routes or writing diagnostic files:
+
+```bash
+docker compose exec bird /update-routes.py --check-sources
+```
+
 Run local tests without Docker:
 
 ```bash
@@ -212,6 +226,7 @@ make up
 make logs
 make reload
 make dry-run
+make check-sources
 make check-ip IP=1.2.3.4
 ```
 

@@ -9,8 +9,10 @@ from bgp_antifilter import check_ip
 
 
 def run_main_quiet(argv):
-    with contextlib.redirect_stdout(io.StringIO()), contextlib.redirect_stderr(io.StringIO()):
-        return check_ip.main(argv)
+    stdout = io.StringIO()
+    with contextlib.redirect_stdout(stdout), contextlib.redirect_stderr(io.StringIO()):
+        exit_code = check_ip.main(argv)
+    return exit_code, stdout.getvalue()
 
 
 class CheckIpTests(unittest.TestCase):
@@ -40,7 +42,7 @@ class CheckIpTests(unittest.TestCase):
                 encoding="utf-8",
             )
 
-            exit_code = run_main_quiet(["192.0.2.10", "--routes", str(routes), "--status", str(status)])
+            exit_code, _ = run_main_quiet(["192.0.2.10", "--routes", str(routes), "--status", str(status)])
 
             self.assertEqual(exit_code, 0)
 
@@ -53,9 +55,32 @@ class CheckIpTests(unittest.TestCase):
             routes.write_text("    route 192.0.2.0/24 blackhole;\n", encoding="utf-8")
             status.write_text('{"sources":[]}', encoding="utf-8")
 
-            exit_code = run_main_quiet(["198.51.100.1", "--routes", str(routes), "--status", str(status)])
+            exit_code, _ = run_main_quiet(["198.51.100.1", "--routes", str(routes), "--status", str(status)])
 
             self.assertEqual(exit_code, 1)
+
+    def test_main_can_print_json_result(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            routes = root / "routes.conf"
+            status = root / "status.json"
+
+            routes.write_text("    route 192.0.2.0/24 blackhole;\n", encoding="utf-8")
+            status.write_text('{"sources":[]}', encoding="utf-8")
+
+            exit_code, output = run_main_quiet([
+                "192.0.2.10",
+                "--routes",
+                str(routes),
+                "--status",
+                str(status),
+                "--json",
+            ])
+
+            data = json.loads(output)
+            self.assertEqual(exit_code, 0)
+            self.assertTrue(data["matched"])
+            self.assertEqual(data["routes"], ["192.0.2.0/24"])
 
 
 if __name__ == "__main__":

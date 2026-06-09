@@ -1,5 +1,6 @@
 services:
   bird:
+    image: "bgp-antifilter-bird:${BGP_ANTIFILTER_VERSION:-0.1.0}"
     build: .
     network_mode: host
     restart: unless-stopped

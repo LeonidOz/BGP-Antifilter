@@ -16,8 +16,10 @@ def net(value):
 
 
 def run_main_quiet(argv):
-    with contextlib.redirect_stdout(io.StringIO()), contextlib.redirect_stderr(io.StringIO()):
-        return update_routes.main(argv)
+    stdout = io.StringIO()
+    with contextlib.redirect_stdout(stdout), contextlib.redirect_stderr(io.StringIO()):
+        exit_code = update_routes.main(argv)
+    return exit_code, stdout.getvalue()
 
 
 class CacheTests(unittest.TestCase):
@@ -103,7 +105,7 @@ class MainTests(unittest.TestCase):
             socket.getaddrinfo = fake_getaddrinfo
 
             try:
-                exit_code = run_main_quiet(argv)
+                exit_code, _ = run_main_quiet(argv)
             finally:
                 os.environ.clear()
                 os.environ.update(old_env)
@@ -146,7 +148,7 @@ class MainTests(unittest.TestCase):
             )
 
             try:
-                exit_code = run_main_quiet(["--output", str(output), "--status", str(status), "--metrics", str(metrics)])
+                exit_code, _ = run_main_quiet(["--output", str(output), "--status", str(status), "--metrics", str(metrics)])
             finally:
                 os.environ.clear()
                 os.environ.update(old_env)
@@ -191,7 +193,7 @@ class MainTests(unittest.TestCase):
             )
 
             try:
-                exit_code = run_main_quiet(["--output", str(output), "--status", str(status), "--metrics", str(metrics)])
+                exit_code, _ = run_main_quiet(["--output", str(output), "--status", str(status), "--metrics", str(metrics)])
             finally:
                 os.environ.clear()
                 os.environ.update(old_env)
@@ -238,7 +240,7 @@ class MainTests(unittest.TestCase):
             socket.getaddrinfo = fake_getaddrinfo
 
             try:
-                exit_code = run_main_quiet(["--output", str(output), "--status", str(status), "--metrics", str(metrics)])
+                exit_code, _ = run_main_quiet(["--output", str(output), "--status", str(status), "--metrics", str(metrics)])
             finally:
                 os.environ.clear()
                 os.environ.update(old_env)
@@ -280,7 +282,7 @@ class MainTests(unittest.TestCase):
             )
 
             try:
-                exit_code = run_main_quiet(["--output", str(output), "--status", str(status), "--metrics", str(metrics)])
+                exit_code, _ = run_main_quiet(["--output", str(output), "--status", str(status), "--metrics", str(metrics)])
             finally:
                 os.environ.clear()
                 os.environ.update(old_env)
@@ -320,7 +322,7 @@ class MainTests(unittest.TestCase):
             )
 
             try:
-                exit_code = run_main_quiet(["--dry-run", "--output", str(output), "--status", str(status), "--metrics", str(metrics)])
+                exit_code, _ = run_main_quiet(["--dry-run", "--output", str(output), "--status", str(status), "--metrics", str(metrics)])
             finally:
                 os.environ.clear()
                 os.environ.update(old_env)
@@ -329,6 +331,94 @@ class MainTests(unittest.TestCase):
             self.assertFalse(output.exists())
             self.assertFalse(status.exists())
             self.assertFalse(metrics.exists())
+
+    def test_check_sources_does_not_write_route_status_or_metrics_files(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            source = root / "source.txt"
+            lists = root / "lists.txt"
+            include_asns = root / "include-asns.txt"
+            include_domains = root / "include-domains.txt"
+            exclude_domains = root / "exclude-domains.txt"
+            output = root / "routes.conf"
+            status = root / "status.json"
+            metrics = root / "metrics.prom"
+
+            source.write_text("192.0.2.0/24\n", encoding="utf-8")
+            lists.write_text(f"{source.as_uri()}\n", encoding="utf-8")
+            include_asns.write_text("", encoding="utf-8")
+            include_domains.write_text("", encoding="utf-8")
+            exclude_domains.write_text("", encoding="utf-8")
+
+            old_env = os.environ.copy()
+            os.environ.update(
+                {
+                    "LISTS_FILE": str(lists),
+                    "INCLUDE_ASNS_FILE": str(include_asns),
+                    "INCLUDE_DOMAINS_FILE": str(include_domains),
+                    "EXCLUDE_DOMAINS_FILE": str(exclude_domains),
+                    "INCLUDE_GOOGLE_RANGES": "0",
+                    "CACHE_DIR": str(root / "cache"),
+                    "CACHE_MAX_AGE": "604800",
+                }
+            )
+
+            try:
+                exit_code, output_text = run_main_quiet([
+                    "--check-sources",
+                    "--output",
+                    str(output),
+                    "--status",
+                    str(status),
+                    "--metrics",
+                    str(metrics),
+                ])
+            finally:
+                os.environ.clear()
+                os.environ.update(old_env)
+
+            self.assertEqual(exit_code, 0)
+            self.assertIn('"check_sources": true', output_text)
+            self.assertFalse(output.exists())
+            self.assertFalse(status.exists())
+            self.assertFalse(metrics.exists())
+
+    def test_check_sources_fails_when_required_source_has_no_cache(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            lists = root / "lists.txt"
+            include_asns = root / "include-asns.txt"
+            include_domains = root / "include-domains.txt"
+            exclude_domains = root / "exclude-domains.txt"
+
+            lists.write_text("file:///missing/source.txt\n", encoding="utf-8")
+            include_asns.write_text("", encoding="utf-8")
+            include_domains.write_text("", encoding="utf-8")
+            exclude_domains.write_text("", encoding="utf-8")
+
+            old_env = os.environ.copy()
+            os.environ.update(
+                {
+                    "LISTS_FILE": str(lists),
+                    "INCLUDE_ASNS_FILE": str(include_asns),
+                    "INCLUDE_DOMAINS_FILE": str(include_domains),
+                    "EXCLUDE_DOMAINS_FILE": str(exclude_domains),
+                    "INCLUDE_GOOGLE_RANGES": "0",
+                    "CACHE_DIR": str(root / "cache"),
+                    "CACHE_MAX_AGE": "604800",
+                    "FETCH_ATTEMPTS": "1",
+                    "FETCH_RETRY_DELAY": "0",
+                }
+            )
+
+            try:
+                exit_code, output_text = run_main_quiet(["--check-sources"])
+            finally:
+                os.environ.clear()
+                os.environ.update(old_env)
+
+            self.assertEqual(exit_code, 1)
+            self.assertIn('"success": false', output_text)
 
 
 if __name__ == "__main__":

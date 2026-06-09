@@ -10,3 +10,6 @@
 - Added a safety guard that rejects overly broad IPv4 prefixes by default.
 - Expanded unit coverage for cache fallback, required source failures, exclude-domain failures, dry-run behavior, broad-route validation, and `check-ip`.
 - Added operational documentation, risk notes, and Makefile helper commands.
+- Added project versioning through `VERSION`, `bgp_antifilter.__version__`, and the Docker image tag.
+- Added JSON output for `/check-ip.py --json`.
+- Added `/update-routes.py --check-sources` to validate source availability without building routes.

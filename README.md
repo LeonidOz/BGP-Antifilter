@@ -51,6 +51,7 @@ cp .env.example .env
 Основные параметры:
 
 ```dotenv
+BGP_ANTIFILTER_VERSION=0.1.0
 MY_AS=64500
 MT_AS=65455
 MT_IP=192.168.55.1
@@ -70,6 +71,7 @@ BGP_PROTOCOL=mikrotik
 Где:
 
 - `MY_AS` - AS контейнера с BIRD.
+- `BGP_ANTIFILTER_VERSION` - тег локального Docker-образа, по умолчанию `0.1.0`.
 - `MT_AS` - AS MikroTik.
 - `MT_IP` - IP-адрес MikroTik.
 - `BIRD_IP` - IP-адрес хоста или интерфейса, с которого BIRD устанавливает BGP-сессию.
@@ -183,6 +185,12 @@ docker compose exec bird /check-ip.py 1.2.3.4
 
 Команда проверяет попадание IP в `generated/routes.conf`, затем ищет совпадения в кешах источников из `generated/status.json`. Если IP найден в финальной базе, команда завершится с кодом `0`; если нет - с кодом `1`.
 
+Для скриптов можно получить машинно-читаемый вывод:
+
+```bash
+docker compose exec bird /check-ip.py 1.2.3.4 --json
+```
+
 Принудительно обновить маршруты без перезапуска BIRD:
 
 ```bash
@@ -201,6 +209,12 @@ docker compose exec bird /update-routes.py --dry-run
 
 Dry-run скачивает и валидирует источники, собирает итоговую таблицу в памяти и печатает JSON-сводку. Кеши источников при этом могут обновиться, но активные маршруты и диагностические файлы не меняются.
 
+Проверить только доступность источников без парсинга маршрутов и записи диагностических файлов:
+
+```bash
+docker compose exec bird /update-routes.py --check-sources
+```
+
 Локально проверить генератор маршрутов можно без Docker:
 
 ```bash
@@ -215,6 +229,7 @@ make up
 make logs
 make reload
 make dry-run
+make check-sources
 make check-ip IP=1.2.3.4
 ```
 
