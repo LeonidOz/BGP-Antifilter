@@ -239,9 +239,6 @@ make check-ip IP=1.2.3.4
 - Monitor `bgp_antifilter_update_success`, `bgp_antifilter_routes_total`, and source cache age in `metrics.prom`.
 - Do not set `ALLOW_BROAD_ROUTES=1` unless you understand which source produced the broad prefix.
 
-## Risk Model
-
-The project builds blackhole routes from external lists and DNS answers. Main risks are a bad or compromised source, DNS/API outages, overly broad prefixes, an empty final table, and parallel updates. Mitigations include bounded caches, strict exclude-source failures, empty-route refusal, rollback when BIRD rejects a config, update locking, and the broad-route guard.
 
 ## MikroTik Example
 
