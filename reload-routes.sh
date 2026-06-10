@@ -16,6 +16,7 @@ SETTINGS_ENV_FILE="${SETTINGS_ENV_FILE:-/etc/bird/generated/settings.env}"
 
 if [ -f "$SETTINGS_ENV_FILE" ]; then
   set -a
+  # shellcheck source=/dev/null
   . "$SETTINGS_ENV_FILE"
   set +a
 fi

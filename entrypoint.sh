@@ -30,6 +30,7 @@ ADMIN_PASSWORD="${ADMIN_PASSWORD:-}"
 load_settings_env() {
   if [ -f "$SETTINGS_ENV_FILE" ]; then
     set -a
+    # shellcheck source=/dev/null
     . "$SETTINGS_ENV_FILE"
     set +a
   fi
