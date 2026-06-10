@@ -1,3 +1,4 @@
+#openai
 openai.com
 www.openai.com
 api.openai.com
@@ -12,7 +13,6 @@ files.oaiusercontent.com
 ab.chatgpt.com
 ios.chat.openai.com
 android.chat.openai.com
-desktop.chat.openai.com
 
 # YouTube
 youtube.com
@@ -21,8 +21,8 @@ m.youtube.com
 youtu.be
 youtube-nocookie.com
 googlevideo.com
-ytimg.com
 i.ytimg.com
 s.ytimg.com
 youtubei.googleapis.com
 youtube.googleapis.com
+tronscan.org

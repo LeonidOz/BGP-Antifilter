@@ -30,7 +30,7 @@ def read_networks(path, *, extract=False):
     return networks, invalid
 
 
-def build_routes(base, exclude, extra):
+def build_routes_with_stats(base, exclude, extra):
     combined = base + extra
     kept = []
     exclude_rules_applied = 0
@@ -61,7 +61,18 @@ def build_routes(base, exclude, extra):
 
         kept.extend(remaining)
 
-    return collapse_routes(kept), exclude_rules_applied
+    collapsed = collapse_routes(kept)
+    stats = {
+        "candidate": len(combined),
+        "after_exclusions": len(kept),
+        "collapsed_removed": len(kept) - len(collapsed),
+    }
+    return collapsed, exclude_rules_applied, stats
+
+
+def build_routes(base, exclude, extra):
+    networks, exclude_rules_applied, _ = build_routes_with_stats(base, exclude, extra)
+    return networks, exclude_rules_applied
 
 
 def collapse_routes(networks):
@@ -100,4 +111,3 @@ def main(argv=None):
     print(f"Final routes: {len(unique)}")
 
     return 0
-

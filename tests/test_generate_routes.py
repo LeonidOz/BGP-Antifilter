@@ -108,6 +108,19 @@ class BuildRoutesTests(unittest.TestCase):
         self.assertEqual(routes, [net("192.0.2.0/24")])
         self.assertEqual(applied, 0)
 
+    def test_build_routes_with_stats_explains_final_count(self):
+        routes, applied, stats = generate_routes.build_routes_with_stats(
+            [net("192.0.2.0/25"), net("192.0.2.128/25"), net("198.51.100.0/24")],
+            [net("198.51.100.10/32")],
+            [net("192.0.2.1/32")],
+        )
+
+        self.assertEqual(routes, [net("192.0.2.0/24"), net("198.51.100.0/29"), net("198.51.100.8/31"), net("198.51.100.11/32"), net("198.51.100.12/30"), net("198.51.100.16/28"), net("198.51.100.32/27"), net("198.51.100.64/26"), net("198.51.100.128/25")])
+        self.assertEqual(applied, 1)
+        self.assertEqual(stats["candidate"], 4)
+        self.assertEqual(stats["after_exclusions"], 11)
+        self.assertEqual(stats["collapsed_removed"], 2)
+
     def test_does_not_collapse_across_excluded_addresses(self):
         routes, applied = generate_routes.build_routes(
             [net("192.0.2.0/30")],

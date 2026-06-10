@@ -1,9 +1,11 @@
 # Changelog
 
-## Unreleased
+## 0.2.0 - 2026-06-11
 
 - Added a GitHub Actions CI workflow for unit tests, Docker Compose validation, Docker image build, and ShellCheck.
 - Moved Python implementation into the `bgp_antifilter` package while keeping existing CLI entrypoints compatible.
+- Added a web admin UI with login, dashboard, list editor, diagnostics tools, logs, settings, and route download.
+- Added README project preview screenshots for the admin login and dashboard.
 - Added route update locking to prevent parallel scheduled and manual refreshes.
 - Added `--dry-run` validation mode for route updates.
 - Added structured JSON progress logs and additional Prometheus metrics.

@@ -11,6 +11,13 @@ BGP Antifilter - контейнеризированная конфигураци
 
 Проект скачивает списки маршрутов из открытых источников, дополняет их IP-адресами вручную заданных доменов, исключает маршруты для доменов из списка исключений и генерирует `blackhole`-маршруты для BIRD.
 
+![Экран входа BGP Antifilter](docs/assets/admin-login.png)
+
+<p align="center">
+  <img src="docs/assets/admin-dashboard.png" alt="Панель BGP Antifilter" width="48%">
+  <img src="docs/assets/admin-login.png" alt="Вход в BGP Antifilter" width="48%">
+</p>
+
 ## Что входит в проект
 
 - `Dockerfile` - образ на базе Debian с BIRD 2, curl и Python.
@@ -51,7 +58,7 @@ cp .env.example .env
 Основные параметры:
 
 ```dotenv
-BGP_ANTIFILTER_VERSION=0.1.0
+BGP_ANTIFILTER_VERSION=0.2.0
 MY_AS=64500
 MT_AS=65455
 MT_IP=192.168.55.1
@@ -66,12 +73,15 @@ ALLOW_BROAD_ROUTES=0
 UPDATE_LOCK_DIR=/etc/bird/generated/update.lock
 HEALTHCHECK_REQUIRE_BGP=1
 BGP_PROTOCOL=mikrotik
+ADMIN_ENABLED=0
+ADMIN_PORT=8080
+ADMIN_PASSWORD=
 ```
 
 Где:
 
 - `MY_AS` - AS контейнера с BIRD.
-- `BGP_ANTIFILTER_VERSION` - тег локального Docker-образа, по умолчанию `0.1.0`.
+- `BGP_ANTIFILTER_VERSION` - тег локального Docker-образа, по умолчанию `0.2.0`.
 - `MT_AS` - AS MikroTik.
 - `MT_IP` - IP-адрес MikroTik.
 - `BIRD_IP` - IP-адрес хоста или интерфейса, с которого BIRD устанавливает BGP-сессию.
@@ -85,8 +95,42 @@ BGP_PROTOCOL=mikrotik
 - `UPDATE_LOCK_DIR` - lock-директория, предотвращающая параллельные обновления.
 - `HEALTHCHECK_REQUIRE_BGP` - `1` требует установленную BGP-сессию в Docker healthcheck; `0` проверяет только BIRD и маршруты.
 - `BGP_PROTOCOL` - имя BGP-протокола в BIRD для healthcheck, по умолчанию `mikrotik`.
+- `ADMIN_ENABLED` - `1` включает веб-админку, по умолчанию `0`.
+- `ADMIN_PORT` - порт веб-админки, по умолчанию `8080`.
+- `ADMIN_PASSWORD` - пароль входа в веб-админку; обязателен при `ADMIN_ENABLED=1`.
 
 Если `.env` не создан, используются значения по умолчанию из `docker-compose.yml`.
+
+## Веб-админка
+
+Админка выключена по умолчанию. Для включения задайте пароль и порт:
+
+```dotenv
+ADMIN_ENABLED=1
+ADMIN_PORT=8080
+ADMIN_PASSWORD=change-me
+```
+
+После перезапуска контейнера интерфейс будет доступен на указанном порту хоста. В админке есть RU/EN-переключатель, dashboard с таймером до следующего автообновления, статусом BIRD/BGP, количеством маршрутов и источниками, запуск `dry-run`, `check-sources`, `reload`, проверка IP или домена, просмотр метрик, маршрутов и логов контейнера, скачивание `routes.conf`, редактор четырех списков и страница настроек.
+
+На Docker Desktop для Windows/macOS используйте отдельный admin-sidecar, потому что `network_mode: host` у BIRD не публикует порт в колонке Ports:
+
+```dotenv
+ADMIN_ENABLED=0
+COMPOSE_PROFILES=admin
+ADMIN_PORT=8080
+ADMIN_PASSWORD=change-me
+```
+
+Затем:
+
+```bash
+docker compose up -d --build
+```
+
+В этом режиме сервис `admin` публикует порт через обычный `ports:`, а с BIRD общается через общий `/run/bird` socket и общие файлы `generated/`.
+
+Файлы `lists.txt`, `include-asns.txt`, `include-domains.txt` и `exclude-domains.txt` монтируются в контейнер с правом записи, чтобы админка могла их редактировать. Перед сохранением создается backup в `generated/list-backups`.
 
 При старте контейнер проверяет значения окружения до запуска BIRD:
 

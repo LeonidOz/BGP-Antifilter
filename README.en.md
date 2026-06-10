@@ -11,6 +11,13 @@ BGP Antifilter is a containerized BIRD 2 configuration for announcing blocked IP
 
 The project downloads route lists from public sources, enriches them with IPv4 addresses resolved from manually configured domains, removes routes for excluded domains, and generates BIRD `blackhole` static routes.
 
+![BGP Antifilter login screen](docs/assets/admin-login.png)
+
+<p align="center">
+  <img src="docs/assets/admin-dashboard.png" alt="BGP Antifilter dashboard" width="48%">
+  <img src="docs/assets/admin-login.png" alt="BGP Antifilter login" width="48%">
+</p>
+
 ## Project Contents
 
 - `Dockerfile` - Debian-based image with BIRD 2, curl, tini, and Python.
@@ -52,7 +59,7 @@ cp .env.example .env
 Main settings:
 
 ```dotenv
-BGP_ANTIFILTER_VERSION=0.1.0
+BGP_ANTIFILTER_VERSION=0.2.0
 MY_AS=64500
 MT_AS=65455
 MT_IP=192.168.55.1
@@ -67,9 +74,12 @@ ALLOW_BROAD_ROUTES=0
 UPDATE_LOCK_DIR=/etc/bird/generated/update.lock
 HEALTHCHECK_REQUIRE_BGP=1
 BGP_PROTOCOL=mikrotik
+ADMIN_ENABLED=0
+ADMIN_PORT=8080
+ADMIN_PASSWORD=
 ```
 
-- `BGP_ANTIFILTER_VERSION` - local Docker image tag; defaults to `0.1.0`.
+- `BGP_ANTIFILTER_VERSION` - local Docker image tag; defaults to `0.2.0`.
 - `MY_AS` - AS number used by the BIRD container.
 - `MT_AS` - MikroTik AS number.
 - `MT_IP` - MikroTik IP address.
@@ -84,8 +94,42 @@ BGP_PROTOCOL=mikrotik
 - `UPDATE_LOCK_DIR` - lock directory used to prevent parallel route updates.
 - `HEALTHCHECK_REQUIRE_BGP` - `1` requires an established BGP session in Docker healthcheck; `0` checks only BIRD and routes.
 - `BGP_PROTOCOL` - BIRD BGP protocol name used by healthcheck; defaults to `mikrotik`.
+- `ADMIN_ENABLED` - `1` enables the web admin UI; defaults to `0`.
+- `ADMIN_PORT` - web admin port; defaults to `8080`.
+- `ADMIN_PASSWORD` - web admin login password; required when `ADMIN_ENABLED=1`.
 
 If `.env` is missing, defaults from `docker-compose.yml` are used.
+
+## Web Admin
+
+The admin UI is disabled by default. Enable it by setting a password and port:
+
+```dotenv
+ADMIN_ENABLED=1
+ADMIN_PORT=8080
+ADMIN_PASSWORD=change-me
+```
+
+After restarting the container, the interface is available on the configured host port. The UI includes an RU/EN language switch, a dashboard with the next auto-refresh countdown, BIRD/BGP status, route counts and source summary, `dry-run`, `check-sources`, `reload`, IP or domain lookup, metrics, route and container log views, `routes.conf` download, an editor for all four list files, and a settings page.
+
+On Docker Desktop for Windows/macOS, use the separate admin sidecar because BIRD runs with `network_mode: host` and its port is not published in the Ports column:
+
+```dotenv
+ADMIN_ENABLED=0
+COMPOSE_PROFILES=admin
+ADMIN_PORT=8080
+ADMIN_PASSWORD=change-me
+```
+
+Then run:
+
+```bash
+docker compose up -d --build
+```
+
+In this mode the `admin` service publishes the port through regular `ports:` and talks to BIRD through the shared `/run/bird` socket and shared `generated/` files.
+
+`lists.txt`, `include-asns.txt`, `include-domains.txt`, and `exclude-domains.txt` are mounted read-write so the admin UI can edit them. A backup is created in `generated/list-backups` before saving.
 
 At startup, the container validates environment values before starting BIRD:
 

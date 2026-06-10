@@ -85,6 +85,23 @@ def fetch_url(url, timeout=None, attempts=None, delay=None):
     raise RuntimeError(str(last_error))
 
 
+def count_source_routes(text, *, extract=True):
+    count = 0
+    for line in text.splitlines():
+        values = generate_routes.IPV4_RE.findall(line) if extract else [line.strip()]
+        for value in values:
+            if not value:
+                continue
+            if "/" not in value:
+                value = f"{value}/32"
+            try:
+                ipaddress.ip_network(value, strict=False)
+            except ValueError:
+                continue
+            count += 1
+    return count
+
+
 def fetch_text_source(kind, name, url, cache_file, now, max_age):
     record = {
         "kind": kind,
@@ -95,6 +112,7 @@ def fetch_text_source(kind, name, url, cache_file, now, max_age):
         "cache_age_seconds": None,
         "error": None,
         "bytes": 0,
+        "routes": 0,
     }
 
     try:
@@ -102,6 +120,7 @@ def fetch_text_source(kind, name, url, cache_file, now, max_age):
         cache_file.write_text(text, encoding="utf-8")
         record["status"] = "fresh"
         record["bytes"] = len(text.encode("utf-8"))
+        record["routes"] = count_source_routes(text)
         record["cache_age_seconds"] = 0
         progress("fetched source", kind=kind, name=name, status="fresh")
         return text, record, True
@@ -113,6 +132,7 @@ def fetch_text_source(kind, name, url, cache_file, now, max_age):
             record["status"] = "cache"
             record["error"] = str(exc)
             record["bytes"] = len(text.encode("utf-8"))
+            record["routes"] = count_source_routes(text)
             progress("using cached source", kind=kind, name=name, status="cache", cache_age_seconds=age)
             return text, record, True
 
@@ -326,12 +346,15 @@ def parse_and_build_routes(output, base_text, include_text, exclude_text, min_pr
             )
 
         progress("building final route set", base=len(base), include=len(extra), exclude=len(exclude))
-        networks, applied = generate_routes.build_routes(base, exclude, extra)
+        networks, applied, route_stats = generate_routes.build_routes_with_stats(base, exclude, extra)
         routes = {
             "base": len(base),
             "include": len(extra),
             "exclude": len(exclude),
+            "candidate": route_stats["candidate"],
+            "after_exclusions": route_stats["after_exclusions"],
             "final": len(networks),
+            "collapsed_removed": route_stats["collapsed_removed"],
             "exclude_rules_applied": applied,
             "invalid": base_invalid + exclude_invalid + extra_invalid,
         }
@@ -372,10 +395,11 @@ def collect_sources(cache_dir, cache_max_age, include_google):
         progress("fetching url", index=index, total=len(url_sources), url=url)
         text, record, ok = fetch_text_source("url", url, url, cache_path(cache_dir, "url", url), now, cache_max_age)
         sources.append(record)
-        source_failed = source_failed or not ok
         if ok:
             base_text.append(text)
         else:
+            record["required"] = False
+            progress("skipping unavailable URL source", url=url, status="failed")
             errors.append(record)
 
     for index, asn in enumerate(asn_sources, 1):
@@ -474,14 +498,24 @@ def main(argv=None):
     output = Path(args.output)
     status_file = Path(args.status)
     metrics_file = Path(args.metrics)
-    routes = {"base": 0, "include": 0, "exclude": 0, "final": 0, "exclude_rules_applied": 0, "invalid": 0}
+    routes = {
+        "base": 0,
+        "include": 0,
+        "exclude": 0,
+        "candidate": 0,
+        "after_exclusions": 0,
+        "final": 0,
+        "collapsed_removed": 0,
+        "exclude_rules_applied": 0,
+        "invalid": 0,
+    }
 
     source_failed, sources, errors, base_text, include_text, exclude_text = collect_sources(
         cache_dir, cache_max_age, include_google
     )
 
     if args.check_sources:
-        success = not source_failed
+        success = not errors
         status = build_status(
             success,
             started_at,

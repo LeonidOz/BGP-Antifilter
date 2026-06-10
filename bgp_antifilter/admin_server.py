@@ -1,0 +1,736 @@
+import base64
+import errno
+import hashlib
+import hmac
+import ipaddress
+import json
+import mimetypes
+import os
+from pathlib import Path
+import secrets
+import shlex
+import shutil
+import socket
+import subprocess
+import time
+from http import HTTPStatus
+from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
+from urllib.parse import parse_qs, urlparse
+
+from . import __version__
+
+
+ROOT = Path(os.environ.get("ADMIN_STATIC_DIR", "/admin-static"))
+GENERATED_DIR = Path(os.environ.get("GENERATED_DIR", "/etc/bird/generated"))
+ROUTES_FILE = Path(os.environ.get("ROUTES_FILE", "/etc/bird/generated/routes.conf"))
+STATUS_FILE = Path(os.environ.get("STATUS_FILE", "/etc/bird/generated/status.json"))
+METRICS_FILE = Path(os.environ.get("METRICS_FILE", "/etc/bird/generated/metrics.prom"))
+RUNTIME_FILE = Path(os.environ.get("RUNTIME_FILE", "/etc/bird/generated/runtime.json"))
+CONTAINER_LOG_FILE = Path(os.environ.get("CONTAINER_LOG_FILE", "/etc/bird/generated/container.log"))
+SETTINGS_FILE = Path(os.environ.get("SETTINGS_FILE", "/etc/bird/generated/settings.json"))
+SETTINGS_ENV_FILE = Path(os.environ.get("SETTINGS_ENV_FILE", "/etc/bird/generated/settings.env"))
+
+LIST_FILES = {
+    "urls": Path(os.environ.get("LISTS_FILE", "/etc/bird/lists.txt")),
+    "asns": Path(os.environ.get("INCLUDE_ASNS_FILE", "/etc/bird/include-asns.txt")),
+    "include-domains": Path(os.environ.get("INCLUDE_DOMAINS_FILE", "/etc/bird/include-domains.txt")),
+    "exclude-domains": Path(os.environ.get("EXCLUDE_DOMAINS_FILE", "/etc/bird/exclude-domains.txt")),
+}
+
+SESSIONS = {}
+LOGIN_ATTEMPTS = {}
+
+SETTINGS_SECTIONS = [
+    {
+        "id": "update",
+        "title": "Обновление",
+        "items": [
+            {"key": "UPDATE_INTERVAL", "type": "int", "default": "1800", "min": 30, "max": 86400, "unit": "sec"},
+            {"key": "CACHE_MAX_AGE", "type": "int", "default": "604800", "min": 60, "max": 2592000, "unit": "sec"},
+            {"key": "FETCH_TIMEOUT", "type": "int", "default": "30", "min": 1, "max": 300, "unit": "sec"},
+            {"key": "FETCH_ATTEMPTS", "type": "int", "default": "5", "min": 1, "max": 20},
+            {"key": "FETCH_RETRY_DELAY", "type": "number", "default": "5", "min": 0, "max": 120, "unit": "sec"},
+            {"key": "INCLUDE_GOOGLE_RANGES", "type": "bool", "default": "1"},
+        ],
+    },
+    {
+        "id": "security",
+        "title": "Безопасность генерации",
+        "items": [
+            {"key": "MIN_PREFIX_LENGTH", "type": "int", "default": "8", "min": 1, "max": 32},
+            {"key": "ALLOW_BROAD_ROUTES", "type": "bool", "default": "0"},
+        ],
+    },
+    {
+        "id": "bird",
+        "title": "BIRD / BGP",
+        "items": [
+            {"key": "MY_AS", "type": "asn", "default": "64500", "requires_restart": True},
+            {"key": "MT_AS", "type": "asn", "default": "65455", "requires_restart": True},
+            {"key": "MT_IP", "type": "ipv4", "default": "192.168.55.1", "requires_restart": True},
+            {"key": "BIRD_IP", "type": "ipv4", "default": "192.168.55.5", "requires_restart": True},
+            {"key": "ROUTER_ID", "type": "ipv4", "default": "192.168.55.5", "requires_restart": True},
+            {"key": "BGP_COMMUNITY", "type": "community", "default": "65432,500", "requires_restart": True},
+            {"key": "BGP_PROTOCOL", "type": "string", "default": "mikrotik"},
+            {"key": "HEALTHCHECK_REQUIRE_BGP", "type": "bool", "default": "1"},
+        ],
+    },
+]
+
+SETTINGS_BY_KEY = {item["key"]: item for section in SETTINGS_SECTIONS for item in section["items"]}
+
+
+def json_load(path, default):
+    try:
+        with path.open(encoding="utf-8") as file:
+            return json.load(file)
+    except (OSError, json.JSONDecodeError):
+        return default
+
+
+def text_load(path):
+    try:
+        return path.read_text(encoding="utf-8")
+    except OSError:
+        return ""
+
+
+def settings_overrides():
+    data = json_load(SETTINGS_FILE, {})
+    if not isinstance(data, dict):
+        return {}
+    values = data.get("values", data)
+    if not isinstance(values, dict):
+        return {}
+    return {key: str(value) for key, value in values.items() if key in SETTINGS_BY_KEY}
+
+
+def effective_settings():
+    overrides = settings_overrides()
+    result = {}
+    for key, spec in SETTINGS_BY_KEY.items():
+        base = os.environ.get(key, spec["default"])
+        result[key] = overrides.get(key, str(base))
+    return result
+
+
+def base_setting_value(key):
+    spec = SETTINGS_BY_KEY[key]
+    return validate_setting(key, os.environ.get(key, spec["default"]))
+
+
+def command_environment():
+    env = os.environ.copy()
+    env.update(effective_settings())
+    return env
+
+
+def validate_setting(key, value):
+    spec = SETTINGS_BY_KEY.get(key)
+    if not spec:
+        raise ValueError(f"unknown setting: {key}")
+    raw = str(value).strip()
+    if raw == "":
+        raise ValueError(f"{key} must not be empty")
+    setting_type = spec["type"]
+    if setting_type == "bool":
+        if raw.lower() in {"1", "true", "yes", "on"}:
+            return "1"
+        if raw.lower() in {"0", "false", "no", "off"}:
+            return "0"
+        raise ValueError(f"{key} must be 0 or 1")
+    if setting_type in {"int", "asn"}:
+        try:
+            number = int(raw)
+        except ValueError as exc:
+            raise ValueError(f"{key} must be an integer") from exc
+        if setting_type == "asn" and not 1 <= number <= 4294967295:
+            raise ValueError(f"{key} must be between 1 and 4294967295")
+        if "min" in spec and number < spec["min"]:
+            raise ValueError(f"{key} must be at least {spec['min']}")
+        if "max" in spec and number > spec["max"]:
+            raise ValueError(f"{key} must be at most {spec['max']}")
+        return str(number)
+    if setting_type == "number":
+        try:
+            number = float(raw)
+        except ValueError as exc:
+            raise ValueError(f"{key} must be a number") from exc
+        if "min" in spec and number < spec["min"]:
+            raise ValueError(f"{key} must be at least {spec['min']}")
+        if "max" in spec and number > spec["max"]:
+            raise ValueError(f"{key} must be at most {spec['max']}")
+        return str(int(number)) if number.is_integer() else str(number)
+    if setting_type == "ipv4":
+        try:
+            return str(ipaddress.IPv4Address(raw))
+        except ValueError as exc:
+            raise ValueError(f"{key} must be a valid IPv4 address") from exc
+    if setting_type == "community":
+        parts = raw.split(",")
+        if len(parts) != 2:
+            raise ValueError(f"{key} must use AS,VALUE format")
+        numbers = []
+        for part in parts:
+            try:
+                number = int(part.strip())
+            except ValueError as exc:
+                raise ValueError(f"{key} parts must be integers") from exc
+            if not 0 <= number <= 65535:
+                raise ValueError(f"{key} parts must be between 0 and 65535")
+            numbers.append(number)
+        return f"{numbers[0]},{numbers[1]}"
+    if setting_type == "string":
+        if not raw.replace("_", "").replace("-", "").isalnum():
+            raise ValueError(f"{key} contains unsupported characters")
+        return raw
+    raise ValueError(f"{key} has unsupported type")
+
+
+def save_settings(values):
+    normalized = {}
+    for key, value in values.items():
+        if key not in SETTINGS_BY_KEY:
+            continue
+        setting_value = validate_setting(key, value)
+        if setting_value != base_setting_value(key):
+            normalized[key] = setting_value
+    payload = {
+        "updated_at": int(time.time()),
+        "values": normalized,
+    }
+    write_text_atomic(SETTINGS_FILE, json.dumps(payload, ensure_ascii=False, indent=2) + "\n")
+    env_lines = [f"{key}={shlex.quote(value)}" for key, value in sorted(normalized.items())]
+    write_text_atomic(SETTINGS_ENV_FILE, "\n".join(env_lines) + ("\n" if env_lines else ""))
+    return normalized
+
+
+def settings_payload():
+    overrides = settings_overrides()
+    effective = effective_settings()
+    sections = []
+    for section in SETTINGS_SECTIONS:
+        section_items = []
+        for item in section["items"]:
+            key = item["key"]
+            base_value = base_setting_value(key)
+            value = validate_setting(key, effective[key])
+            section_items.append({
+                **item,
+                "value": value,
+                "env_value": base_value,
+                "overridden": value != base_value,
+            })
+        sections.append({**section, "items": section_items})
+    return {
+        "sections": sections,
+        "values": effective,
+        "overrides": overrides,
+        "settings_file": str(SETTINGS_FILE),
+        "settings_env_file": str(SETTINGS_ENV_FILE),
+    }
+
+
+def write_text_atomic(path, text):
+    path.parent.mkdir(parents=True, exist_ok=True)
+    tmp = path.with_suffix(path.suffix + ".tmp")
+    tmp.write_text(text, encoding="utf-8")
+    try:
+        tmp.replace(path)
+    except OSError as exc:
+        if exc.errno not in (errno.EBUSY, errno.EACCES, errno.EPERM):
+            raise
+        tmp.unlink(missing_ok=True)
+        with path.open("w", encoding="utf-8") as file:
+            file.write(text)
+
+
+def backup_file(path):
+    if not path.exists():
+        return None
+    backup_dir = GENERATED_DIR / "list-backups"
+    backup_dir.mkdir(parents=True, exist_ok=True)
+    stamp = time.strftime("%Y%m%d-%H%M%S", time.gmtime())
+    backup = backup_dir / f"{path.name}.{stamp}.bak"
+    shutil.copy2(path, backup)
+    return str(backup)
+
+
+def run_command(command, timeout=120):
+    started = time.time()
+    try:
+        completed = subprocess.run(
+            command,
+            text=True,
+            stdout=subprocess.PIPE,
+            stderr=subprocess.PIPE,
+            timeout=timeout,
+            check=False,
+            env=command_environment(),
+        )
+        return {
+            "ok": completed.returncode == 0,
+            "returncode": completed.returncode,
+            "stdout": completed.stdout,
+            "stderr": completed.stderr,
+            "duration_seconds": round(time.time() - started, 3),
+        }
+    except subprocess.TimeoutExpired as exc:
+        return {
+            "ok": False,
+            "returncode": None,
+            "stdout": exc.stdout or "",
+            "stderr": f"command timed out after {timeout} seconds",
+            "duration_seconds": round(time.time() - started, 3),
+        }
+    except OSError as exc:
+        return {
+            "ok": False,
+            "returncode": None,
+            "stdout": "",
+            "stderr": str(exc),
+            "duration_seconds": round(time.time() - started, 3),
+        }
+
+
+def parse_command_status(stdout):
+    decoder = json.JSONDecoder()
+    parsed = None
+    text = stdout or ""
+    for index, char in enumerate(text):
+        if char != "{":
+            continue
+        try:
+            value, _ = decoder.raw_decode(text[index:])
+        except json.JSONDecodeError:
+            continue
+        if isinstance(value, dict) and "sources" in value and "routes" in value:
+            parsed = value
+    return parsed
+
+
+def parse_metrics(text):
+    values = {}
+    for line in text.splitlines():
+        if not line or line.startswith("#") or " " not in line:
+            continue
+        key, value = line.rsplit(" ", 1)
+        try:
+            values[key] = float(value)
+        except ValueError:
+            continue
+    return values
+
+
+def route_count_from_file():
+    if not ROUTES_FILE.exists():
+        return 0
+    return sum(1 for line in ROUTES_FILE.read_text(encoding="utf-8", errors="replace").splitlines() if line.strip())
+
+
+def tail_text(path, max_bytes=250_000):
+    try:
+        with path.open("rb") as file:
+            file.seek(0, os.SEEK_END)
+            size = file.tell()
+            file.seek(max(0, size - max_bytes))
+            data = file.read()
+    except OSError:
+        return ""
+    return data.decode("utf-8", errors="replace")
+
+
+def resolve_ipv4_targets(value):
+    target = str(value or "").strip()
+    if not target:
+        return [], "target is required"
+    try:
+        address = socket.inet_pton(socket.AF_INET, target)
+        return [socket.inet_ntop(socket.AF_INET, address)], None
+    except OSError:
+        pass
+    if any(char.isspace() for char in target):
+        return [], "target must be an IPv4 address or domain"
+    try:
+        addresses = sorted({
+            item[4][0]
+            for item in socket.getaddrinfo(target, None, socket.AF_INET, socket.SOCK_STREAM)
+        })
+    except socket.gaierror as exc:
+        return [], str(exc)
+    if not addresses:
+        return [], "domain has no IPv4 addresses"
+    return addresses, None
+
+
+def cookie_header(name, value, max_age=None):
+    parts = [f"{name}={value}", "Path=/", "HttpOnly", "SameSite=Strict"]
+    if max_age is not None:
+        parts.append(f"Max-Age={max_age}")
+    return "; ".join(parts)
+
+
+def get_cookie(headers, name):
+    raw = headers.get("Cookie", "")
+    for part in raw.split(";"):
+        if "=" not in part:
+            continue
+        key, value = part.strip().split("=", 1)
+        if key == name:
+            return value
+    return None
+
+
+def new_session():
+    token = secrets.token_urlsafe(32)
+    SESSIONS[token] = {"created_at": time.time()}
+    return token
+
+
+def clean_sessions():
+    now = time.time()
+    expired = [token for token, data in SESSIONS.items() if now - data["created_at"] > 24 * 60 * 60]
+    for token in expired:
+        SESSIONS.pop(token, None)
+
+
+def is_login_limited(client):
+    now = time.time()
+    attempts = [ts for ts in LOGIN_ATTEMPTS.get(client, []) if now - ts < 60]
+    LOGIN_ATTEMPTS[client] = attempts
+    return len(attempts) >= 8
+
+
+def record_login_failure(client):
+    LOGIN_ATTEMPTS.setdefault(client, []).append(time.time())
+
+
+def public_compare(left, right):
+    return hmac.compare_digest(left.encode("utf-8"), right.encode("utf-8"))
+
+
+class AdminHandler(BaseHTTPRequestHandler):
+    server_version = "BGPAntifilterAdmin/0.1"
+
+    def log_message(self, fmt, *args):
+        print(f"admin {self.address_string()} - {fmt % args}", flush=True)
+
+    def send_json(self, data, status=HTTPStatus.OK, headers=None):
+        payload = json.dumps(data, ensure_ascii=False).encode("utf-8")
+        self.send_response(status)
+        self.send_header("Content-Type", "application/json; charset=utf-8")
+        self.send_header("Content-Length", str(len(payload)))
+        for key, value in (headers or {}).items():
+            self.send_header(key, value)
+        self.end_headers()
+        self.wfile.write(payload)
+
+    def send_text(self, text, content_type="text/plain; charset=utf-8", status=HTTPStatus.OK):
+        payload = text.encode("utf-8")
+        self.send_response(status)
+        self.send_header("Content-Type", content_type)
+        self.send_header("Content-Length", str(len(payload)))
+        self.end_headers()
+        self.wfile.write(payload)
+
+    def send_file_text(self, text, filename):
+        payload = text.encode("utf-8")
+        self.send_response(HTTPStatus.OK)
+        self.send_header("Content-Type", "text/plain; charset=utf-8")
+        self.send_header("Content-Disposition", f'attachment; filename="{filename}"')
+        self.send_header("Content-Length", str(len(payload)))
+        self.end_headers()
+        self.wfile.write(payload)
+
+    def read_json(self):
+        length = int(self.headers.get("Content-Length", "0"))
+        if length <= 0:
+            return {}
+        body = self.rfile.read(length).decode("utf-8")
+        return json.loads(body) if body else {}
+
+    def read_json_or_error(self):
+        try:
+            return self.read_json()
+        except (UnicodeDecodeError, json.JSONDecodeError):
+            self.send_json({"error": "invalid json"}, HTTPStatus.BAD_REQUEST)
+            return None
+
+    def authenticated(self):
+        clean_sessions()
+        token = get_cookie(self.headers, "bgp_admin_session")
+        return token in SESSIONS
+
+    def require_auth(self):
+        if self.authenticated():
+            return True
+        self.send_json({"error": "unauthorized"}, HTTPStatus.UNAUTHORIZED)
+        return False
+
+    def do_GET(self):
+        parsed = urlparse(self.path)
+        path = parsed.path
+
+        if path.startswith("/api/"):
+            self.handle_api_get(path, parsed)
+            return
+
+        self.serve_static(path)
+
+    def do_HEAD(self):
+        parsed = urlparse(self.path)
+        if parsed.path.startswith("/api/"):
+            self.send_response(HTTPStatus.OK)
+            self.end_headers()
+            return
+
+        target = ROOT / "index.html"
+        self.send_response(HTTPStatus.OK)
+        self.send_header("Content-Type", "text/html")
+        self.send_header("Content-Length", str(target.stat().st_size if target.exists() else 0))
+        self.end_headers()
+
+    def do_POST(self):
+        parsed = urlparse(self.path)
+        if not parsed.path.startswith("/api/"):
+            self.send_json({"error": "not found"}, HTTPStatus.NOT_FOUND)
+            return
+        self.handle_api_post(parsed.path)
+
+    def do_PUT(self):
+        parsed = urlparse(self.path)
+        if not parsed.path.startswith("/api/"):
+            self.send_json({"error": "not found"}, HTTPStatus.NOT_FOUND)
+            return
+        self.handle_api_put(parsed.path)
+
+    def serve_static(self, path):
+        if path == "/":
+            path = "/index.html"
+        target = (ROOT / path.lstrip("/")).resolve()
+        try:
+            target.relative_to(ROOT.resolve())
+        except ValueError:
+            self.send_json({"error": "not found"}, HTTPStatus.NOT_FOUND)
+            return
+        if not target.exists() or not target.is_file():
+            target = ROOT / "index.html"
+        content_type = mimetypes.guess_type(str(target))[0] or "application/octet-stream"
+        data = target.read_bytes()
+        self.send_response(HTTPStatus.OK)
+        self.send_header("Content-Type", content_type)
+        self.send_header("Content-Length", str(len(data)))
+        self.end_headers()
+        self.wfile.write(data)
+
+    def handle_api_get(self, path, parsed):
+        if path == "/api/session":
+            self.send_json({"authenticated": self.authenticated(), "version": __version__})
+            return
+
+        if not self.require_auth():
+            return
+
+        if path == "/api/status":
+            status = json_load(STATUS_FILE, {})
+            runtime = json_load(RUNTIME_FILE, {})
+            metrics = parse_metrics(text_load(METRICS_FILE))
+            bird = run_command(["birdc", "show", "status"], timeout=5)
+            bgp_protocol = effective_settings().get("BGP_PROTOCOL", "mikrotik")
+            bgp = run_command(["birdc", "show", "protocols", bgp_protocol], timeout=5)
+            self.send_json({
+                "version": __version__,
+                "status": status,
+                "runtime": runtime,
+                "metrics": metrics,
+                "routes_file_count": route_count_from_file(),
+                "bird": bird,
+                "bgp": bgp,
+            })
+            return
+
+        if path == "/api/metrics":
+            self.send_text(text_load(METRICS_FILE))
+            return
+
+        if path == "/api/routes":
+            self.send_text(text_load(ROUTES_FILE))
+            return
+
+        if path == "/api/routes/download":
+            self.send_file_text(text_load(ROUTES_FILE), "routes.conf")
+            return
+
+        if path == "/api/logs":
+            self.send_text(tail_text(CONTAINER_LOG_FILE))
+            return
+
+        if path == "/api/settings":
+            self.send_json(settings_payload())
+            return
+
+        if path == "/api/lists":
+            self.send_json({
+                name: {"path": str(path), "bytes": path.stat().st_size if path.exists() else 0}
+                for name, path in LIST_FILES.items()
+            })
+            return
+
+        if path.startswith("/api/lists/"):
+            name = path.rsplit("/", 1)[-1]
+            list_path = LIST_FILES.get(name)
+            if not list_path:
+                self.send_json({"error": "unknown list"}, HTTPStatus.NOT_FOUND)
+                return
+            self.send_json({"name": name, "path": str(list_path), "content": text_load(list_path)})
+            return
+
+        self.send_json({"error": "not found"}, HTTPStatus.NOT_FOUND)
+
+    def handle_api_post(self, path):
+        if path == "/api/login":
+            if is_login_limited(self.client_address[0]):
+                self.send_json({"error": "too many attempts"}, HTTPStatus.TOO_MANY_REQUESTS)
+                return
+            data = self.read_json_or_error()
+            if data is None:
+                return
+            password = os.environ.get("ADMIN_PASSWORD", "")
+            if password and public_compare(data.get("password", ""), password):
+                token = new_session()
+                self.send_json({"ok": True}, headers={"Set-Cookie": cookie_header("bgp_admin_session", token)})
+                return
+            record_login_failure(self.client_address[0])
+            self.send_json({"error": "invalid password"}, HTTPStatus.UNAUTHORIZED)
+            return
+
+        if path == "/api/logout":
+            token = get_cookie(self.headers, "bgp_admin_session")
+            if token:
+                SESSIONS.pop(token, None)
+            self.send_json({"ok": True}, headers={"Set-Cookie": cookie_header("bgp_admin_session", "", max_age=0)})
+            return
+
+        if not self.require_auth():
+            return
+
+        if path == "/api/actions/dry-run":
+            result = run_command(["/update-routes.py", "--dry-run"], timeout=300)
+            parsed_status = parse_command_status(result.get("stdout", ""))
+            if parsed_status is not None:
+                result["status"] = parsed_status
+            self.send_json(result)
+            return
+        if path == "/api/actions/check-sources":
+            result = run_command(["/update-routes.py", "--check-sources"], timeout=300)
+            parsed_status = parse_command_status(result.get("stdout", ""))
+            if parsed_status is not None:
+                result["status"] = parsed_status
+            self.send_json(result)
+            return
+        if path == "/api/actions/reload":
+            self.send_json(run_command(["/reload-routes.sh"], timeout=600))
+            return
+        if path == "/api/tools/check-ip":
+            data = self.read_json_or_error()
+            if data is None:
+                return
+            target = str(data.get("target") or data.get("ip") or "").strip()
+            addresses, error = resolve_ipv4_targets(target)
+            if error:
+                self.send_json({"error": error}, HTTPStatus.BAD_REQUEST)
+                return
+            results = []
+            ok = True
+            for address in addresses:
+                result = run_command(["/check-ip.py", address, "--json"], timeout=30)
+                parsed = None
+                if result["stdout"]:
+                    try:
+                        parsed = json.loads(result["stdout"])
+                    except json.JSONDecodeError:
+                        parsed = None
+                result["result"] = parsed
+                results.append(result)
+                ok = ok and result["ok"]
+            self.send_json({
+                "ok": ok,
+                "target": target,
+                "addresses": addresses,
+                "result": results[0]["result"] if len(results) == 1 else None,
+                "results": results,
+            })
+            return
+
+        self.send_json({"error": "not found"}, HTTPStatus.NOT_FOUND)
+
+    def handle_api_put(self, path):
+        if not self.require_auth():
+            return
+
+        if path == "/api/settings":
+            data = self.read_json_or_error()
+            if data is None:
+                return
+            values = data.get("values")
+            if not isinstance(values, dict):
+                self.send_json({"error": "values must be an object"}, HTTPStatus.BAD_REQUEST)
+                return
+            try:
+                save_settings(values)
+            except ValueError as exc:
+                self.send_json({"error": str(exc)}, HTTPStatus.BAD_REQUEST)
+                return
+            except OSError as exc:
+                self.send_json({"error": str(exc)}, HTTPStatus.INTERNAL_SERVER_ERROR)
+                return
+            self.send_json({"ok": True, **settings_payload()})
+            return
+
+        if not path.startswith("/api/lists/"):
+            self.send_json({"error": "not found"}, HTTPStatus.NOT_FOUND)
+            return
+
+        name = path.rsplit("/", 1)[-1]
+        list_path = LIST_FILES.get(name)
+        if not list_path:
+            self.send_json({"error": "unknown list"}, HTTPStatus.NOT_FOUND)
+            return
+
+        data = self.read_json_or_error()
+        if data is None:
+            return
+        content = data.get("content")
+        if not isinstance(content, str):
+            self.send_json({"error": "content must be a string"}, HTTPStatus.BAD_REQUEST)
+            return
+        if "\x00" in content:
+            self.send_json({"error": "content contains NUL byte"}, HTTPStatus.BAD_REQUEST)
+            return
+
+        backup = backup_file(list_path)
+        if content and not content.endswith("\n"):
+            content += "\n"
+        try:
+            write_text_atomic(list_path, content)
+        except OSError as exc:
+            self.send_json({"error": str(exc)}, HTTPStatus.INTERNAL_SERVER_ERROR)
+            return
+
+        self.send_json({"ok": True, "backup": backup, "bytes": len(content.encode("utf-8"))})
+
+
+def main():
+    port = int(os.environ.get("ADMIN_PORT", "8080"))
+    password = os.environ.get("ADMIN_PASSWORD", "")
+    if not password:
+        print("ADMIN_PASSWORD must be set when admin server is enabled", flush=True)
+        return 1
+
+    ROOT.mkdir(parents=True, exist_ok=True)
+    server = ThreadingHTTPServer(("", port), AdminHandler)
+    print(f"admin server listening on port {port}", flush=True)
+    try:
+        server.serve_forever()
+    except KeyboardInterrupt:
+        return 0

@@ -12,6 +12,13 @@ CACHE_DIR="${CACHE_DIR:-/etc/bird/generated/cache}"
 STATUS_FILE="${STATUS_FILE:-/etc/bird/generated/status.json}"
 METRICS_FILE="${METRICS_FILE:-/etc/bird/generated/metrics.prom}"
 LOCK_DIR="${UPDATE_LOCK_DIR:-/etc/bird/generated/update.lock}"
+SETTINGS_ENV_FILE="${SETTINGS_ENV_FILE:-/etc/bird/generated/settings.env}"
+
+if [ -f "$SETTINGS_ENV_FILE" ]; then
+  set -a
+  . "$SETTINGS_ENV_FILE"
+  set +a
+fi
 
 mkdir -p /etc/bird/generated "$CACHE_DIR"
 touch "$ROUTES"
@@ -36,7 +43,7 @@ else
 fi
 
 export LISTS_FILE INCLUDE_ASNS_FILE INCLUDE_DOMAINS_FILE EXCLUDE_DOMAINS_FILE
-export INCLUDE_GOOGLE_RANGES CACHE_DIR CACHE_MAX_AGE STATUS_FILE METRICS_FILE
+export INCLUDE_GOOGLE_RANGES CACHE_DIR CACHE_MAX_AGE STATUS_FILE METRICS_FILE SETTINGS_ENV_FILE
 export ROUTES_FILE="$ROUTES"
 
 if ! /update-routes.py --output "$ROUTES" --status "$STATUS_FILE" --metrics "$METRICS_FILE"; then

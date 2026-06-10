@@ -1,0 +1,199 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>BGP Antifilter Admin</title>
+  <link rel="stylesheet" href="/styles.css">
+</head>
+<body>
+  <div class="app-shell login-mode" id="app-shell">
+    <aside class="sidebar hidden" id="sidebar">
+      <div class="brand">
+        <div class="brand-mark" aria-hidden="true">
+          <i data-lucide="network"></i>
+        </div>
+        <div>
+          <strong>BGP Antifilter</strong>
+          <span id="version">v-</span>
+        </div>
+      </div>
+      <div class="language">
+        <button id="lang-ru">RU</button>
+        <button id="lang-en">EN</button>
+      </div>
+      <nav>
+        <button class="nav-item active" data-view="dashboard"><i data-lucide="gauge"></i><span data-i18n="dashboard">Dashboard</span></button>
+        <button class="nav-item" data-view="lists"><i data-lucide="list-tree"></i><span data-i18n="lists">Lists</span></button>
+        <button class="nav-item" data-view="tools"><i data-lucide="wrench"></i><span data-i18n="tools">Tools</span></button>
+        <button class="nav-item" data-view="settings"><i data-lucide="sliders-horizontal"></i><span data-i18n="settings">Settings</span></button>
+      </nav>
+    </aside>
+
+    <main>
+      <section id="login-view" class="login-panel hidden">
+        <canvas id="login-network-canvas" class="login-network-canvas" aria-hidden="true"></canvas>
+        <div class="login-brand">
+          <div class="brand-mark hero" aria-hidden="true">
+            <i data-lucide="network"></i>
+          </div>
+          <div>
+            <p>BGP Antifilter</p>
+            <h1>Local Network Control Plane</h1>
+          </div>
+        </div>
+        <div class="login-card">
+          <h1 data-i18n="loginTitle">Sign in</h1>
+          <form id="login-form">
+            <input id="password" type="password" autocomplete="current-password" placeholder="Password">
+            <button type="submit" data-i18n="login">Login</button>
+          </form>
+          <p id="login-error"></p>
+        </div>
+        <footer class="login-footer">&copy; 2026 BGP Antifilter</footer>
+      </section>
+
+      <section id="admin-view" class="hidden">
+        <header class="topbar">
+          <div>
+            <h1 id="view-title" data-i18n="dashboard">Dashboard</h1>
+            <div class="top-meta">
+              <span id="last-update">-</span>
+              <span id="bird-uptime">BIRD: -</span>
+            </div>
+          </div>
+          <div class="top-actions">
+            <button id="refresh-btn" class="icon-button" title="Refresh" aria-label="Refresh">
+              <i data-lucide="refresh-cw"></i>
+            </button>
+            <button id="logout-btn" class="icon-button" title="Logout" aria-label="Logout">
+              <i data-lucide="log-out"></i>
+            </button>
+          </div>
+        </header>
+
+        <section class="view view-stack" id="dashboard">
+          <div class="metrics-grid">
+            <article class="metric-card">
+              <span data-i18n="routes">Routes</span>
+              <strong id="routes-count">-</strong>
+            </article>
+            <article class="metric-card">
+              <span data-i18n="lastResult">Last result</span>
+              <strong id="last-result">-</strong>
+            </article>
+            <article class="metric-card">
+              <span data-i18n="nextUpdate">Next update</span>
+              <strong id="next-update">-</strong>
+            </article>
+            <article class="metric-card">
+              <span data-i18n="duration">Duration</span>
+              <strong id="duration">-</strong>
+            </article>
+          </div>
+
+          <article class="panel actions-panel">
+            <h2 data-i18n="actions">Actions</h2>
+            <div class="button-row">
+              <button data-action="dry-run"><i data-lucide="flask-conical"></i><span data-i18n="dryRun">Dry run</span></button>
+              <button data-action="check-sources"><i data-lucide="radar"></i><span data-i18n="checkSources">Check sources</span></button>
+              <button data-action="reload" class="danger"><i data-lucide="refresh-cw"></i><span data-i18n="reload">Reload routes</span></button>
+            </div>
+            <details class="operation-log-details" id="operation-log-details">
+              <summary data-i18n="operationLog">Operation log</summary>
+              <div id="operation-log" class="result-view muted-box"></div>
+            </details>
+          </article>
+
+          <div class="flow">
+            <button class="flow-node" data-stage="sources"><i data-lucide="radio-tower"></i><span data-i18n="sources">Sources</span></button>
+            <span></span>
+            <button class="flow-node" data-stage="cache"><i data-lucide="database"></i><span data-i18n="cache">Cache</span></button>
+            <span></span>
+            <button class="flow-node" data-stage="generator"><i data-lucide="cpu"></i><span data-i18n="generator">Generator</span></button>
+            <span></span>
+            <button class="flow-node" data-stage="bird"><i data-lucide="server"></i><span data-i18n="bird">BIRD</span></button>
+            <span></span>
+            <button class="flow-node" data-stage="mikrotik"><i data-lucide="router"></i><span data-i18n="mikrotik">MikroTik</span></button>
+          </div>
+
+          <article class="panel stage-panel" id="stage-panel">
+            <div class="stage-panel-head">
+              <h2 id="stage-title">Pipeline</h2>
+              <span class="status-pill" id="stage-pill">-</span>
+            </div>
+            <div id="stage-details" class="stage-details"></div>
+          </article>
+        </section>
+
+        <section class="view view-stack hidden" id="lists">
+          <div class="tabs" id="list-tabs"></div>
+          <article class="panel editor-panel">
+            <div class="editor-toolbar">
+              <h2 id="list-title">-</h2>
+            </div>
+            <form id="add-list-form" class="inline-form list-add-form">
+              <input id="add-list-input" autocomplete="off">
+              <button type="submit"><i data-lucide="plus"></i><span data-i18n="addItem">Add</span></button>
+            </form>
+            <div id="list-tiles" class="list-tiles"></div>
+            <div class="list-actions">
+              <button id="dry-after-save-btn" data-action="dry-run"><i data-lucide="flask-conical"></i><span data-i18n="dryRun">Dry run</span></button>
+            </div>
+            <details class="raw-list-editor">
+              <summary data-i18n="rawEditor">Raw editor</summary>
+              <textarea id="list-editor" spellcheck="false"></textarea>
+              <div class="editor-actions">
+                <button id="save-list-btn"><i data-lucide="save"></i><span data-i18n="save">Save</span></button>
+              </div>
+            </details>
+            <p id="list-save-status"></p>
+          </article>
+        </section>
+
+        <section class="view view-stack hidden" id="tools">
+          <div class="tabs" id="tool-tabs">
+            <button class="active" data-tool-tab="check"><i data-lucide="search"></i><span data-i18n="checkIp">Check IP</span></button>
+            <button data-tool-tab="metrics"><i data-lucide="activity"></i><span data-i18n="loadMetrics">Load metrics</span></button>
+            <button data-tool-tab="routes"><i data-lucide="route"></i><span data-i18n="loadRoutes">Load routes</span></button>
+            <button data-tool-tab="logs"><i data-lucide="scroll-text"></i><span data-i18n="logs">Logs</span></button>
+          </div>
+          <article class="panel tool-panel">
+            <div class="tool-tab" id="tool-check">
+              <h2 data-i18n="checkIp">Check IP</h2>
+              <form id="check-ip-form" class="inline-form">
+                <input id="check-ip-input" placeholder="1.2.3.4 / example.com">
+                <button type="submit"><i data-lucide="search"></i><span data-i18n="check">Check</span></button>
+              </form>
+              <div id="check-ip-result" class="result-view"></div>
+            </div>
+            <div class="tool-tab hidden" id="tool-metrics">
+              <div id="metrics-view" class="result-view"></div>
+            </div>
+            <div class="tool-tab hidden" id="tool-routes">
+              <div id="routes-view" class="result-view"></div>
+            </div>
+            <div class="tool-tab hidden" id="tool-logs">
+              <div class="button-row subtools">
+                <button id="load-logs-btn"><i data-lucide="refresh-cw"></i><span data-i18n="refresh">Refresh</span></button>
+              </div>
+              <div id="logs-view" class="result-view"></div>
+            </div>
+          </article>
+        </section>
+
+        <section class="view view-stack hidden" id="settings">
+          <form id="settings-form" class="settings-form"></form>
+          <div class="settings-actions">
+            <button id="save-settings-btn" type="button"><i data-lucide="save"></i><span data-i18n="save">Save</span></button>
+            <button id="apply-settings-btn" type="button"><i data-lucide="rotate-cw"></i><span data-i18n="applySettings">Apply now</span></button>
+            <span id="settings-save-status" class="muted"></span>
+          </div>
+        </section>
+      </section>
+    </main>
+  </div>
+  <script src="https://unpkg.com/lucide@latest/dist/umd/lucide.min.js"></script>
+  <script src="/app.js"></script>
+</body>
+</html>
