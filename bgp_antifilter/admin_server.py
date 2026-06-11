@@ -50,6 +50,7 @@ SETTINGS_SECTIONS = [
             {"key": "FETCH_ATTEMPTS", "type": "int", "default": "5", "min": 1, "max": 20},
             {"key": "FETCH_RETRY_DELAY", "type": "number", "default": "5", "min": 0, "max": 120, "unit": "sec"},
             {"key": "INCLUDE_GOOGLE_RANGES", "type": "bool", "default": "1"},
+            {"key": "REQUIRE_ALL_URL_SOURCES", "type": "bool", "default": "0"},
         ],
     },
     {

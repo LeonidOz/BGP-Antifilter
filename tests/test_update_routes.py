@@ -168,7 +168,7 @@ class MainTests(unittest.TestCase):
             self.assertFalse(output.exists())
             self.assertIn('"success": false', status.read_text(encoding="utf-8"))
 
-    def test_unavailable_url_source_is_skipped_when_other_sources_generate_routes(self):
+    def test_unavailable_url_source_is_skipped_by_default_when_other_sources_work(self):
         with tempfile.TemporaryDirectory() as tmp:
             root = Path(tmp)
             source = root / "source.txt"
@@ -214,6 +214,54 @@ class MainTests(unittest.TestCase):
             self.assertIn('"success": true', status_text)
             self.assertIn('"status": "failed"', status_text)
             self.assertIn('"required": false', status_text)
+
+    def test_unavailable_url_source_fails_in_strict_mode_even_when_other_sources_work(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            source = root / "source.txt"
+            lists = root / "lists.txt"
+            include_asns = root / "include-asns.txt"
+            include_domains = root / "include-domains.txt"
+            exclude_domains = root / "exclude-domains.txt"
+            output = root / "routes.conf"
+            status = root / "status.json"
+            metrics = root / "metrics.prom"
+            missing_url = "file:///missing/source.txt"
+
+            source.write_text("192.0.2.0/24\n", encoding="utf-8")
+            lists.write_text(f"{missing_url}\n{source.as_uri()}\n", encoding="utf-8")
+            include_asns.write_text("", encoding="utf-8")
+            include_domains.write_text("", encoding="utf-8")
+            exclude_domains.write_text("", encoding="utf-8")
+
+            old_env = os.environ.copy()
+            os.environ.update(
+                {
+                    "LISTS_FILE": str(lists),
+                    "INCLUDE_ASNS_FILE": str(include_asns),
+                    "INCLUDE_DOMAINS_FILE": str(include_domains),
+                    "EXCLUDE_DOMAINS_FILE": str(exclude_domains),
+                    "INCLUDE_GOOGLE_RANGES": "0",
+                    "REQUIRE_ALL_URL_SOURCES": "1",
+                    "CACHE_DIR": str(root / "cache"),
+                    "CACHE_MAX_AGE": "604800",
+                    "FETCH_ATTEMPTS": "1",
+                    "FETCH_RETRY_DELAY": "0",
+                }
+            )
+
+            try:
+                exit_code, _ = run_main_quiet(["--output", str(output), "--status", str(status), "--metrics", str(metrics)])
+            finally:
+                os.environ.clear()
+                os.environ.update(old_env)
+
+            status_text = status.read_text(encoding="utf-8")
+            self.assertEqual(exit_code, 1)
+            self.assertFalse(output.exists())
+            self.assertIn('"success": false', status_text)
+            self.assertIn('"status": "failed"', status_text)
+            self.assertIn('"required": true', status_text)
 
     def test_required_url_uses_fresh_cache_when_fetch_fails(self):
         with tempfile.TemporaryDirectory() as tmp:

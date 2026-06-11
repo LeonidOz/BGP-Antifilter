@@ -33,6 +33,14 @@ const dict = {
     externalNetwork: "External IP", provider: "Provider", organization: "Organization", location: "Location",
     timezone: "Timezone", coordinates: "Coordinates", proxy: "Proxy", hosting: "Hosting", mobile: "Mobile",
     networkSettings: "BGP / admin settings", adminPort: "Admin port", rawLookup: "Raw lookup", yes: "yes", no: "no"
+    ,initializing: "Starting up", updateInProgress: "Update in progress", stageRunning: "In progress",
+    startupGenerationBanner: "Initial route generation is still running. The admin UI is available already, but BIRD and BGP will become ready only after startup preparation finishes.",
+    refreshGenerationBanner: "Route update is running. Dashboard metrics may still show the previous completed run until this update finishes.",
+    elapsed: "Elapsed", startedAt: "Started", afterStartup: "after startup", afterCurrentRun: "after current run",
+    generatorBusy: "Building the final route set", birdWaitingInitial: "BIRD will start after the initial route build",
+    mikrotikWaitingInitial: "BGP session will appear after BIRD startup", progress: "Progress",
+    stageBootstrap: "Preparing update", stageCollectingSources: "Collecting sources", stageBuildingRoutes: "Building routes",
+    stageWritingRoutes: "Writing routes.conf", stageWritingStatus: "Writing status and metrics", stageCompleted: "Completed"
   },
   ru: {
     dashboard: "Панель", lists: "Списки", tools: "Инструменты", settings: "Настройки", loginTitle: "Вход",
@@ -68,6 +76,14 @@ const dict = {
     externalNetwork: "Внешний IP", provider: "Провайдер", organization: "Организация", location: "Локация",
     timezone: "Часовой пояс", coordinates: "Координаты", proxy: "Прокси", hosting: "Хостинг", mobile: "Мобильная сеть",
     networkSettings: "Параметры BGP / админки", adminPort: "Порт админки", rawLookup: "Сырые данные", yes: "да", no: "нет"
+    ,initializing: "Идет запуск", updateInProgress: "Идет обновление", stageRunning: "В процессе",
+    startupGenerationBanner: "Сейчас идет первая генерация маршрутов. Админка уже доступна, но BIRD и BGP станут готовыми только после завершения стартовой подготовки.",
+    refreshGenerationBanner: "Сейчас идет обновление маршрутов. Пока оно не завершится, панель может показывать данные предыдущего успешного запуска.",
+    elapsed: "Прошло", startedAt: "Запущено", afterStartup: "после запуска", afterCurrentRun: "после текущего обновления",
+    generatorBusy: "Собираем итоговый набор маршрутов", birdWaitingInitial: "BIRD запустится после завершения первой генерации",
+    mikrotikWaitingInitial: "BGP-сессия появится после запуска BIRD", progress: "Прогресс",
+    stageBootstrap: "Подготовка обновления", stageCollectingSources: "Сбор источников", stageBuildingRoutes: "Сборка маршрутов",
+    stageWritingRoutes: "Запись routes.conf", stageWritingStatus: "Запись status и metrics", stageCompleted: "Завершено"
   }
 };
 
@@ -371,6 +387,80 @@ function birdUptime(stdout) {
   const rebootTime = parseBirdTime(reboot?.[1]);
   if (currentTime == null || rebootTime == null || currentTime < rebootTime) return "-";
   return formatDurationSeconds(currentTime - rebootTime);
+}
+
+function runtimeGenerationState(payload) {
+  const runtime = payload?.runtime || {};
+  if (!runtime.generation_active) return null;
+  const startedAt = Number(runtime.generation_started_at_unix || 0) || null;
+  return {
+    active: true,
+    kind: runtime.generation_kind || "manual",
+    initial: (runtime.generation_kind || "") === "initial",
+    message: runtime.generation_message || "",
+    startedAt,
+    elapsedSeconds: startedAt ? Math.max(0, Math.floor(Date.now() / 1000) - startedAt) : null,
+    itemsDone: Number.isFinite(Number(runtime.generation_items_done)) ? Number(runtime.generation_items_done) : null,
+    itemsTotal: Number.isFinite(Number(runtime.generation_items_total)) ? Number(runtime.generation_items_total) : null,
+  };
+}
+
+function runtimeGenerationLabel(state) {
+  return state?.initial ? t("initializing") : t("updateInProgress");
+}
+
+function runtimeStageLabel(stage) {
+  const labels = {
+    "bootstrap": t("stageBootstrap"),
+    "collecting-sources": t("stageCollectingSources"),
+    "building-routes": t("stageBuildingRoutes"),
+    "writing-routes": t("stageWritingRoutes"),
+    "writing-status": t("stageWritingStatus"),
+    "completed": t("stageCompleted"),
+  };
+  return labels[stage] || stage || t("stageRunning");
+}
+
+function renderRuntimeBanner(payload) {
+  const banner = $("runtime-banner");
+  const runtimeState = runtimeGenerationState(payload);
+  if (!runtimeState) {
+    banner.classList.add("hidden");
+    banner.innerHTML = "";
+    return;
+  }
+  const message = runtimeState.initial ? t("startupGenerationBanner") : t("refreshGenerationBanner");
+  const percent = Math.max(0, Math.min(100, Number(payload?.runtime?.generation_progress_percent || 0)));
+  const stageTitle = runtimeStageLabel(payload?.runtime?.generation_stage || "");
+  const stageMessage = payload?.runtime?.generation_stage_message || runtimeState.message || "";
+  const itemsLabel = runtimeState.itemsDone != null && runtimeState.itemsTotal != null && runtimeState.itemsTotal > 0
+    ? `${runtimeState.itemsDone} / ${runtimeState.itemsTotal}`
+    : "";
+  const meta = [
+    runtimeState.startedAt ? `<span class="chip warn">${escapeHtml(t("startedAt"))}: ${escapeHtml(formatDateTime(runtimeState.startedAt * 1000))}</span>` : "",
+    runtimeState.elapsedSeconds != null ? `<span class="chip warn">${escapeHtml(t("elapsed"))}: ${escapeHtml(formatSecondsShort(runtimeState.elapsedSeconds))}</span>` : "",
+    itemsLabel ? `<span class="chip warn">${escapeHtml(t("sources"))}: ${escapeHtml(itemsLabel)}</span>` : "",
+  ].filter(Boolean).join("");
+  banner.innerHTML = `
+    <div class="runtime-banner-head">
+      <div class="runtime-banner-title">
+        <i data-lucide="loader-circle"></i>
+        <span>${escapeHtml(runtimeGenerationLabel(runtimeState))}</span>
+      </div>
+      <span class="status-pill warn">${escapeHtml(t("stageRunning"))}</span>
+    </div>
+    <div class="runtime-banner-body">${escapeHtml(message)}</div>
+    <div class="runtime-progress">
+      <div class="runtime-progress-head">
+        <span>${escapeHtml(stageTitle)}${stageMessage ? ` · ${escapeHtml(stageMessage)}` : ""}</span>
+        <strong>${escapeHtml(t("progress"))}: ${percent}%</strong>
+      </div>
+      <div class="runtime-progress-track"><div class="runtime-progress-bar" style="width:${percent}%"></div></div>
+    </div>
+    ${meta ? `<div class="runtime-banner-meta">${meta}</div>` : ""}
+  `;
+  banner.classList.remove("hidden");
+  renderIcons();
 }
 
 function startLoginNetworkCanvas() {
@@ -1131,6 +1221,7 @@ function rowLevel(key) {
 
 function buildStages(payload) {
   const status = payload?.status || {};
+  const runtimeState = runtimeGenerationState(payload);
   const sources = status.sources || [];
   const counts = sourceCounts(sources);
   const routes = status.routes || {};
@@ -1166,16 +1257,19 @@ function buildStages(payload) {
       sources.filter(source => source.cache_file)
     ),
     generator: stageState(
-      status.success === false ? "fail" : routes.invalid ? "warn" : "ok",
+      runtimeState ? "warn" : status.success === false ? "fail" : routes.invalid ? "warn" : "ok",
       t("generator"),
-      `${routes.final ?? 0} final routes`,
-      [],
+      runtimeState ? t("generatorBusy") : `${routes.final ?? 0} final routes`,
+      runtimeState ? [
+        [t("elapsed"), formatSecondsShort(runtimeState.elapsedSeconds)],
+        [t("startedAt"), runtimeState.startedAt ? formatDateTime(runtimeState.startedAt * 1000) : "-"],
+      ] : [],
       routes
     ),
     bird: stageState(
-      birdOk ? "ok" : "fail",
+      birdOk ? "ok" : runtimeState?.initial ? "warn" : "fail",
       t("bird"),
-      birdOk ? "birdc show status OK" : "birdc show status failed",
+      birdOk ? "birdc show status OK" : runtimeState?.initial ? t("birdWaitingInitial") : "birdc show status failed",
       [
         ["returncode", payload?.bird?.returncode ?? "-"],
         ["duration", formatSecondsShort(payload?.bird?.duration_seconds)],
@@ -1183,9 +1277,9 @@ function buildStages(payload) {
       payload?.bird
     ),
     mikrotik: stageState(
-      bgpOk ? "ok" : "fail",
+      bgpOk ? "ok" : runtimeState?.initial ? "warn" : "fail",
       t("mikrotik"),
-      bgpOk ? "BGP Established" : "BGP not established",
+      bgpOk ? "BGP Established" : runtimeState?.initial ? t("mikrotikWaitingInitial") : "BGP not established",
       [
         ["protocol", "mikrotik"],
         ["returncode", payload?.bgp?.returncode ?? "-"],
@@ -1237,11 +1331,15 @@ async function loadStatus() {
   setVersion(data.version);
   const status = data.status || {};
   const runtime = data.runtime || {};
+  const runtimeState = runtimeGenerationState(data);
   const routes = status.routes || {};
   $("routes-count").textContent = routes.final ?? data.routes_file_count ?? "-";
   const resultCard = $("last-result").closest(".metric-card");
   resultCard.classList.remove("ok", "fail", "warn");
-  if (status.success === true) {
+  if (runtimeState) {
+    $("last-result").textContent = runtimeGenerationLabel(runtimeState);
+    resultCard.classList.add("warn");
+  } else if (status.success === true) {
     $("last-result").textContent = "OK";
     resultCard.classList.add("ok");
   } else if (status.success === false) {
@@ -1251,10 +1349,21 @@ async function loadStatus() {
     $("last-result").textContent = "-";
     resultCard.classList.add("warn");
   }
-  $("duration").textContent = formatSecondsShort(status.duration_seconds);
+  $("duration").textContent = formatSecondsShort(runtimeState?.elapsedSeconds ?? status.duration_seconds);
   $("last-update").textContent = `${t("lastGeneration")}: ${formatDateTime(status.updated_at)}`;
   $("bird-uptime").textContent = `${t("birdUptime")}: ${birdUptime(data.bird?.stdout)}`;
-  $("next-update").dataset.next = runtime.next_scheduled_update_unix || "";
+  if (runtimeState?.initial) {
+    $("next-update").dataset.next = "";
+    $("next-update").dataset.label = t("afterStartup");
+  } else if (runtimeState && !runtime.next_scheduled_update_unix) {
+    $("next-update").dataset.next = "";
+    $("next-update").dataset.label = t("afterCurrentRun");
+  } else {
+    $("next-update").dataset.next = runtime.next_scheduled_update_unix || "";
+    $("next-update").dataset.label = "";
+  }
+  tickCountdown();
+  renderRuntimeBanner(data);
   renderPipeline(data);
   if (!$("lists").classList.contains("hidden")) {
     renderListTiles();
@@ -1282,6 +1391,11 @@ function applyActionStatus(status) {
 }
 
 function tickCountdown() {
+  const label = $("next-update").dataset.label || "";
+  if (label) {
+    $("next-update").textContent = label;
+    return;
+  }
   $("next-update").textContent = formatCountdown(Number($("next-update").dataset.next || 0));
 }
 

@@ -2,7 +2,7 @@ name: bgp-antifilter
 
 services:
   bird:
-    image: "bgp-antifilter-bird:${BGP_ANTIFILTER_VERSION:-0.2.1}"
+    image: "bgp-antifilter-bird:${BGP_ANTIFILTER_VERSION:-0.2.2}"
     build:
       context: .
       dockerfile: deploy/Dockerfile
@@ -40,7 +40,7 @@ services:
       SETTINGS_ENV_FILE: /etc/bird/generated/settings.env
 
   admin:
-    image: "bgp-antifilter-bird:${BGP_ANTIFILTER_VERSION:-0.2.1}"
+    image: "bgp-antifilter-bird:${BGP_ANTIFILTER_VERSION:-0.2.2}"
     build:
       context: .
       dockerfile: deploy/Dockerfile

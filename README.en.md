@@ -59,7 +59,7 @@ If you are upgrading from the previous repository layout, move your custom list 
 Main settings:
 
 ```dotenv
-BGP_ANTIFILTER_VERSION=0.2.1
+BGP_ANTIFILTER_VERSION=0.2.2
 MY_AS=64500
 MT_AS=65455
 MT_IP=192.168.55.1
@@ -69,6 +69,7 @@ BGP_COMMUNITY=65432,500
 UPDATE_INTERVAL=1800
 CACHE_MAX_AGE=604800
 INCLUDE_GOOGLE_RANGES=1
+REQUIRE_ALL_URL_SOURCES=0
 MIN_PREFIX_LENGTH=8
 ALLOW_BROAD_ROUTES=0
 UPDATE_LOCK_DIR=/etc/bird/generated/update.lock
@@ -79,7 +80,7 @@ ADMIN_PORT=8080
 ADMIN_PASSWORD=
 ```
 
-- `BGP_ANTIFILTER_VERSION` - local Docker image tag; defaults to `0.2.1`.
+- `BGP_ANTIFILTER_VERSION` - local Docker image tag; defaults to `0.2.2`.
 - `MY_AS` - AS number used by the BIRD container.
 - `MT_AS` - MikroTik AS number.
 - `MT_IP` - MikroTik IP address.
@@ -89,6 +90,7 @@ ADMIN_PASSWORD=
 - `UPDATE_INTERVAL` - route refresh interval in seconds.
 - `CACHE_MAX_AGE` - maximum source cache age in seconds; defaults to 7 days.
 - `INCLUDE_GOOGLE_RANGES` - `1` adds default Google service ranges from `goog.json` excluding Google Cloud from `cloud.json`; `0` disables this source.
+- `REQUIRE_ALL_URL_SOURCES` - `1` makes every URL from `generated/config/lists.txt` mandatory; `0` by default allows an unavailable URL source to be skipped if the final route set can still be built from other data.
 - `MIN_PREFIX_LENGTH` - shortest IPv4 prefix accepted from external sources; defaults to `8`.
 - `ALLOW_BROAD_ROUTES` - `1` disables the broad-route safety guard; defaults to `0`.
 - `UPDATE_LOCK_DIR` - lock directory used to prevent parallel route updates.
@@ -171,6 +173,8 @@ Domains to force-add go into `generated/config/include-domains.txt`. These domai
 Domains to exclude go into `generated/config/exclude-domains.txt`. These domains are strict: if an exclude domain cannot be resolved and has no fresh cache, the new `routes.conf` is not applied. If an excluded IP is inside a larger prefix, the generator splits the prefix into smaller routes without that IP.
 
 Before writing the final file, the generator removes exact duplicates, drops routes already covered by larger prefixes, and collapses adjacent networks when doing so does not reintroduce excluded addresses.
+
+If a URL source from `generated/config/lists.txt` is temporarily unavailable, the default behavior is to mark it as `failed` but continue building from other sources and apply the result if the final route set is still non-empty. Enable `REQUIRE_ALL_URL_SOURCES=1` for strict mode; then any URL without fresh cache stops the update.
 
 Blank lines and lines starting with `#` are ignored.
 

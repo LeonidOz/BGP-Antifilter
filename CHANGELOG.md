@@ -1,5 +1,11 @@
 # Changelog
 
+## 0.2.2 - 2026-06-12
+
+- Added `REQUIRE_ALL_URL_SOURCES` to control whether missing URL sources fail the update or are skipped when other inputs can still produce routes.
+- Improved the admin UI during long-running startup and reloads: the dashboard now shows an active generation state, elapsed time, a progress bar, and per-source progress counters instead of looking stalled.
+- Extended runtime state tracking between shell scripts and the route updater so the UI can distinguish initial startup generation from manual or scheduled refreshes.
+
 ## 0.2.1 - 2026-06-11
 
 - Reworked the repository layout: `admin-ui/` now holds the web assets, `deploy/` contains runtime shell/BIRD files, `scripts/` contains Python entrypoints, and the root `docker-compose.yml` remains the single convenient Compose entrypoint.

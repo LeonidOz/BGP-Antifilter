@@ -112,6 +112,7 @@ class AdminServerHelperTests(unittest.TestCase):
 
     def test_validate_setting_normalizes_bool_and_numbers(self):
         self.assertEqual(admin_server.validate_setting("INCLUDE_GOOGLE_RANGES", "true"), "1")
+        self.assertEqual(admin_server.validate_setting("REQUIRE_ALL_URL_SOURCES", "yes"), "1")
         self.assertEqual(admin_server.validate_setting("FETCH_RETRY_DELAY", "2.5"), "2.5")
         self.assertEqual(admin_server.validate_setting("MIN_PREFIX_LENGTH", "24"), "24")
 

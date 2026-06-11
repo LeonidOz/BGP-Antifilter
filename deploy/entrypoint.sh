@@ -164,10 +164,19 @@ PY
 
 update_routes() {
   apply="${1:-apply}"
+  reason="${2:-manual}"
   load_settings_env
 
   if [ "$apply" = "apply" ]; then
-    /reload-routes.sh
+    case "$reason" in
+      scheduled)
+        update_message="Running scheduled route update"
+        ;;
+      *)
+        update_message="Running manual route update"
+        ;;
+    esac
+    ROUTE_UPDATE_REASON="$reason" ROUTE_UPDATE_MESSAGE="$update_message" /reload-routes.sh
     return $?
   fi
 
@@ -188,6 +197,15 @@ write_runtime() {
   next_update="${1:-0}"
   load_settings_env
   export RUNTIME_FILE UPDATE_INTERVAL ADMIN_ENABLED ADMIN_PORT
+  export GENERATION_ACTIVE="${GENERATION_ACTIVE:-0}"
+  export GENERATION_KIND="${GENERATION_KIND:-}"
+  export GENERATION_MESSAGE="${GENERATION_MESSAGE:-}"
+  export GENERATION_STARTED_AT="${GENERATION_STARTED_AT:-}"
+  export GENERATION_PROGRESS_PERCENT="${GENERATION_PROGRESS_PERCENT:-0}"
+  export GENERATION_STAGE="${GENERATION_STAGE:-}"
+  export GENERATION_STAGE_MESSAGE="${GENERATION_STAGE_MESSAGE:-}"
+  export GENERATION_ITEMS_DONE="${GENERATION_ITEMS_DONE:-}"
+  export GENERATION_ITEMS_TOTAL="${GENERATION_ITEMS_TOTAL:-}"
   python3 - "$next_update" <<'PY'
 import json
 import os
@@ -205,6 +223,15 @@ data = {
     "next_scheduled_update_unix": next_update,
     "admin_enabled": os.environ["ADMIN_ENABLED"] == "1",
     "admin_port": int(os.environ["ADMIN_PORT"]),
+    "generation_active": os.environ.get("GENERATION_ACTIVE", "0") == "1",
+    "generation_kind": os.environ.get("GENERATION_KIND", ""),
+    "generation_message": os.environ.get("GENERATION_MESSAGE", ""),
+    "generation_started_at_unix": int(os.environ["GENERATION_STARTED_AT"]) if os.environ.get("GENERATION_STARTED_AT") else None,
+    "generation_progress_percent": int(os.environ.get("GENERATION_PROGRESS_PERCENT", "0") or 0),
+    "generation_stage": os.environ.get("GENERATION_STAGE", ""),
+    "generation_stage_message": os.environ.get("GENERATION_STAGE_MESSAGE", ""),
+    "generation_items_done": int(os.environ["GENERATION_ITEMS_DONE"]) if os.environ.get("GENERATION_ITEMS_DONE") else None,
+    "generation_items_total": int(os.environ["GENERATION_ITEMS_TOTAL"]) if os.environ.get("GENERATION_ITEMS_TOTAL") else None,
 }
 tmp = path.with_suffix(path.suffix + ".tmp")
 tmp.write_text(json.dumps(data, indent=2) + "\n", encoding="utf-8")
@@ -234,8 +261,27 @@ export ADMIN_ENABLED ADMIN_PORT ADMIN_PASSWORD
 
 render_bird_config
 
+GENERATION_ACTIVE=1
+GENERATION_KIND="initial"
+GENERATION_MESSAGE="Preparing routes before BIRD startup"
+GENERATION_STARTED_AT="$(date +%s)"
+GENERATION_PROGRESS_PERCENT=0
+GENERATION_STAGE="bootstrap"
+GENERATION_STAGE_MESSAGE="Preparing initial route generation"
+GENERATION_ITEMS_DONE=""
+GENERATION_ITEMS_TOTAL=""
 write_runtime 0
 update_routes noapply
+GENERATION_ACTIVE=0
+GENERATION_KIND=""
+GENERATION_MESSAGE=""
+GENERATION_STARTED_AT=""
+GENERATION_PROGRESS_PERCENT=100
+GENERATION_STAGE="completed"
+GENERATION_STAGE_MESSAGE="Initial route generation complete"
+GENERATION_ITEMS_DONE=""
+GENERATION_ITEMS_TOTAL=""
+write_runtime 0
 
 if [ ! -s "$ROUTES" ]; then
   echo "No routes are available after initial update, refusing to start BIRD with an empty table" >&2
@@ -273,7 +319,7 @@ while true; do
     fi
   done
 
-  update_routes
+  update_routes apply scheduled
 done &
 
 wait "$BIRD_PID"

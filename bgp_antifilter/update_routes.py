@@ -17,6 +17,21 @@ from .runtime_paths import GENERATED_PATH_SPECS, LIST_FILE_SPECS, env_path, env_
 
 DEFAULT_CACHE_MAX_AGE = 7 * 24 * 60 * 60
 DEFAULT_MIN_PREFIX_LENGTH = 8
+PROGRESS_STEPS = {
+    "collecting-sources": 15,
+    "building-routes": 70,
+    "writing-routes": 85,
+    "writing-status": 95,
+    "completed": 100,
+}
+
+
+def env_bool(name, default=False):
+    value = os.environ.get(name)
+    if value is None:
+        return default
+    return value.strip().lower() in {"1", "true", "yes", "on"}
+
 
 def env_int(name, default):
     value = os.environ.get(name, str(default))
@@ -29,6 +44,27 @@ def env_int(name, default):
         raise SystemExit(f"{name} must be greater than zero")
 
     return number
+
+
+def write_runtime_progress(stage, message, *, active=True, percent=None, items_done=None, items_total=None):
+    runtime_file = env_path(*GENERATED_PATH_SPECS["runtime_file"])
+    value = PROGRESS_STEPS.get(stage, 0 if active else 100) if percent is None else percent
+    try:
+        data = json.loads(runtime_file.read_text(encoding="utf-8")) if runtime_file.exists() else {}
+    except (OSError, json.JSONDecodeError):
+        data = {}
+    data.update({
+        "generation_active": active,
+        "generation_stage": stage,
+        "generation_stage_message": message,
+        "generation_progress_percent": max(0, min(100, int(value))),
+        "generation_items_done": items_done,
+        "generation_items_total": items_total,
+    })
+    runtime_file.parent.mkdir(parents=True, exist_ok=True)
+    tmp = runtime_file.with_suffix(runtime_file.suffix + ".tmp")
+    tmp.write_text(json.dumps(data, indent=2) + "\n", encoding="utf-8")
+    tmp.replace(runtime_file)
 
 
 def read_list(path):
@@ -362,6 +398,7 @@ def parse_and_build_routes(output, base_text, include_text, exclude_text, min_pr
 def collect_sources(cache_dir, cache_max_age, include_google):
     now = int(time.time())
     list_files = env_paths(LIST_FILE_SPECS)
+    require_all_url_sources = env_bool("REQUIRE_ALL_URL_SOURCES", default=False)
 
     sources = []
     errors = []
@@ -374,6 +411,29 @@ def collect_sources(cache_dir, cache_max_age, include_google):
     asn_sources = read_list(list_files["asns"])
     exclude_domains = read_list(list_files["exclude-domains"])
     include_domains = read_list(list_files["include-domains"])
+    total_items = (
+        len(url_sources)
+        + len(asn_sources)
+        + len(exclude_domains)
+        + len(include_domains)
+        + (2 if include_google else 0)
+    )
+    processed_items = 0
+
+    def update_collection_progress(message):
+        if total_items <= 0:
+            percent = 65
+        else:
+            percent = 10 + round((processed_items / total_items) * 55)
+        write_runtime_progress(
+            "collecting-sources",
+            message,
+            percent=percent,
+            items_done=processed_items,
+            items_total=total_items,
+        )
+
+    update_collection_progress("Collecting route sources")
 
     progress(
         "starting update",
@@ -387,13 +447,21 @@ def collect_sources(cache_dir, cache_max_age, include_google):
     for index, url in enumerate(url_sources, 1):
         progress("fetching url", index=index, total=len(url_sources), url=url)
         text, record, ok = fetch_text_source("url", url, url, cache_path(cache_dir, "url", url), now, cache_max_age)
+        record["required"] = require_all_url_sources
         sources.append(record)
+        if require_all_url_sources:
+            source_failed = source_failed or not ok
         if ok:
             base_text.append(text)
         else:
-            record["required"] = False
-            progress("skipping unavailable URL source", url=url, status="failed")
+            progress(
+                "required URL source failed" if require_all_url_sources else "skipping unavailable URL source",
+                url=url,
+                status="failed",
+            )
             errors.append(record)
+        processed_items += 1
+        update_collection_progress(f"Processed URL sources: {processed_items}/{total_items}")
 
     for index, asn in enumerate(asn_sources, 1):
         progress("fetching ASN", index=index, total=len(asn_sources), asn=asn)
@@ -403,6 +471,8 @@ def collect_sources(cache_dir, cache_max_age, include_google):
             sources.append(record)
             errors.append(record)
             source_failed = True
+            processed_items += 1
+            update_collection_progress(f"Processed sources: {processed_items}/{total_items}")
             continue
 
         url = f"https://api.routeviews.org/asn/{asn_number}"
@@ -413,6 +483,8 @@ def collect_sources(cache_dir, cache_max_age, include_google):
             base_text.append(text)
         else:
             errors.append(record)
+        processed_items += 1
+        update_collection_progress(f"Processed sources: {processed_items}/{total_items}")
 
     if include_google:
         progress("fetching Google ranges")
@@ -426,6 +498,8 @@ def collect_sources(cache_dir, cache_max_age, include_google):
         )
         sources.extend([google_record, cloud_record])
         source_failed = source_failed or not google_ok or not cloud_ok
+        processed_items += 2
+        update_collection_progress(f"Processed sources: {processed_items}/{total_items}")
 
         if google_ok and cloud_ok:
             try:
@@ -456,6 +530,8 @@ def collect_sources(cache_dir, cache_max_age, include_google):
             exclude_text.append(text)
         else:
             errors.append(record)
+        processed_items += 1
+        update_collection_progress(f"Processed sources: {processed_items}/{total_items}")
 
     for index, domain in enumerate(include_domains, 1):
         progress("resolving include domain", index=index, total=len(include_domains), domain=domain)
@@ -467,6 +543,8 @@ def collect_sources(cache_dir, cache_max_age, include_google):
             record["required"] = False
             progress("skipping optional include domain", domain=domain, status="skipped")
         sources.append(record)
+        processed_items += 1
+        update_collection_progress(f"Processed sources: {processed_items}/{total_items}")
 
     return source_failed, sources, errors, base_text, include_text, exclude_text
 
@@ -508,6 +586,7 @@ def main(argv=None):
     )
 
     if args.check_sources:
+        write_runtime_progress("completed", "Source check complete", active=False, items_done=len(sources), items_total=len(sources))
         success = not errors
         status = build_status(
             success,
@@ -526,6 +605,7 @@ def main(argv=None):
     if not source_failed:
         try:
             progress("parsing and validating collected routes")
+            write_runtime_progress("building-routes", "Building final route set", items_done=len(sources), items_total=len(sources))
             networks, routes = parse_and_build_routes(
                 output,
                 base_text,
@@ -541,6 +621,7 @@ def main(argv=None):
                 source_failed = True
             elif not args.dry_run:
                 progress("writing generated routes", final=len(networks))
+                write_runtime_progress("writing-routes", "Writing generated routes", items_done=len(sources), items_total=len(sources))
                 write_routes(output, networks)
         except RuntimeError as exc:
             record = {"kind": "routes", "name": "validation", "status": "failed", "error": str(exc)}
@@ -551,14 +632,17 @@ def main(argv=None):
     status = build_status(success, started_at, sources, routes, errors, cache_max_age, dry_run=args.dry_run)
 
     if args.dry_run:
+        write_runtime_progress("completed", "Dry run complete", active=False, items_done=len(sources), items_total=len(sources))
         progress("dry run complete", success=success, final_routes=routes["final"])
         print(json.dumps(status, indent=2, ensure_ascii=False))
     else:
         progress("writing status and metrics")
+        write_runtime_progress("writing-status", "Writing status and metrics", items_done=len(sources), items_total=len(sources))
         write_json(status_file, status)
         write_metrics(metrics_file, status)
 
     progress("done", success=success, final_routes=routes["final"], duration_seconds=status["duration_seconds"])
+    write_runtime_progress("completed", "Route update complete", active=False, items_done=len(sources), items_total=len(sources))
     print(f"Final routes: {routes['final']}")
     print(
         f"Source statuses: fresh={sum(1 for s in sources if s['status'] == 'fresh')} "
