@@ -1,5 +1,12 @@
 # Changelog
 
+## 0.2.4 - 2026-06-12
+
+- Refined startup and reload progress reporting in the admin UI: the banner now shows the current source, fetch attempts, and clearer movement during long-running source checks.
+- Fixed duplicate subnet labels in the login canvas by deduplicating rendered `/24` networks instead of raw IP inputs.
+- Reworked the README files for end users: added a concise project introduction, section navigation, and removed developer-only release workflow details.
+- Added a local release-version helper script and `make release-version` automation to reduce manual version bumps across project files.
+
 ## 0.2.3 - 2026-06-12
 
 - Improved startup and reload progress reporting in the admin UI with a live banner, progress bar, current source details, and fetch attempt counters.

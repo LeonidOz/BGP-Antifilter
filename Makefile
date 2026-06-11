@@ -1,4 +1,4 @@
-.PHONY: test shellcheck compose-config build up down logs ps reload dry-run check-sources check-ip version
+.PHONY: test shellcheck compose-config build up down logs ps reload dry-run check-sources check-ip version release-version
 
 IP ?= 1.2.3.4
 VERSION ?= $(shell cat VERSION)
@@ -18,6 +18,9 @@ build:
 
 version:
 	@echo $(VERSION)
+
+release-version:
+	python scripts/release_version.py $(VERSION)
 
 up:
 	$(COMPOSE) up -d --build

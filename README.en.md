@@ -9,7 +9,21 @@ English | [Русский](README.md)
 
 BGP Antifilter is a containerized BIRD 2 configuration for announcing blocked IPv4 routes and prefixes to MikroTik via BGP.
 
+The project is designed to help bypass modern VPN and service blocking systems that operate on IP addresses and prefixes. It is intended for home routers with BGP support, such as MikroTik, and for multi-layer VPN servers with an ingress point inside the local country, where local traffic must stay inside the country.
+
 The project downloads route lists from public sources, enriches them with IPv4 addresses resolved from manually configured domains, removes routes for excluded domains, and generates BIRD `blackhole` static routes.
+
+## Navigation
+
+- [Project Contents](#project-contents)
+- [How It Works](#how-it-works)
+- [Configuration](#configuration)
+- [Web Admin](#web-admin)
+- [Running](#running)
+- [Managing Lists](#managing-lists)
+- [Verification And Rollback](#verification-and-rollback)
+- [Operations Checklist](#operations-checklist)
+- [MikroTik Example](#mikrotik-example)
 
 ![BGP Antifilter login screen](docs/assets/admin-login.png)
 
@@ -59,7 +73,7 @@ If you are upgrading from the previous repository layout, move your custom list 
 Main settings:
 
 ```dotenv
-BGP_ANTIFILTER_VERSION=0.2.3
+BGP_ANTIFILTER_VERSION=0.2.4
 MY_AS=64500
 MT_AS=65455
 MT_IP=192.168.55.1
@@ -80,7 +94,7 @@ ADMIN_PORT=8080
 ADMIN_PASSWORD=
 ```
 
-- `BGP_ANTIFILTER_VERSION` - local Docker image tag; defaults to `0.2.3`.
+- `BGP_ANTIFILTER_VERSION` - local Docker image tag; defaults to `0.2.4`.
 - `MY_AS` - AS number used by the BIRD container.
 - `MT_AS` - MikroTik AS number.
 - `MT_IP` - MikroTik IP address.
@@ -247,16 +261,9 @@ Check only source availability without parsing routes or writing diagnostic file
 docker compose exec bird /update-routes.py --check-sources
 ```
 
-Run local tests without Docker:
-
-```bash
-python -m unittest discover -s tests
-```
-
 If `make` is installed, short commands are available:
 
 ```bash
-make test
 make up
 make logs
 make reload
