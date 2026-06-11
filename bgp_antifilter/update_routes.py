@@ -61,10 +61,14 @@ def write_runtime_progress(stage, message, *, active=True, percent=None, items_d
         "generation_items_done": items_done,
         "generation_items_total": items_total,
     })
-    runtime_file.parent.mkdir(parents=True, exist_ok=True)
-    tmp = runtime_file.with_suffix(runtime_file.suffix + ".tmp")
-    tmp.write_text(json.dumps(data, indent=2) + "\n", encoding="utf-8")
-    tmp.replace(runtime_file)
+    try:
+        runtime_file.parent.mkdir(parents=True, exist_ok=True)
+        tmp = runtime_file.with_suffix(runtime_file.suffix + ".tmp")
+        tmp.write_text(json.dumps(data, indent=2) + "\n", encoding="utf-8")
+        tmp.replace(runtime_file)
+    except OSError:
+        # Runtime progress is best-effort and must not break CLI/test execution
+        return
 
 
 def read_list(path):
