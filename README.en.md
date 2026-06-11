@@ -20,31 +20,29 @@ The project downloads route lists from public sources, enriches them with IPv4 a
 
 ## Project Contents
 
-- `Dockerfile` - Debian-based image with BIRD 2, curl, tini, and Python.
-- `docker-compose.yml` - runs BIRD in host network mode.
-- `bird.conf.template` - BIRD configuration template rendered from environment variables.
+- `deploy/` - canonical runtime files: `Dockerfile`, `docker-compose.yml`, shell scripts, and `bird.conf.template`.
+- `scripts/` - Python entrypoint wrappers used by the container and manual checks.
+- `bgp_antifilter/` - main route generation, admin UI backend, and utility logic.
+- `admin-ui/` - static web admin assets.
+- `default-lists/` - default source lists, ASN list, and include/exclude domain lists copied on first start.
 - `.env.example` - example AS, IP, update interval, cache, and healthcheck settings.
-- `entrypoint.sh` - renders BIRD config, starts BIRD, and periodically refreshes routes.
-- `generate-routes.py` - route generator and validator.
-- `update-routes.py` - source refresh, caching, status, and metrics.
-- `healthcheck.sh` - checks BIRD, route availability, and optionally the BGP session.
-- `lists.txt` - source URLs for IP/CIDR lists.
-- `include-asns.txt` - ASNs whose announced IPv4 prefixes should be added.
-- `include-domains.txt` - domains whose IPv4 addresses should be added.
-- `exclude-domains.txt` - domains whose IPv4 addresses should be excluded.
+- `generated/config/lists.txt` - the user's working IP/CIDR source list.
+- `generated/config/include-asns.txt` - the user's working ASN list.
+- `generated/config/include-domains.txt` - the user's working include-domain list.
+- `generated/config/exclude-domains.txt` - the user's working exclude-domain list.
 - `generated/` - generated route cache, not stored in git.
 
 ## How It Works
 
-1. The container renders `/etc/bird/bird.conf` from `bird.conf.template`.
+1. The container renders `/etc/bird/bird.conf` from `deploy/bird.conf.template`.
 2. BIRD starts with the rendered configuration.
-3. `entrypoint.sh` calls `update-routes.py`.
-4. URLs from `lists.txt` are fetched and cached.
-5. ASNs from `include-asns.txt` are loaded from the RouteViews API.
+3. `deploy/entrypoint.sh` calls `update-routes.py`.
+4. On first start, `deploy/entrypoint.sh` copies defaults from `default-lists/` into `generated/config/`, then fetches URLs from the working `generated/config/lists.txt`.
+5. ASNs from `generated/config/include-asns.txt` are loaded from the RouteViews API.
 6. If `INCLUDE_GOOGLE_RANGES=1`, Google `goog.json` and `cloud.json` are fetched; Cloud prefixes are subtracted from the general Google list.
-7. `generate-routes.py` extracts and validates IPv4/CIDR routes from text or JSON sources.
-8. Domains from `include-domains.txt` are resolved to IPv4 and added as `/32`.
-9. Domains from `exclude-domains.txt` are resolved to IPv4 and subtracted from the final route set.
+7. `scripts/generate-routes.py` extracts and validates IPv4/CIDR routes from text or JSON sources.
+8. Domains from `generated/config/include-domains.txt` are resolved to IPv4 and added as `/32`.
+9. Domains from `generated/config/exclude-domains.txt` are resolved to IPv4 and subtracted from the final route set.
 10. `generated/routes.conf` is included by BIRD as static `blackhole` routes.
 11. BIRD exports the routes to MikroTik via BGP.
 
@@ -56,10 +54,12 @@ Copy the example environment file and adjust it for your network:
 cp .env.example .env
 ```
 
+If you are upgrading from the previous repository layout, move your custom list files into `generated/config/`: `lists.txt`, `include-asns.txt`, `include-domains.txt`, and `exclude-domains.txt`.
+
 Main settings:
 
 ```dotenv
-BGP_ANTIFILTER_VERSION=0.2.0
+BGP_ANTIFILTER_VERSION=0.2.1
 MY_AS=64500
 MT_AS=65455
 MT_IP=192.168.55.1
@@ -79,7 +79,7 @@ ADMIN_PORT=8080
 ADMIN_PASSWORD=
 ```
 
-- `BGP_ANTIFILTER_VERSION` - local Docker image tag; defaults to `0.2.0`.
+- `BGP_ANTIFILTER_VERSION` - local Docker image tag; defaults to `0.2.1`.
 - `MY_AS` - AS number used by the BIRD container.
 - `MT_AS` - MikroTik AS number.
 - `MT_IP` - MikroTik IP address.
@@ -98,7 +98,7 @@ ADMIN_PASSWORD=
 - `ADMIN_PORT` - web admin port; defaults to `8080`.
 - `ADMIN_PASSWORD` - web admin login password; required when `ADMIN_ENABLED=1`.
 
-If `.env` is missing, defaults from `docker-compose.yml` are used.
+If `.env` is missing, defaults from the compose configuration are used.
 
 ## Web Admin
 
@@ -112,24 +112,9 @@ ADMIN_PASSWORD=change-me
 
 After restarting the container, the interface is available on the configured host port. The UI includes an RU/EN language switch, a dashboard with the next auto-refresh countdown, BIRD/BGP status, route counts and source summary, `dry-run`, `check-sources`, `reload`, IP or domain lookup, metrics, route and container log views, `routes.conf` download, an editor for all four list files, and a settings page.
 
-On Docker Desktop for Windows/macOS, use the separate admin sidecar because BIRD runs with `network_mode: host` and its port is not published in the Ports column:
+With `ADMIN_ENABLED=1`, the separate `admin` service is always started. This avoids stdout/stderr contention with the BIRD container and keeps behavior consistent across Linux and Docker Desktop for Windows/macOS. The `admin` service publishes the UI port through regular `ports:` and talks to BIRD through the shared `/run/bird` socket and shared `generated/` files.
 
-```dotenv
-ADMIN_ENABLED=0
-COMPOSE_PROFILES=admin
-ADMIN_PORT=8080
-ADMIN_PASSWORD=change-me
-```
-
-Then run:
-
-```bash
-docker compose up -d --build
-```
-
-In this mode the `admin` service publishes the port through regular `ports:` and talks to BIRD through the shared `/run/bird` socket and shared `generated/` files.
-
-`lists.txt`, `include-asns.txt`, `include-domains.txt`, and `exclude-domains.txt` are mounted read-write so the admin UI can edit them. A backup is created in `generated/list-backups` before saving.
+Working files `generated/config/lists.txt`, `generated/config/include-asns.txt`, `generated/config/include-domains.txt`, and `generated/config/exclude-domains.txt` live outside git and are edited by the admin UI without `git pull` conflicts. If a file does not exist yet, the container creates it from the default version in `default-lists/`. A backup is created in `generated/list-backups` before saving.
 
 At startup, the container validates environment values before starting BIRD:
 
@@ -141,6 +126,8 @@ At startup, the container validates environment values before starting BIRD:
 
 ## Running
 
+From the repository root, you can use short `docker compose ...` commands: the root-level `docker-compose.yml` is kept as a convenience entrypoint and automatically picks up `.env`.
+
 ```bash
 docker compose up -d --build
 ```
@@ -148,7 +135,7 @@ docker compose up -d --build
 Show logs:
 
 ```bash
-docker compose logs -f bird
+docker compose logs -f bird admin
 ```
 
 Check container status:
@@ -165,7 +152,7 @@ docker compose down
 
 ## Managing Lists
 
-Add new IP/CIDR sources to `lists.txt`, one URL per line.
+Add new IP/CIDR sources to `generated/config/lists.txt`, one URL per line.
 
 Sources may be plain text or JSON. The generator extracts IPv4/CIDR values from source content, so URLs such as `format=json&data=cidr4` are supported. Example:
 
@@ -173,15 +160,15 @@ Sources may be plain text or JSON. The generator extracts IPv4/CIDR values from 
 https://iplist.opencck.org/?format=json&data=cidr4&site=claude.ai&site=chatgpt.com&site=copilot&site=deepseek.com&site=grok.com
 ```
 
-If you have multiple lists, add each URL as a separate line in `lists.txt`.
+If you have multiple lists, add each URL as a separate line in `generated/config/lists.txt`.
 
-ASNs whose announced IPv4 prefixes should be force-added go into `include-asns.txt`. For example, `AS32934` adds Meta routes for Facebook, Instagram, WhatsApp, and Messenger.
+ASNs whose announced IPv4 prefixes should be force-added go into `generated/config/include-asns.txt`. For example, `AS32934` adds Meta routes for Facebook, Instagram, WhatsApp, and Messenger.
 
-For YouTube, a dedicated Google ranges source is enabled: with `INCLUDE_GOOGLE_RANGES=1`, the container uses `https://www.gstatic.com/ipranges/goog.json`, subtracts `https://www.gstatic.com/ipranges/cloud.json`, and adds the remaining IPv4 prefixes. YouTube domains in `include-domains.txt` remain an additional point source.
+For YouTube, a dedicated Google ranges source is enabled: with `INCLUDE_GOOGLE_RANGES=1`, the container uses `https://www.gstatic.com/ipranges/goog.json`, subtracts `https://www.gstatic.com/ipranges/cloud.json`, and adds the remaining IPv4 prefixes. YouTube domains in `generated/config/include-domains.txt` remain an additional point source.
 
-Domains to force-add go into `include-domains.txt`. These domains are best-effort: if a domain temporarily does not resolve and has no cache, it is marked as `skipped`, but route updates continue.
+Domains to force-add go into `generated/config/include-domains.txt`. These domains are best-effort: if a domain temporarily does not resolve and has no cache, it is marked as `skipped`, but route updates continue.
 
-Domains to exclude go into `exclude-domains.txt`. These domains are strict: if an exclude domain cannot be resolved and has no fresh cache, the new `routes.conf` is not applied. If an excluded IP is inside a larger prefix, the generator splits the prefix into smaller routes without that IP.
+Domains to exclude go into `generated/config/exclude-domains.txt`. These domains are strict: if an exclude domain cannot be resolved and has no fresh cache, the new `routes.conf` is not applied. If an excluded IP is inside a larger prefix, the generator splits the prefix into smaller routes without that IP.
 
 Before writing the final file, the generator removes exact duplicates, drops routes already covered by larger prefixes, and collapses adjacent networks when doing so does not reintroduce excluded addresses.
 
@@ -189,9 +176,9 @@ Blank lines and lines starting with `#` are ignored.
 
 ## Verification And Rollback
 
-Before applying a new `generated/routes.conf`, the container keeps a copy of the previous file. Every network source has a separate cache in `generated/cache`: URLs from `lists.txt`, ASN prefixes, Google ranges, and DNS results for include/exclude domains. If a source is temporarily unavailable, the generator uses its last cache and continues updating other sources.
+Before applying a new `generated/routes.conf`, the container keeps a copy of the previous file. Every network source has a separate cache in `generated/cache`: URLs from `generated/config/lists.txt`, ASN prefixes, Google ranges, and DNS results for include/exclude domains. If a source is temporarily unavailable, the generator uses its last cache and continues updating other sources.
 
-Cache is used only while it is younger than `CACHE_MAX_AGE`; the default is 604800 seconds, or 7 days. If an unavailable source has no fresh cache, the final route file is not updated and the old `routes.conf` stays in place. If `birdc configure` rejects the new configuration, `entrypoint.sh` restores the previous route file and asks BIRD to apply the working version again.
+Cache is used only while it is younger than `CACHE_MAX_AGE`; the default is 604800 seconds, or 7 days. If an unavailable source has no fresh cache, the final route file is not updated and the old `routes.conf` stays in place. If `birdc configure` rejects the new configuration, `deploy/entrypoint.sh` restores the previous route file and asks BIRD to apply the working version again.
 
 On startup, the container prepares routes before starting BIRD. This reduces the chance of briefly advertising an empty table after restart.
 
@@ -240,7 +227,7 @@ docker compose exec bird /reload-routes.sh
 
 This command refreshes sources inside the running container. Existing routes stay active until the new `routes.conf` is generated and accepted by `birdc configure`. If generation or apply fails, the previous route file is restored.
 
-During a manual refresh and in `docker compose logs -f bird`, progress is printed by stage: URL/ASN/Google ranges fetching, include/exclude domain resolving, parsing, final route table build, and status/metrics writing.
+During a manual refresh and in `docker compose logs -f bird admin`, progress is printed by stage: URL/ASN/Google ranges fetching, include/exclude domain resolving, parsing, final route table build, and status/metrics writing.
 
 Validate an update without writing `routes.conf`, `status.json`, or `metrics.prom`:
 
@@ -276,7 +263,7 @@ make check-ip IP=1.2.3.4
 
 ## Operations Checklist
 
-- Run dry-run before changing `lists.txt`, `include-asns.txt`, `include-domains.txt`, or `exclude-domains.txt`.
+- Run dry-run before changing `generated/config/lists.txt`, `generated/config/include-asns.txt`, `generated/config/include-domains.txt`, or `generated/config/exclude-domains.txt`.
 - After manual reload, check `generated/status.json`: `success` should be `true`, and `routes.final` should be greater than zero.
 - On MikroTik, accept only routes with the expected BGP community and reject everything else.
 - Keep exclude-domain caches fresh: if DNS is unavailable and no cache exists, the update intentionally fails.

@@ -20,30 +20,28 @@ BGP Antifilter - контейнеризированная конфигураци
 
 ## Что входит в проект
 
-- `Dockerfile` - образ на базе Debian с BIRD 2, curl и Python.
-- `docker-compose.yml` - запуск BIRD в `host` network mode.
-- `bird.conf.template` - шаблон BIRD-конфигурации с параметрами из окружения.
+- `deploy/` - канонические runtime-файлы: `Dockerfile`, `docker-compose.yml`, shell-скрипты и `bird.conf.template`.
+- `scripts/` - Python entrypoint-обертки для контейнера и ручных проверок.
+- `bgp_antifilter/` - основная логика генерации маршрутов, админки и служебных команд.
+- `admin-ui/` - статические файлы веб-админки.
+- `default-lists/` - дефолтные списки источников, ASN и include/exclude-доменов, которые копируются при первом старте.
 - `.env.example` - пример локальных настроек AS, IP-адресов и интервала обновления.
-- `entrypoint.sh` - запуск BIRD, рендеринг конфига и периодическое обновление маршрутов.
-- `generate-routes.py` - генератор и валидатор итогового файла маршрутов.
-- `update-routes.py` - обновление источников, кеширование, статус и метрики.
-- `healthcheck.sh` - проверка BIRD, наличия маршрутов и BGP-сессии.
-- `lists.txt` - URL-адреса исходных списков IP и подсетей.
-- `include-asns.txt` - ASN, анонсированные IPv4-префиксы которых нужно добавить в маршруты.
-- `include-domains.txt` - домены, IP-адреса которых нужно добавить в маршруты.
-- `exclude-domains.txt` - домены, IP-адреса которых нужно исключить из маршрутов.
+- `generated/config/lists.txt` - рабочий список исходных IP и подсетей пользователя.
+- `generated/config/include-asns.txt` - рабочий список ASN пользователя.
+- `generated/config/include-domains.txt` - рабочий список include-доменов пользователя.
+- `generated/config/exclude-domains.txt` - рабочий список exclude-доменов пользователя.
 - `generated/` - генерируемый кеш маршрутов, не хранится в репозитории.
 
 ## Как это работает
 
-1. Контейнер рендерит `/etc/bird/bird.conf` из `bird.conf.template`.
+1. Контейнер рендерит `/etc/bird/bird.conf` из `deploy/bird.conf.template`.
 2. BIRD запускается с полученной конфигурацией.
-3. `entrypoint.sh` скачивает списки из `lists.txt`.
-4. ASN из `include-asns.txt` загружаются из RouteViews API как анонсированные IPv4-префиксы.
+3. `deploy/entrypoint.sh` при первом старте копирует дефолты из `default-lists/` в `generated/config/`, затем использует рабочий `generated/config/lists.txt`.
+4. ASN из `generated/config/include-asns.txt` загружаются из RouteViews API как анонсированные IPv4-префиксы.
 5. Если `INCLUDE_GOOGLE_RANGES=1`, загружаются Google `goog.json` и `cloud.json`; Cloud-префиксы вычитаются из общего списка Google.
-6. `generate-routes.py` извлекает и валидирует IPv4/CIDR-маршруты.
-7. Домены из `include-domains.txt` резолвятся в IPv4 и добавляются как `/32`.
-8. Домены из `exclude-domains.txt` резолвятся в IPv4 и вычитаются из итогового набора маршрутов.
+6. `scripts/generate-routes.py` извлекает и валидирует IPv4/CIDR-маршруты.
+7. Домены из `generated/config/include-domains.txt` резолвятся в IPv4 и добавляются как `/32`.
+8. Домены из `generated/config/exclude-domains.txt` резолвятся в IPv4 и вычитаются из итогового набора маршрутов.
 9. Итоговый файл `generated/routes.conf` подключается в BIRD как статические `blackhole`-маршруты.
 10. BIRD экспортирует маршруты в MikroTik через BGP.
 
@@ -55,10 +53,12 @@ BGP Antifilter - контейнеризированная конфигураци
 cp .env.example .env
 ```
 
+Если вы обновляетесь с предыдущей структуры репозитория, перенесите свои кастомные списки в `generated/config/`: `lists.txt`, `include-asns.txt`, `include-domains.txt`, `exclude-domains.txt`.
+
 Основные параметры:
 
 ```dotenv
-BGP_ANTIFILTER_VERSION=0.2.0
+BGP_ANTIFILTER_VERSION=0.2.1
 MY_AS=64500
 MT_AS=65455
 MT_IP=192.168.55.1
@@ -81,7 +81,7 @@ ADMIN_PASSWORD=
 Где:
 
 - `MY_AS` - AS контейнера с BIRD.
-- `BGP_ANTIFILTER_VERSION` - тег локального Docker-образа, по умолчанию `0.2.0`.
+- `BGP_ANTIFILTER_VERSION` - тег локального Docker-образа, по умолчанию `0.2.1`.
 - `MT_AS` - AS MikroTik.
 - `MT_IP` - IP-адрес MikroTik.
 - `BIRD_IP` - IP-адрес хоста или интерфейса, с которого BIRD устанавливает BGP-сессию.
@@ -99,7 +99,7 @@ ADMIN_PASSWORD=
 - `ADMIN_PORT` - порт веб-админки, по умолчанию `8080`.
 - `ADMIN_PASSWORD` - пароль входа в веб-админку; обязателен при `ADMIN_ENABLED=1`.
 
-Если `.env` не создан, используются значения по умолчанию из `docker-compose.yml`.
+Если `.env` не создан, используются значения по умолчанию из compose-конфига.
 
 ## Веб-админка
 
@@ -113,24 +113,9 @@ ADMIN_PASSWORD=change-me
 
 После перезапуска контейнера интерфейс будет доступен на указанном порту хоста. В админке есть RU/EN-переключатель, dashboard с таймером до следующего автообновления, статусом BIRD/BGP, количеством маршрутов и источниками, запуск `dry-run`, `check-sources`, `reload`, проверка IP или домена, просмотр метрик, маршрутов и логов контейнера, скачивание `routes.conf`, редактор четырех списков и страница настроек.
 
-На Docker Desktop для Windows/macOS используйте отдельный admin-sidecar, потому что `network_mode: host` у BIRD не публикует порт в колонке Ports:
+При `ADMIN_ENABLED=1` отдельный сервис `admin` поднимается всегда. Это убирает конкуренцию за stdout/stderr у контейнера BIRD и делает поведение одинаковым на Linux и Docker Desktop для Windows/macOS. Сервис `admin` публикует порт через обычный `ports:`, а с BIRD общается через общий `/run/bird` socket и общие файлы `generated/`.
 
-```dotenv
-ADMIN_ENABLED=0
-COMPOSE_PROFILES=admin
-ADMIN_PORT=8080
-ADMIN_PASSWORD=change-me
-```
-
-Затем:
-
-```bash
-docker compose up -d --build
-```
-
-В этом режиме сервис `admin` публикует порт через обычный `ports:`, а с BIRD общается через общий `/run/bird` socket и общие файлы `generated/`.
-
-Файлы `lists.txt`, `include-asns.txt`, `include-domains.txt` и `exclude-domains.txt` монтируются в контейнер с правом записи, чтобы админка могла их редактировать. Перед сохранением создается backup в `generated/list-backups`.
+Рабочие файлы `generated/config/lists.txt`, `generated/config/include-asns.txt`, `generated/config/include-domains.txt` и `generated/config/exclude-domains.txt` хранятся вне git и редактируются админкой без конфликтов с `git pull`. Если файла еще нет, контейнер создает его из дефолта из `default-lists/`. Перед сохранением создается backup в `generated/list-backups`.
 
 При старте контейнер проверяет значения окружения до запуска BIRD:
 
@@ -142,6 +127,8 @@ docker compose up -d --build
 
 ## Запуск
 
+Из корня репозитория можно использовать короткие команды `docker compose ...`: root-level `docker-compose.yml` оставлен как удобная точка входа и автоматически подхватывает `.env`.
+
 ```bash
 docker compose up -d --build
 ```
@@ -149,7 +136,7 @@ docker compose up -d --build
 Посмотреть логи:
 
 ```bash
-docker compose logs -f bird
+docker compose logs -f bird admin
 ```
 
 Проверить состояние контейнера:
@@ -166,7 +153,7 @@ docker compose down
 
 ## Управление списками
 
-Добавьте новые источники IP-адресов и подсетей в `lists.txt`, по одному URL на строку.
+Добавьте новые источники IP-адресов и подсетей в `generated/config/lists.txt`, по одному URL на строку.
 
 Источники могут быть обычным текстом или JSON. Генератор извлекает IPv4/CIDR из содержимого источника, поэтому URL вида `format=json&data=cidr4` тоже поддерживаются. Например:
 
@@ -174,15 +161,15 @@ docker compose down
 https://iplist.opencck.org/?format=json&data=cidr4&site=claude.ai&site=chatgpt.com&site=copilot&site=deepseek.com&site=grok.com
 ```
 
-Если таких списков несколько, добавьте каждый URL отдельной строкой в `lists.txt`.
+Если таких списков несколько, добавьте каждый URL отдельной строкой в `generated/config/lists.txt`.
 
-ASN, чьи анонсированные IPv4-префиксы нужно принудительно добавить в маршруты, указываются в `include-asns.txt`. Например, `AS32934` добавляет маршруты Meta для Facebook, Instagram, WhatsApp и Messenger.
+ASN, чьи анонсированные IPv4-префиксы нужно принудительно добавить в маршруты, указываются в `generated/config/include-asns.txt`. Например, `AS32934` добавляет маршруты Meta для Facebook, Instagram, WhatsApp и Messenger.
 
-Для YouTube включен отдельный источник Google ranges: при `INCLUDE_GOOGLE_RANGES=1` контейнер берет `https://www.gstatic.com/ipranges/goog.json`, вычитает `https://www.gstatic.com/ipranges/cloud.json` и добавляет оставшиеся IPv4-префиксы. Домены YouTube в `include-domains.txt` остаются как дополнительный точечный источник.
+Для YouTube включен отдельный источник Google ranges: при `INCLUDE_GOOGLE_RANGES=1` контейнер берет `https://www.gstatic.com/ipranges/goog.json`, вычитает `https://www.gstatic.com/ipranges/cloud.json` и добавляет оставшиеся IPv4-префиксы. Домены YouTube в `generated/config/include-domains.txt` остаются как дополнительный точечный источник.
 
-Домены, которые нужно принудительно добавить в маршруты, указываются в `include-domains.txt`. Эти домены обрабатываются как best-effort: если домен временно не резолвится и кеша для него нет, он помечается как `skipped`, но обновление маршрутов продолжается.
+Домены, которые нужно принудительно добавить в маршруты, указываются в `generated/config/include-domains.txt`. Эти домены обрабатываются как best-effort: если домен временно не резолвится и кеша для него нет, он помечается как `skipped`, но обновление маршрутов продолжается.
 
-Домены, которые нужно исключить из маршрутов, указываются в `exclude-domains.txt`. Эти домены считаются строгими: если исключение не удалось зарезолвить и свежего кеша нет, новый `routes.conf` не применяется. Если исключенный IP попадает внутрь более крупной подсети, генератор разобьет подсеть на меньшие маршруты без этого IP.
+Домены, которые нужно исключить из маршрутов, указываются в `generated/config/exclude-domains.txt`. Эти домены считаются строгими: если исключение не удалось зарезолвить и свежего кеша нет, новый `routes.conf` не применяется. Если исключенный IP попадает внутрь более крупной подсети, генератор разобьет подсеть на меньшие маршруты без этого IP.
 
 Перед записью итогового файла генератор удаляет точные дубли, убирает маршруты, уже покрытые более крупными подсетями, и схлопывает соседние сети там, где это не возвращает исключенные адреса.
 
@@ -190,9 +177,9 @@ ASN, чьи анонсированные IPv4-префиксы нужно при
 
 ## Проверка и откат
 
-Перед применением нового `generated/routes.conf` контейнер оставляет копию предыдущего файла. У каждого сетевого источника есть отдельный кеш в `generated/cache`: URL из `lists.txt`, префиксы ASN, Google ranges и DNS-результаты доменов include/exclude. Если источник временно недоступен, генератор использует его последний кеш и продолжает обновление остальных источников.
+Перед применением нового `generated/routes.conf` контейнер оставляет копию предыдущего файла. У каждого сетевого источника есть отдельный кеш в `generated/cache`: URL из `generated/config/lists.txt`, префиксы ASN, Google ranges и DNS-результаты доменов include/exclude. Если источник временно недоступен, генератор использует его последний кеш и продолжает обновление остальных источников.
 
-Кеш используется только пока он моложе `CACHE_MAX_AGE`; по умолчанию это 604800 секунд, то есть 7 дней. Если у недоступного источника еще нет свежего кеша, обновление итогового файла не применяется и старый `routes.conf` остается на месте. Если `birdc configure` не принимает обновленную конфигурацию, `entrypoint.sh` восстанавливает старый файл маршрутов и повторно просит BIRD применить рабочий вариант.
+Кеш используется только пока он моложе `CACHE_MAX_AGE`; по умолчанию это 604800 секунд, то есть 7 дней. Если у недоступного источника еще нет свежего кеша, обновление итогового файла не применяется и старый `routes.conf` остается на месте. Если `birdc configure` не принимает обновленную конфигурацию, `deploy/entrypoint.sh` восстанавливает старый файл маршрутов и повторно просит BIRD применить рабочий вариант.
 
 При старте контейнер сначала пытается подготовить маршруты, а уже потом запускает BIRD. Это уменьшает шанс короткого анонса пустой таблицы после рестарта.
 
@@ -243,7 +230,7 @@ docker compose exec bird /reload-routes.sh
 
 Эта команда запускает обновление источников внутри работающего контейнера. Старые маршруты остаются активными, пока новый `routes.conf` не будет сгенерирован и принят командой `birdc configure`. Если генерация или применение не удались, старый файл маршрутов восстанавливается.
 
-Во время ручного обновления и в `docker compose logs -f bird` выводится прогресс по этапам: загрузка URL/ASN/Google ranges, резолв include/exclude-доменов, парсинг, сборка итоговой таблицы, запись status/metrics.
+Во время ручного обновления и в `docker compose logs -f bird admin` выводится прогресс по этапам: загрузка URL/ASN/Google ranges, резолв include/exclude-доменов, парсинг, сборка итоговой таблицы, запись status/metrics.
 
 Проверить обновление без записи `routes.conf`, `status.json` и `metrics.prom`:
 
@@ -279,7 +266,7 @@ make check-ip IP=1.2.3.4
 
 ## Эксплуатационный чеклист
 
-- Перед изменением `lists.txt`, `include-asns.txt`, `include-domains.txt` или `exclude-domains.txt` запустите dry-run.
+- Перед изменением `generated/config/lists.txt`, `generated/config/include-asns.txt`, `generated/config/include-domains.txt` или `generated/config/exclude-domains.txt` запустите dry-run.
 - После ручного reload проверьте `generated/status.json`: `success` должен быть `true`, а `routes.final` больше нуля.
 - На MikroTik принимайте только маршруты с ожидаемой BGP community и отклоняйте остальные.
 - Для exclude-доменов держите свежий кеш: если DNS временно недоступен и кеша нет, обновление намеренно не применяется.

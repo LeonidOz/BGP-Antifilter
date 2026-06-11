@@ -2,42 +2,43 @@
 
 IP ?= 1.2.3.4
 VERSION ?= $(shell cat VERSION)
+COMPOSE := docker compose
 
 test:
 	python -m unittest discover -s tests
 
 shellcheck:
-	shellcheck entrypoint.sh healthcheck.sh reload-routes.sh
+	shellcheck deploy/entrypoint.sh deploy/healthcheck.sh deploy/reload-routes.sh
 
 compose-config:
-	docker compose config
+	$(COMPOSE) config
 
 build:
-	docker compose build
+	$(COMPOSE) build
 
 version:
 	@echo $(VERSION)
 
 up:
-	docker compose up -d --build
+	$(COMPOSE) up -d --build
 
 down:
-	docker compose down
+	$(COMPOSE) down
 
 logs:
-	docker compose logs -f bird
+	$(COMPOSE) logs -f bird admin
 
 ps:
-	docker compose ps
+	$(COMPOSE) ps
 
 reload:
-	docker compose exec bird /reload-routes.sh
+	$(COMPOSE) exec bird /reload-routes.sh
 
 dry-run:
-	docker compose exec bird /update-routes.py --dry-run
+	$(COMPOSE) exec bird /update-routes.py --dry-run
 
 check-sources:
-	docker compose exec bird /update-routes.py --check-sources
+	$(COMPOSE) exec bird /update-routes.py --check-sources
 
 check-ip:
-	docker compose exec bird /check-ip.py $(IP)
+	$(COMPOSE) exec bird /check-ip.py $(IP)

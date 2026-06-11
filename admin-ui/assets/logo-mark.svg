@@ -1,0 +1,20 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 96 96" role="img" aria-labelledby="logoTitle">
+  <title id="logoTitle">BGP Antifilter logo</title>
+  <defs>
+    <linearGradient id="bg" x1="12" y1="12" x2="84" y2="84" gradientUnits="userSpaceOnUse">
+      <stop offset="0" stop-color="#22deff"/>
+      <stop offset=".5" stop-color="#16a8ff"/>
+      <stop offset="1" stop-color="#7ce45d"/>
+    </linearGradient>
+  </defs>
+  <rect x="8" y="8" width="80" height="80" rx="22" fill="#09141c"/>
+  <rect x="8.75" y="8.75" width="78.5" height="78.5" rx="21.25" fill="none" stroke="url(#bg)" stroke-opacity=".3" stroke-width="1.5"/>
+  <circle cx="48" cy="48" r="25" fill="none" stroke="#183240" stroke-width="8"/>
+  <path d="M29 58c4.8-7.8 10.9-11.7 19-11.7 7.8 0 13.9 3.9 19 11.7" fill="none" stroke="url(#bg)" stroke-linecap="round" stroke-width="7"/>
+  <path d="M29 38c5.1 4.7 11.4 7 19 7 7.6 0 13.9-2.3 19-7" fill="none" stroke="#dfffff" stroke-linecap="round" stroke-width="5"/>
+  <circle cx="29" cy="38" r="4.5" fill="#21ddff"/>
+  <circle cx="67" cy="38" r="4.5" fill="#21ddff"/>
+  <circle cx="48" cy="45" r="5.2" fill="#dfffff"/>
+  <circle cx="29" cy="58" r="4.5" fill="#7ce45d"/>
+  <circle cx="67" cy="58" r="4.5" fill="#7ce45d"/>
+</svg>

@@ -4,6 +4,8 @@
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <title>BGP Antifilter Admin</title>
+  <link rel="icon" type="image/svg+xml" href="/assets/favicon.svg">
+  <link rel="shortcut icon" href="/assets/favicon.svg">
   <link rel="stylesheet" href="/styles.css">
 </head>
 <body>
@@ -11,7 +13,7 @@
     <aside class="sidebar hidden" id="sidebar">
       <div class="brand">
         <div class="brand-mark" aria-hidden="true">
-          <i data-lucide="network"></i>
+          <img src="/assets/logo-mark.svg" alt="">
         </div>
         <div>
           <strong>BGP Antifilter</strong>
@@ -35,7 +37,7 @@
         <canvas id="login-network-canvas" class="login-network-canvas" aria-hidden="true"></canvas>
         <div class="login-brand">
           <div class="brand-mark hero" aria-hidden="true">
-            <i data-lucide="network"></i>
+            <img src="/assets/logo-mark.svg" alt="">
           </div>
           <div>
             <p>BGP Antifilter</p>
@@ -50,7 +52,7 @@
           </form>
           <p id="login-error"></p>
         </div>
-        <footer class="login-footer">&copy; 2026 BGP Antifilter</footer>
+        <footer class="login-footer">&copy; 2026 BGP Antifilter <span id="login-footer-version">v-</span></footer>
       </section>
 
       <section id="admin-view" class="hidden">
@@ -153,19 +155,23 @@
 
         <section class="view view-stack hidden" id="tools">
           <div class="tabs" id="tool-tabs">
-            <button class="active" data-tool-tab="check"><i data-lucide="search"></i><span data-i18n="checkIp">Check IP</span></button>
+            <button class="active" data-tool-tab="check"><i data-lucide="search"></i><span data-i18n="checkTarget">Check IP / domain</span></button>
+            <button data-tool-tab="network"><i data-lucide="globe"></i><span data-i18n="network">Network</span></button>
             <button data-tool-tab="metrics"><i data-lucide="activity"></i><span data-i18n="loadMetrics">Load metrics</span></button>
             <button data-tool-tab="routes"><i data-lucide="route"></i><span data-i18n="loadRoutes">Load routes</span></button>
             <button data-tool-tab="logs"><i data-lucide="scroll-text"></i><span data-i18n="logs">Logs</span></button>
           </div>
           <article class="panel tool-panel">
             <div class="tool-tab" id="tool-check">
-              <h2 data-i18n="checkIp">Check IP</h2>
+              <h2 data-i18n="checkTarget">Check IP / domain</h2>
               <form id="check-ip-form" class="inline-form">
                 <input id="check-ip-input" placeholder="1.2.3.4 / example.com">
-                <button type="submit"><i data-lucide="search"></i><span data-i18n="check">Check</span></button>
+                <button type="submit" id="check-ip-submit"><i data-lucide="search"></i><span data-i18n="check">Check</span></button>
               </form>
               <div id="check-ip-result" class="result-view"></div>
+            </div>
+            <div class="tool-tab hidden" id="tool-network">
+              <div id="network-view" class="result-view"></div>
             </div>
             <div class="tool-tab hidden" id="tool-metrics">
               <div id="metrics-view" class="result-view"></div>

@@ -12,15 +12,11 @@ import urllib.request
 
 from . import generate_routes
 from .logging import progress
+from .runtime_paths import GENERATED_PATH_SPECS, LIST_FILE_SPECS, env_path, env_paths
 
 
 DEFAULT_CACHE_MAX_AGE = 7 * 24 * 60 * 60
 DEFAULT_MIN_PREFIX_LENGTH = 8
-
-
-def env_path(name, default):
-    return Path(os.environ.get(name, default))
-
 
 def env_int(name, default):
     value = os.environ.get(name, str(default))
@@ -365,10 +361,7 @@ def parse_and_build_routes(output, base_text, include_text, exclude_text, min_pr
 
 def collect_sources(cache_dir, cache_max_age, include_google):
     now = int(time.time())
-    lists_file = env_path("LISTS_FILE", "/etc/bird/lists.txt")
-    include_asns_file = env_path("INCLUDE_ASNS_FILE", "/etc/bird/include-asns.txt")
-    include_domains_file = env_path("INCLUDE_DOMAINS_FILE", "/etc/bird/include-domains.txt")
-    exclude_domains_file = env_path("EXCLUDE_DOMAINS_FILE", "/etc/bird/exclude-domains.txt")
+    list_files = env_paths(LIST_FILE_SPECS)
 
     sources = []
     errors = []
@@ -377,10 +370,10 @@ def collect_sources(cache_dir, cache_max_age, include_google):
     include_text = []
     exclude_text = []
 
-    url_sources = read_list(lists_file)
-    asn_sources = read_list(include_asns_file)
-    exclude_domains = read_list(exclude_domains_file)
-    include_domains = read_list(include_domains_file)
+    url_sources = read_list(list_files["urls"])
+    asn_sources = read_list(list_files["asns"])
+    exclude_domains = read_list(list_files["exclude-domains"])
+    include_domains = read_list(list_files["include-domains"])
 
     progress(
         "starting update",
@@ -491,7 +484,7 @@ def main(argv=None):
 
     started_at = time.time()
     cache_max_age = env_int("CACHE_MAX_AGE", DEFAULT_CACHE_MAX_AGE)
-    cache_dir = env_path("CACHE_DIR", "/etc/bird/generated/cache")
+    cache_dir = env_path(*GENERATED_PATH_SPECS["cache_dir"])
     cache_dir.mkdir(parents=True, exist_ok=True)
     include_google = os.environ.get("INCLUDE_GOOGLE_RANGES", "1") == "1"
 

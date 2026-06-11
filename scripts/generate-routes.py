@@ -4,4 +4,3 @@ from bgp_antifilter.generate_routes import main
 
 if __name__ == "__main__":
     raise SystemExit(main())
-

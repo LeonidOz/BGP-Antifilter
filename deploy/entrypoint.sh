@@ -26,6 +26,26 @@ SETTINGS_ENV_FILE="${SETTINGS_ENV_FILE:-/etc/bird/generated/settings.env}"
 ADMIN_ENABLED="${ADMIN_ENABLED:-0}"
 ADMIN_PORT="${ADMIN_PORT:-8080}"
 ADMIN_PASSWORD="${ADMIN_PASSWORD:-}"
+DEFAULT_CONFIG_DIR="${DEFAULT_CONFIG_DIR:-/defaults-config}"
+
+ensure_runtime_config_file() {
+  target="$1"
+  default_name="$2"
+  target_dir="$(dirname "$target")"
+  default_path="$DEFAULT_CONFIG_DIR/$default_name"
+
+  mkdir -p "$target_dir"
+  if [ -f "$target" ]; then
+    return 0
+  fi
+  if [ -f "$default_path" ]; then
+    cp "$default_path" "$target"
+    echo "initialized runtime config $(basename "$target") from defaults"
+    return 0
+  fi
+  : >"$target"
+  echo "initialized empty runtime config $(basename "$target")"
+}
 
 load_settings_env() {
   if [ -f "$SETTINGS_ENV_FILE" ]; then
@@ -198,6 +218,10 @@ validate_env
 mkdir -p /etc/bird/generated
 mkdir -p "$CACHE_DIR"
 mkdir -p /run/bird
+ensure_runtime_config_file "$LISTS_FILE" "lists.txt"
+ensure_runtime_config_file "$INCLUDE_ASNS_FILE" "include-asns.txt"
+ensure_runtime_config_file "$INCLUDE_DOMAINS_FILE" "include-domains.txt"
+ensure_runtime_config_file "$EXCLUDE_DOMAINS_FILE" "exclude-domains.txt"
 touch "$ROUTES"
 touch "$CONTAINER_LOG_FILE"
 exec >>"$CONTAINER_LOG_FILE" 2>&1
@@ -209,16 +233,13 @@ export ROUTES_FILE="$ROUTES"
 export ADMIN_ENABLED ADMIN_PORT ADMIN_PASSWORD
 
 render_bird_config
-update_routes noapply
+
 write_runtime 0
+update_routes noapply
 
 if [ ! -s "$ROUTES" ]; then
   echo "No routes are available after initial update, refusing to start BIRD with an empty table" >&2
   exit 1
-fi
-
-if [ "$ADMIN_ENABLED" = "1" ]; then
-  /admin-server.py &
 fi
 
 bird -f -c "$BIRD_CONFIG" &

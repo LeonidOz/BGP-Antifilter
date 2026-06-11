@@ -104,13 +104,13 @@ button.danger { border-color: rgba(255, 107, 122, .6); color: #ffd9de; }
 .brand-mark {
   display: grid;
   place-items: center;
-  width: 44px;
-  height: 44px;
+  width: 48px;
+  height: 48px;
   border-radius: 10px;
-  background: linear-gradient(135deg, #0b5f75, #102a42);
+  background: transparent;
   color: #dffaff;
   font-weight: 800;
-  border: 1px solid rgba(61, 214, 255, .35);
+  border: 0;
 }
 .lucide {
   width: 18px;
@@ -123,15 +123,26 @@ button.danger { border-color: rgba(255, 107, 122, .6); color: #ffd9de; }
   height: 31px;
   stroke-width: 2.4;
 }
+.brand-mark img {
+  display: block;
+  width: 48px;
+  height: 48px;
+  filter: drop-shadow(0 0 18px rgba(61,214,255,.18));
+}
 .brand-mark.hero {
-  width: 78px;
-  height: 78px;
+  width: 86px;
+  height: 86px;
   border-radius: 16px;
-  box-shadow: 0 0 42px rgba(61,214,255,.28);
+  box-shadow: none;
 }
 .brand-mark.hero .lucide {
   width: 46px;
   height: 46px;
+}
+.brand-mark.hero img {
+  width: 86px;
+  height: 86px;
+  filter: drop-shadow(0 0 28px rgba(61,214,255,.24));
 }
 nav { margin-top: 26px; }
 .nav-item { display: flex; width: 100%; margin-bottom: 12px; text-align: left; justify-content: flex-start; }
@@ -338,6 +349,9 @@ pre {
   color: #cbe4f8;
 }
 .muted { color: var(--muted); }
+.status-ok { color: var(--green); }
+.status-warn { color: var(--amber); }
+.status-fail { color: var(--red); }
 .login-panel {
   position: relative;
   display: grid;
@@ -489,6 +503,20 @@ textarea {
   line-height: 1.45;
 }
 .inline-form { display: flex; gap: 12px; margin-bottom: 18px; }
+.inline-form.busy {
+  opacity: .9;
+}
+.inline-form.busy input {
+  cursor: wait;
+}
+.spinner {
+  width: 16px;
+  height: 16px;
+  border: 2px solid rgba(61,214,255,.25);
+  border-top-color: var(--cyan);
+  border-radius: 999px;
+  animation: spin .8s linear infinite;
+}
 .list-add-form {
   margin-bottom: 14px;
   display: grid;
@@ -1006,6 +1034,10 @@ details pre { margin-top: 12px; max-height: 360px; overflow: auto; }
   gap: 12px;
 }
 
+@keyframes spin {
+  to { transform: rotate(360deg); }
+}
+
 @media (max-width: 900px) {
   .app-shell { grid-template-columns: 1fr; }
   .sidebar {
@@ -1017,13 +1049,17 @@ details pre { margin-top: 12px; max-height: 360px; overflow: auto; }
   }
   .brand { margin-bottom: 10px; }
   .brand-mark {
-    width: 38px;
-    height: 38px;
+    width: 42px;
+    height: 42px;
     border-radius: 8px;
   }
   .brand-mark .lucide {
     width: 25px;
     height: 25px;
+  }
+  .brand-mark img {
+    width: 42px;
+    height: 42px;
   }
   .language {
     position: absolute;

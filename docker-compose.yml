@@ -1,16 +1,16 @@
+name: bgp-antifilter
+
 services:
   bird:
-    image: "bgp-antifilter-bird:${BGP_ANTIFILTER_VERSION:-0.2.0}"
-    build: .
+    image: "bgp-antifilter-bird:${BGP_ANTIFILTER_VERSION:-0.2.1}"
+    build:
+      context: .
+      dockerfile: deploy/Dockerfile
     network_mode: host
     restart: unless-stopped
     volumes:
-      - ./bird.conf.template:/etc/bird/bird.conf.template:ro
+      - ./deploy/bird.conf.template:/etc/bird/bird.conf.template:ro
       - ./generated:/etc/bird/generated
-      - ./lists.txt:/etc/bird/lists.txt
-      - ./include-asns.txt:/etc/bird/include-asns.txt
-      - ./include-domains.txt:/etc/bird/include-domains.txt
-      - ./exclude-domains.txt:/etc/bird/exclude-domains.txt
       - bird-run:/run/bird
     environment:
       MY_AS: "${MY_AS:-64500}"
@@ -19,10 +19,10 @@ services:
       BIRD_IP: "${BIRD_IP:-192.168.55.5}"
       ROUTER_ID: "${ROUTER_ID:-192.168.55.5}"
       BGP_COMMUNITY: "${BGP_COMMUNITY:-65432,500}"
-      LISTS_FILE: /etc/bird/lists.txt
-      INCLUDE_ASNS_FILE: /etc/bird/include-asns.txt
-      INCLUDE_DOMAINS_FILE: /etc/bird/include-domains.txt
-      EXCLUDE_DOMAINS_FILE: /etc/bird/exclude-domains.txt
+      LISTS_FILE: /etc/bird/generated/config/lists.txt
+      INCLUDE_ASNS_FILE: /etc/bird/generated/config/include-asns.txt
+      INCLUDE_DOMAINS_FILE: /etc/bird/generated/config/include-domains.txt
+      EXCLUDE_DOMAINS_FILE: /etc/bird/generated/config/exclude-domains.txt
       INCLUDE_GOOGLE_RANGES: "${INCLUDE_GOOGLE_RANGES:-1}"
       UPDATE_INTERVAL: "${UPDATE_INTERVAL:-1800}"
       CACHE_MAX_AGE: "${CACHE_MAX_AGE:-604800}"
@@ -40,19 +40,16 @@ services:
       SETTINGS_ENV_FILE: /etc/bird/generated/settings.env
 
   admin:
-    image: "bgp-antifilter-bird:${BGP_ANTIFILTER_VERSION:-0.2.0}"
-    build: .
-    profiles: ["admin"]
-    restart: unless-stopped
+    image: "bgp-antifilter-bird:${BGP_ANTIFILTER_VERSION:-0.2.1}"
+    build:
+      context: .
+      dockerfile: deploy/Dockerfile
+    restart: on-failure
     entrypoint: ["/usr/bin/tini", "--", "/admin-server.py"]
     ports:
       - "${ADMIN_PORT:-8080}:${ADMIN_PORT:-8080}"
     volumes:
       - ./generated:/etc/bird/generated
-      - ./lists.txt:/etc/bird/lists.txt
-      - ./include-asns.txt:/etc/bird/include-asns.txt
-      - ./include-domains.txt:/etc/bird/include-domains.txt
-      - ./exclude-domains.txt:/etc/bird/exclude-domains.txt
       - bird-run:/run/bird
     environment:
       MY_AS: "${MY_AS:-64500}"
@@ -61,10 +58,10 @@ services:
       BIRD_IP: "${BIRD_IP:-192.168.55.5}"
       ROUTER_ID: "${ROUTER_ID:-192.168.55.5}"
       BGP_COMMUNITY: "${BGP_COMMUNITY:-65432,500}"
-      LISTS_FILE: /etc/bird/lists.txt
-      INCLUDE_ASNS_FILE: /etc/bird/include-asns.txt
-      INCLUDE_DOMAINS_FILE: /etc/bird/include-domains.txt
-      EXCLUDE_DOMAINS_FILE: /etc/bird/exclude-domains.txt
+      LISTS_FILE: /etc/bird/generated/config/lists.txt
+      INCLUDE_ASNS_FILE: /etc/bird/generated/config/include-asns.txt
+      INCLUDE_DOMAINS_FILE: /etc/bird/generated/config/include-domains.txt
+      EXCLUDE_DOMAINS_FILE: /etc/bird/generated/config/exclude-domains.txt
       INCLUDE_GOOGLE_RANGES: "${INCLUDE_GOOGLE_RANGES:-1}"
       CACHE_MAX_AGE: "${CACHE_MAX_AGE:-604800}"
       MIN_PREFIX_LENGTH: "${MIN_PREFIX_LENGTH:-8}"
@@ -72,6 +69,7 @@ services:
       UPDATE_LOCK_DIR: "${UPDATE_LOCK_DIR:-/etc/bird/generated/update.lock}"
       BGP_PROTOCOL: "${BGP_PROTOCOL:-mikrotik}"
       HEALTHCHECK_REQUIRE_BGP: "${HEALTHCHECK_REQUIRE_BGP:-1}"
+      ADMIN_ENABLED: "${ADMIN_ENABLED:-0}"
       ADMIN_PORT: "${ADMIN_PORT:-8080}"
       ADMIN_PASSWORD: "${ADMIN_PASSWORD:-}"
       RUNTIME_FILE: /etc/bird/generated/runtime.json
@@ -80,6 +78,12 @@ services:
       SETTINGS_ENV_FILE: /etc/bird/generated/settings.env
     depends_on:
       - bird
+    healthcheck:
+      test: ["CMD-SHELL", "[ \"${ADMIN_ENABLED:-0}\" != \"1\" ] || curl -fsS \"http://127.0.0.1:${ADMIN_PORT:-8080}/api/session\" >/dev/null"]
+      interval: 30s
+      timeout: 5s
+      start_period: 10s
+      retries: 3
 
 volumes:
   bird-run:

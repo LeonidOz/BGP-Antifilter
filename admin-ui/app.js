@@ -4,7 +4,7 @@ const dict = {
     login: "Login", logout: "Logout", refresh: "Refresh", routes: "Active routes", lastResult: "Generation status",
     nextUpdate: "Until auto refresh", duration: "Generation time", actions: "Actions",
     dryRun: "Validate changes", checkSources: "Check sources", reload: "Reload routes", operationLog: "Operation log",
-    save: "Save", checkIp: "Check IP", check: "Check", rawStatus: "Diagnostics", saved: "Saved",
+    save: "Save", checkIp: "Check IP", checkTarget: "Check IP / domain", network: "Network", check: "Check", rawStatus: "Diagnostics", saved: "Saved",
     failed: "Failed", never: "never", loadMetrics: "Load metrics", loadRoutes: "Load routes",
     commandOk: "Command completed", commandFailed: "Command failed", returnCode: "Return code",
     stdout: "Output", stderr: "Errors", matched: "Matched", notMatched: "Not matched",
@@ -25,14 +25,21 @@ const dict = {
     logs: "Logs", containerLogs: "Container logs", checkedAddresses: "Checked addresses",
     downloadRoutes: "Download routes.conf", restartRequired: "restart", overridden: "changed",
     updateSettings: "Update", securitySettings: "Generation safety", birdSettings: "BIRD / BGP",
-    applySettings: "Apply now", applying: "Applying..."
+    applySettings: "Apply now", applying: "Applying...", unsavedChanges: "Unsaved changes",
+    noChanges: "No changes", backupSaved: "Backup", discardListChanges: "Discard unsaved list changes?",
+    discardSettingsChanges: "Discard unsaved settings changes?", leavePageWarning: "You have unsaved changes.",
+    loading: "Loading...", networkSummary: "Network summary", dnsResolvers: "DNS resolvers",
+    localAddresses: "Local IPv4", primaryAddress: "Primary IPv4", hostName: "Hostname", fqdn: "FQDN",
+    externalNetwork: "External IP", provider: "Provider", organization: "Organization", location: "Location",
+    timezone: "Timezone", coordinates: "Coordinates", proxy: "Proxy", hosting: "Hosting", mobile: "Mobile",
+    networkSettings: "BGP / admin settings", adminPort: "Admin port", rawLookup: "Raw lookup", yes: "yes", no: "no"
   },
   ru: {
     dashboard: "Панель", lists: "Списки", tools: "Инструменты", settings: "Настройки", loginTitle: "Вход",
     login: "Войти", logout: "Выйти", refresh: "Обновить", routes: "Активные маршруты", lastResult: "Статус генерации",
     nextUpdate: "До автообновления", duration: "Время генерации", actions: "Действия",
     dryRun: "Проверить изменения", checkSources: "Проверить источники", reload: "Обновить маршруты", operationLog: "Лог операции",
-    save: "Сохранить", checkIp: "Проверить IP", check: "Проверить", rawStatus: "Диагностика", saved: "Сохранено",
+    save: "Сохранить", checkIp: "Проверить IP", checkTarget: "Проверить IP / домен", network: "Сеть", check: "Проверить", rawStatus: "Диагностика", saved: "Сохранено",
     failed: "Ошибка", never: "никогда", loadMetrics: "Показать метрики", loadRoutes: "Показать маршруты",
     commandOk: "Команда выполнена", commandFailed: "Команда завершилась с ошибкой", returnCode: "Код возврата",
     stdout: "Вывод", stderr: "Ошибки", matched: "Найден", notMatched: "Не найден",
@@ -53,7 +60,14 @@ const dict = {
     logs: "Логи", containerLogs: "Логи контейнера", checkedAddresses: "Проверенные адреса",
     downloadRoutes: "Скачать routes.conf", restartRequired: "перезапуск", overridden: "изменено",
     updateSettings: "Обновление", securitySettings: "Безопасность генерации", birdSettings: "BIRD / BGP",
-    applySettings: "Применить сейчас", applying: "Применяем..."
+    applySettings: "Применить сейчас", applying: "Применяем...", unsavedChanges: "Есть несохраненные изменения",
+    noChanges: "Изменений нет", backupSaved: "Бэкап", discardListChanges: "Отбросить несохраненные изменения списка?",
+    discardSettingsChanges: "Отбросить несохраненные изменения настроек?", leavePageWarning: "Есть несохраненные изменения.",
+    loading: "Загрузка...", networkSummary: "Сводка сети", dnsResolvers: "DNS-резолверы",
+    localAddresses: "Локальные IPv4", primaryAddress: "Основной IPv4", hostName: "Hostname", fqdn: "FQDN",
+    externalNetwork: "Внешний IP", provider: "Провайдер", organization: "Организация", location: "Локация",
+    timezone: "Часовой пояс", coordinates: "Координаты", proxy: "Прокси", hosting: "Хостинг", mobile: "Мобильная сеть",
+    networkSettings: "Параметры BGP / админки", adminPort: "Порт админки", rawLookup: "Сырые данные", yes: "да", no: "нет"
   }
 };
 
@@ -64,6 +78,13 @@ let lastStatusPayload = null;
 let selectedStage = "sources";
 let loginCanvasStarted = false;
 let settingsPayload = null;
+let listSavedContent = "";
+let listSavedPath = "";
+let listDirty = false;
+let settingsSavedValues = {};
+let settingsDirty = false;
+let checkIpPending = false;
+let loginNetworkLabels = [];
 const listLabels = {
   "urls": "URLs",
   "asns": "ASNs",
@@ -103,14 +124,100 @@ const settingsSectionLabels = {
 function t(key) { return dict[lang][key] || dict.en[key] || key; }
 function $(id) { return document.getElementById(id); }
 
+function setStatusTone(element, tone = "") {
+  element.classList.remove("status-ok", "status-warn", "status-fail");
+  if (tone) {
+    element.classList.add(`status-${tone}`);
+  }
+}
+
+function listUnsavedLabel() {
+  return t("unsavedChanges");
+}
+
+function settingsPendingLabel(count) {
+  return lang === "ru"
+    ? `Изменено полей: ${count}`
+    : `Changed fields: ${count}`;
+}
+
+function settingsFormValues() {
+  const values = {};
+  document.querySelectorAll("[data-setting-key]").forEach(input => {
+    values[input.dataset.settingKey] = input.type === "checkbox" ? (input.checked ? "1" : "0") : input.value;
+  });
+  return values;
+}
+
+function applySettingsFormValues(values) {
+  document.querySelectorAll("[data-setting-key]").forEach(input => {
+    const value = values[input.dataset.settingKey];
+    if (value == null) return;
+    if (input.type === "checkbox") {
+      input.checked = value === "1";
+    } else {
+      input.value = value;
+    }
+  });
+}
+
+function changedSettingsCount() {
+  const values = settingsFormValues();
+  return Object.keys(values).filter(key => values[key] !== settingsSavedValues[key]).length;
+}
+
+function refreshListDirtyState(message = "", tone = "") {
+  $("save-list-btn").disabled = !listDirty;
+  if (message) {
+    $("list-save-status").textContent = message;
+    setStatusTone($("list-save-status"), tone);
+    return;
+  }
+  $("list-save-status").textContent = listDirty ? listUnsavedLabel() : listSavedPath;
+  setStatusTone($("list-save-status"), listDirty ? "warn" : "");
+}
+
+function refreshSettingsDirtyState(message = "", tone = "") {
+  $("save-settings-btn").disabled = !settingsDirty;
+  if (message) {
+    $("settings-save-status").textContent = message;
+    setStatusTone($("settings-save-status"), tone);
+    return;
+  }
+  $("settings-save-status").textContent = settingsDirty
+    ? settingsPendingLabel(changedSettingsCount())
+    : (settingsPayload?.settings_file || "");
+  setStatusTone($("settings-save-status"), settingsDirty ? "warn" : "");
+}
+
+function markListDirty(dirty) {
+  listDirty = dirty;
+  refreshListDirtyState();
+}
+
+function markSettingsDirty() {
+  settingsDirty = changedSettingsCount() > 0;
+  refreshSettingsDirtyState();
+}
+
+function hasUnsavedChanges() {
+  return listDirty || settingsDirty;
+}
+
 function applyLang() {
   document.documentElement.lang = lang;
   document.querySelectorAll("[data-i18n]").forEach(el => el.textContent = t(el.dataset.i18n));
   $("lang-ru").classList.toggle("active", lang === "ru");
   $("lang-en").classList.toggle("active", lang === "en");
   if (settingsPayload && !$("settings").classList.contains("hidden")) {
+    const values = settingsDirty ? settingsFormValues() : null;
     renderSettings(settingsPayload);
+    if (values) {
+      applySettingsFormValues(values);
+      markSettingsDirty();
+    }
   }
+  refreshListDirtyState();
   renderIcons();
 }
 
@@ -192,6 +299,11 @@ function formatDurationSeconds(value) {
   return `${minutes} ${units.minute} ${rest}${units.second}`;
 }
 
+function formatSecondsShort(value) {
+  if (value == null || value === "") return "-";
+  return formatDurationSeconds(value);
+}
+
 function formatBytes(value) {
   const bytes = Number(value);
   if (!Number.isFinite(bytes)) return "-";
@@ -203,6 +315,40 @@ function formatBytes(value) {
     unit += 1;
   }
   return `${Math.round(size * 10) / 10} ${units[unit]}`;
+}
+
+function loginCanvasSubnets() {
+  const fallback = ["192.168.77.111", "192.168.55.1", "172.21.0.2", "127.0.0.1"];
+  const labels = (loginNetworkLabels.length ? loginNetworkLabels : fallback)
+    .filter(Boolean)
+    .slice(0, 4)
+    .map(label => {
+      const match = String(label).trim().match(/^(\d{1,3}\.\d{1,3}\.\d{1,3})\.\d{1,3}$/);
+      return {
+        raw: String(label).trim(),
+        text: match ? `${match[1]}.0/24` : String(label).trim(),
+      };
+    });
+  const layout = [
+    {x: .2, y: .28, count: 5},
+    {x: .78, y: .26, count: 5},
+    {x: .72, y: .76, count: 4},
+    {x: .26, y: .72, count: 4},
+  ];
+  return layout.map((item, index) => ({
+    ...item,
+    label: labels[index]?.text || labels[index]?.raw || "LAN"
+  }));
+}
+
+function yesNo(value) {
+  return value ? t("yes") : t("no");
+}
+
+function setVersion(version) {
+  const value = version ? `v${version}` : "v-";
+  $("version").textContent = value;
+  $("login-footer-version").textContent = value;
 }
 
 function sourceCacheFact(source) {
@@ -256,12 +402,7 @@ function startLoginNetworkCanvas() {
   }
 
   function createTopology() {
-    const subnets = [
-      {label: "192.168.77.0/24", x: .2, y: .28, count: 5},
-      {label: "10.10.0.0/16", x: .78, y: .26, count: 5},
-      {label: "172.16.8.0/24", x: .72, y: .76, count: 4},
-      {label: "LAN", x: .26, y: .72, count: 4},
-    ];
+    const subnets = loginCanvasSubnets();
     const centerX = width * .5;
     const centerY = height * .5;
     pointer.x = pointer.x || centerX;
@@ -458,7 +599,7 @@ function renderCommandResult(action, result) {
       </div>
       <div class="kv-grid">
         <div class="kv"><span>${t("returnCode")}</span><strong>${result.returncode ?? "timeout"}</strong></div>
-        <div class="kv"><span>${t("duration")}</span><strong>${result.duration_seconds ?? "-"}s</strong></div>
+        <div class="kv"><span>${t("duration")}</span><strong>${formatSecondsShort(result.duration_seconds)}</strong></div>
         <div class="kv"><span>${t("stderr")}</span><strong>${result.stderr ? t("failed") : "OK"}</strong></div>
       </div>
       ${events.length ? renderEventTimeline(events) : result.stdout ? `<details><summary>${t("stdout")}</summary>${renderTextLines(result.stdout)}</details>` : ""}
@@ -641,7 +782,7 @@ function renderCommandDetails(raw) {
   const metaRows = [
     ["ok", raw.ok],
     ["returncode", raw.returncode ?? "timeout"],
-    ["duration", raw.duration_seconds == null ? "-" : `${raw.duration_seconds}s`],
+    ["duration", formatSecondsShort(raw.duration_seconds)],
   ];
   if (raw.stderr) metaRows.push(["stderr", raw.stderr]);
   return `
@@ -760,6 +901,69 @@ function renderCheckTargetResult(response) {
       </div>
       <div class="ip-result-list">${cards || "—"}</div>
       <details><summary>${t("rawDetails")}</summary>${renderDataTree(response)}</details>
+    </div>`;
+}
+
+function renderNetworkView(data) {
+  const localAddresses = (data.local_ipv4 || []).map(address => `<span class="route-pill">${escapeHtml(address)}</span>`).join("");
+  const resolvers = (data.dns?.nameservers || []).map(server => `<span class="route-pill">${escapeHtml(server)}</span>`).join("");
+  const searchDomains = (data.dns?.search || []).join(", ");
+  const external = data.external || {};
+  const externalStatus = external.ok ? "ok" : "warn";
+  const locationParts = [external.country, external.regionName, external.city].filter(Boolean).join(" / ");
+  const coords = external.lat != null && external.lon != null ? `${external.lat}, ${external.lon}` : "-";
+  const networkRows = [
+    [t("hostName"), data.hostname || "-"],
+    [t("fqdn"), data.fqdn || "-"],
+    [t("primaryAddress"), data.primary_ipv4 || "-"],
+    [t("adminPort"), data.admin?.port || "-"],
+  ];
+  const settingsRows = [
+    ["Router ID", data.bird?.router_id || "-"],
+    ["BIRD IP", data.bird?.bird_ip || "-"],
+    ["MikroTik IP", data.bird?.mikrotik_ip || "-"],
+    ["BGP protocol", data.bird?.bgp_protocol || "-"],
+    ["My AS", data.bird?.my_as || "-"],
+    ["MT AS", data.bird?.mt_as || "-"],
+  ];
+  const externalRows = external.ok ? [
+    [t("externalNetwork"), external.query || "-"],
+    [t("location"), locationParts || "-"],
+    [t("provider"), external.isp || "-"],
+    [t("organization"), external.org || external.asname || "-"],
+    [t("timezone"), external.timezone || "-"],
+    [t("coordinates"), coords],
+    [t("proxy"), yesNo(external.proxy)],
+    [t("hosting"), yesNo(external.hosting)],
+    [t("mobile"), yesNo(external.mobile)],
+  ] : [
+    [t("externalNetwork"), external.error || t("failed")],
+  ];
+  return `
+    <div class="result-card">
+      <div class="result-head">
+        <span class="status-pill ok">${t("networkSummary")}</span>
+        <span class="chip">${formatDateTime((data.fetched_at || 0) * 1000)}</span>
+      </div>
+      <div class="kv-grid">
+        ${networkRows.map(([key, value]) => `
+          <div class="kv"><span>${escapeHtml(key)}</span><strong>${escapeHtml(value)}</strong></div>
+        `).join("")}
+      </div>
+      <h3>${t("localAddresses")}</h3>
+      <div class="route-list">${localAddresses || "—"}</div>
+      <h3>${t("dnsResolvers")}</h3>
+      <div class="route-list">${resolvers || "—"}</div>
+      ${searchDomains ? `<div class="muted">${escapeHtml(searchDomains)}</div>` : ""}
+      <h3>${t("networkSettings")}</h3>
+      ${renderRows(settingsRows)}
+      <h3>${t("externalNetwork")}</h3>
+      <div class="kv-grid">
+        ${externalRows.map(([key, value]) => `
+          <div class="kv ${externalStatus}"><span>${escapeHtml(key)}</span><strong>${escapeHtml(value)}</strong></div>
+        `).join("")}
+      </div>
+      <details><summary>${t("rawLookup")}</summary>${renderDataTree(data)}</details>
     </div>`;
 }
 
@@ -886,7 +1090,7 @@ function renderRoutesView(text) {
   return `
     <div class="result-card">
       <div class="result-head">
-        <span class="status-pill ok">${routes.length} routes</span>
+        <span class="status-pill ok">${routes.length} ${t("routes").toLowerCase()}</span>
         <a class="button-link" href="/api/routes/download" download="routes.conf">
           <i data-lucide="download"></i><span>${t("downloadRoutes")}</span>
         </a>
@@ -974,7 +1178,7 @@ function buildStages(payload) {
       birdOk ? "birdc show status OK" : "birdc show status failed",
       [
         ["returncode", payload?.bird?.returncode ?? "-"],
-        ["duration", `${payload?.bird?.duration_seconds ?? "-"}s`],
+        ["duration", formatSecondsShort(payload?.bird?.duration_seconds)],
       ],
       payload?.bird
     ),
@@ -1030,7 +1234,7 @@ function renderStageDetails(stage) {
 async function loadStatus() {
   const data = await api("/api/status");
   lastStatusPayload = data;
-  $("version").textContent = `v${data.version}`;
+  setVersion(data.version);
   const status = data.status || {};
   const runtime = data.runtime || {};
   const routes = status.routes || {};
@@ -1047,7 +1251,7 @@ async function loadStatus() {
     $("last-result").textContent = "-";
     resultCard.classList.add("warn");
   }
-  $("duration").textContent = status.duration_seconds == null ? "-" : `${status.duration_seconds}s`;
+  $("duration").textContent = formatSecondsShort(status.duration_seconds);
   $("last-update").textContent = `${t("lastGeneration")}: ${formatDateTime(status.updated_at)}`;
   $("bird-uptime").textContent = `${t("birdUptime")}: ${birdUptime(data.bird?.stdout)}`;
   $("next-update").dataset.next = runtime.next_scheduled_update_unix || "";
@@ -1103,6 +1307,12 @@ async function runAction(action) {
 }
 
 function switchView(view) {
+  if (view !== "lists" && !$("lists").classList.contains("hidden") && listDirty && !window.confirm(t("discardListChanges"))) {
+    return;
+  }
+  if (view !== "settings" && !$("settings").classList.contains("hidden") && settingsDirty && !window.confirm(t("discardSettingsChanges"))) {
+    return;
+  }
   document.querySelectorAll(".view").forEach(el => el.classList.add("hidden"));
   $(view).classList.remove("hidden");
   document.querySelectorAll(".nav-item").forEach(button => button.classList.toggle("active", button.dataset.view === view));
@@ -1121,7 +1331,9 @@ function switchView(view) {
 }
 
 async function loadToolTab(tabName) {
-  if (tabName === "metrics") {
+  if (tabName === "network") {
+    $("network-view").innerHTML = renderNetworkView(await api("/api/tools/network"));
+  } else if (tabName === "metrics") {
     $("metrics-view").innerHTML = renderMetricsView(await api("/api/metrics", {headers: {"Content-Type": "text/plain"}}));
   } else if (tabName === "routes") {
     $("routes-view").innerHTML = renderRoutesView(await api("/api/routes", {headers: {"Content-Type": "text/plain"}}));
@@ -1185,6 +1397,10 @@ function renderSettingInput(item) {
 
 function renderSettings(data) {
   settingsPayload = data;
+  settingsSavedValues = Object.fromEntries((data.sections || []).flatMap(section =>
+    (section.items || []).map(item => [item.key, String(item.value)])
+  ));
+  settingsDirty = false;
   $("settings-form").innerHTML = (data.sections || []).map(section => `
     <article class="panel settings-section">
       <h2>${escapeHtml(t(settingsSectionLabels[section.id] || section.title))}</h2>
@@ -1207,7 +1423,7 @@ function renderSettings(data) {
       </div>
     </article>
   `).join("");
-  $("settings-save-status").textContent = data.settings_file || "";
+  refreshSettingsDirtyState();
 }
 
 async function loadSettings() {
@@ -1216,10 +1432,11 @@ async function loadSettings() {
 }
 
 async function saveSettings() {
-  const values = {};
-  document.querySelectorAll("[data-setting-key]").forEach(input => {
-    values[input.dataset.settingKey] = input.type === "checkbox" ? (input.checked ? "1" : "0") : input.value;
-  });
+  const values = settingsFormValues();
+  if (!settingsDirty) {
+    refreshSettingsDirtyState(t("noChanges"), "ok");
+    return true;
+  }
   $("save-settings-btn").disabled = true;
   $("settings-save-status").textContent = "...";
   try {
@@ -1229,10 +1446,10 @@ async function saveSettings() {
     });
     renderSettings(result);
     renderIcons();
-    $("settings-save-status").textContent = t("saved");
+    refreshSettingsDirtyState(t("saved"), "ok");
     return true;
   } catch (err) {
-    $("settings-save-status").textContent = `${t("failed")}: ${typeof err === "string" ? err : (err.error || err.message || "request failed")}`;
+    refreshSettingsDirtyState(`${t("failed")}: ${typeof err === "string" ? err : (err.error || err.message || "request failed")}`, "fail");
     return false;
   } finally {
     $("save-settings-btn").disabled = false;
@@ -1256,27 +1473,42 @@ async function applySettingsNow() {
 }
 
 async function loadList(name) {
+  if (name !== currentList && listDirty && !window.confirm(t("discardListChanges"))) {
+    return;
+  }
   currentList = name;
   document.querySelectorAll("[data-list]").forEach(button => button.classList.toggle("active", button.dataset.list === name));
   const data = await api(`/api/lists/${name}`);
   $("list-title").textContent = listLabels[name];
-  $("list-editor").value = data.content || "";
-  $("list-save-status").textContent = data.path;
+  listSavedContent = data.content || "";
+  listSavedPath = data.path || "";
+  $("list-editor").value = listSavedContent;
   $("add-list-input").value = "";
   $("add-list-input").placeholder = `${t("itemPlaceholder")}: ${listLabels[name]}`;
+  markListDirty(false);
   renderListTiles();
 }
 
 async function saveList() {
   try {
+    let content = $("list-editor").value;
+    if (content && !content.endsWith("\n")) {
+      content += "\n";
+      $("list-editor").value = content;
+    }
     const result = await api(`/api/lists/${currentList}`, {
       method: "PUT",
-      body: JSON.stringify({content: $("list-editor").value})
+      body: JSON.stringify({content})
     });
-    $("list-save-status").textContent = `${t("saved")}: ${result.bytes} bytes`;
+    listSavedContent = content;
+    markListDirty(false);
+    refreshListDirtyState(
+      `${t("saved")}: ${result.bytes} bytes${result.backup ? ` · ${t("backupSaved")}: ${result.backup}` : ""}`,
+      "ok"
+    );
     renderListTiles();
   } catch (err) {
-    $("list-save-status").textContent = `${t("failed")}: ${typeof err === "string" ? err : (err.error || err.message || "request failed")}`;
+    refreshListDirtyState(`${t("failed")}: ${typeof err === "string" ? err : (err.error || err.message || "request failed")}`, "fail");
   }
 }
 
@@ -1381,7 +1613,8 @@ async function removeListItem(index) {
 async function init() {
   applyLang();
   const session = await api("/api/session");
-  $("version").textContent = `v${session.version}`;
+  loginNetworkLabels = session.login_network?.labels || [];
+  setVersion(session.version);
   if (session.authenticated) {
     showAdmin();
     setupLists();
@@ -1405,6 +1638,9 @@ $("login-form").addEventListener("submit", async event => {
 });
 
 $("logout-btn").addEventListener("click", async () => {
+  if (hasUnsavedChanges() && !window.confirm(t(listDirty ? "discardListChanges" : "discardSettingsChanges"))) {
+    return;
+  }
   await api("/api/logout", {method: "POST", body: "{}"});
   if (statusTimer) clearInterval(statusTimer);
   showLogin();
@@ -1444,9 +1680,28 @@ $("list-editor").addEventListener("keydown", event => {
     saveList();
   }
 });
-$("list-editor").addEventListener("input", renderListTiles);
+$("list-editor").addEventListener("input", () => {
+  markListDirty($("list-editor").value !== listSavedContent);
+  renderListTiles();
+});
+$("settings-form").addEventListener("input", () => {
+  markSettingsDirty();
+});
+$("settings-form").addEventListener("change", () => {
+  markSettingsDirty();
+});
 $("check-ip-form").addEventListener("submit", async event => {
   event.preventDefault();
+  const form = $("check-ip-form");
+  const input = $("check-ip-input");
+  const button = $("check-ip-submit");
+  if (checkIpPending) return;
+  checkIpPending = true;
+  form.classList.add("busy");
+  input.disabled = true;
+  button.disabled = true;
+  button.innerHTML = `<span class="spinner" aria-hidden="true"></span><span>${t("loading")}</span>`;
+  $("check-ip-result").innerHTML = `<div class="result-card"><div class="result-head"><span class="status-pill warn">${t("loading")}</span></div></div>`;
   try {
     const result = await api("/api/tools/check-ip", {
       method: "POST",
@@ -1455,6 +1710,13 @@ $("check-ip-form").addEventListener("submit", async event => {
     $("check-ip-result").innerHTML = renderCheckTargetResult(result) || renderCommandResult("check-ip", result);
   } catch (err) {
     $("check-ip-result").innerHTML = renderErrorView(err);
+  } finally {
+    checkIpPending = false;
+    form.classList.remove("busy");
+    input.disabled = false;
+    button.disabled = false;
+    button.innerHTML = `<i data-lucide="search"></i><span>${t("check")}</span>`;
+    renderIcons();
   }
 });
 
@@ -1463,5 +1725,10 @@ $("tool-tabs").addEventListener("click", event => {
   if (tabName) switchToolTab(tabName);
 });
 $("load-logs-btn").addEventListener("click", () => loadToolTab("logs"));
+window.addEventListener("beforeunload", event => {
+  if (!hasUnsavedChanges()) return;
+  event.preventDefault();
+  event.returnValue = t("leavePageWarning");
+});
 
 init().catch(() => showLogin());

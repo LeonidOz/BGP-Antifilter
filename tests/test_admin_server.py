@@ -8,6 +8,18 @@ from bgp_antifilter import admin_server
 
 
 class AdminServerHelperTests(unittest.TestCase):
+    def test_parse_resolv_conf_extracts_nameservers_and_search(self):
+        payload = admin_server.parse_resolv_conf(
+            "nameserver 1.1.1.1\n"
+            "nameserver 8.8.8.8\n"
+            "search lan example.local\n"
+            "domain corp.local\n"
+        )
+
+        self.assertEqual(payload["nameservers"], ["1.1.1.1", "8.8.8.8"])
+        self.assertEqual(payload["search"], ["lan", "example.local"])
+        self.assertEqual(payload["domain"], "corp.local")
+
     def test_parse_metrics_reads_numeric_values(self):
         metrics = admin_server.parse_metrics(
             "# comment\n"
@@ -172,6 +184,30 @@ class AdminServerHelperTests(unittest.TestCase):
             }
             self.assertFalse(items["CACHE_MAX_AGE"]["overridden"])
             self.assertTrue(items["FETCH_TIMEOUT"]["overridden"])
+
+    def test_external_ip_summary_parses_success_payload(self):
+        body = (
+            '{"status":"success","query":"203.0.113.10","country":"Testland",'
+            '"city":"Test City","timezone":"UTC","isp":"Example ISP"}'
+        ).encode("utf-8")
+        response = mock.MagicMock()
+        response.__enter__.return_value.read.return_value = body
+        response.__exit__.return_value = False
+
+        with mock.patch("urllib.request.urlopen", return_value=response):
+            payload = admin_server.external_ip_summary()
+
+        self.assertTrue(payload["ok"])
+        self.assertEqual(payload["query"], "203.0.113.10")
+        self.assertEqual(payload["isp"], "Example ISP")
+
+    def test_external_ip_summary_returns_error_payload_on_failure(self):
+        with mock.patch("urllib.request.urlopen", side_effect=OSError("network down")):
+            payload = admin_server.external_ip_summary()
+
+        self.assertFalse(payload["ok"])
+        self.assertEqual(payload["source"], "ip-api.com")
+        self.assertIn("network down", payload["error"])
 
 
 if __name__ == "__main__":

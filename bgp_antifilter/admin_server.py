@@ -13,29 +13,28 @@ import shutil
 import socket
 import subprocess
 import time
+import urllib.error
+import urllib.request
 from http import HTTPStatus
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from urllib.parse import parse_qs, urlparse
 
 from . import __version__
+from .runtime_paths import GENERATED_PATH_SPECS, LIST_FILE_SPECS, env_path, env_paths
 
 
-ROOT = Path(os.environ.get("ADMIN_STATIC_DIR", "/admin-static"))
-GENERATED_DIR = Path(os.environ.get("GENERATED_DIR", "/etc/bird/generated"))
-ROUTES_FILE = Path(os.environ.get("ROUTES_FILE", "/etc/bird/generated/routes.conf"))
-STATUS_FILE = Path(os.environ.get("STATUS_FILE", "/etc/bird/generated/status.json"))
-METRICS_FILE = Path(os.environ.get("METRICS_FILE", "/etc/bird/generated/metrics.prom"))
-RUNTIME_FILE = Path(os.environ.get("RUNTIME_FILE", "/etc/bird/generated/runtime.json"))
-CONTAINER_LOG_FILE = Path(os.environ.get("CONTAINER_LOG_FILE", "/etc/bird/generated/container.log"))
-SETTINGS_FILE = Path(os.environ.get("SETTINGS_FILE", "/etc/bird/generated/settings.json"))
-SETTINGS_ENV_FILE = Path(os.environ.get("SETTINGS_ENV_FILE", "/etc/bird/generated/settings.env"))
+ROOT = env_path("ADMIN_STATIC_DIR", "/admin-ui")
+PATHS = env_paths(GENERATED_PATH_SPECS)
+GENERATED_DIR = PATHS["generated_dir"]
+ROUTES_FILE = PATHS["routes_file"]
+STATUS_FILE = PATHS["status_file"]
+METRICS_FILE = PATHS["metrics_file"]
+RUNTIME_FILE = PATHS["runtime_file"]
+CONTAINER_LOG_FILE = PATHS["container_log_file"]
+SETTINGS_FILE = PATHS["settings_file"]
+SETTINGS_ENV_FILE = PATHS["settings_env_file"]
 
-LIST_FILES = {
-    "urls": Path(os.environ.get("LISTS_FILE", "/etc/bird/lists.txt")),
-    "asns": Path(os.environ.get("INCLUDE_ASNS_FILE", "/etc/bird/include-asns.txt")),
-    "include-domains": Path(os.environ.get("INCLUDE_DOMAINS_FILE", "/etc/bird/include-domains.txt")),
-    "exclude-domains": Path(os.environ.get("EXCLUDE_DOMAINS_FILE", "/etc/bird/exclude-domains.txt")),
-}
+LIST_FILES = env_paths(LIST_FILE_SPECS)
 
 SESSIONS = {}
 LOGIN_ATTEMPTS = {}
@@ -78,6 +77,11 @@ SETTINGS_SECTIONS = [
 ]
 
 SETTINGS_BY_KEY = {item["key"]: item for section in SETTINGS_SECTIONS for item in section["items"]}
+IP_API_URL = (
+    "http://ip-api.com/json/?fields="
+    "status,message,query,country,countryCode,region,regionName,city,district,zip,"
+    "lat,lon,timezone,offset,isp,org,as,asname,mobile,proxy,hosting"
+)
 
 
 def json_load(path, default):
@@ -363,6 +367,118 @@ def resolve_ipv4_targets(value):
     return addresses, None
 
 
+def parse_resolv_conf(text):
+    nameservers = []
+    search = []
+    domain = None
+    for raw_line in str(text or "").splitlines():
+        line = raw_line.strip()
+        if not line or line.startswith("#"):
+            continue
+        parts = line.split()
+        if len(parts) < 2:
+            continue
+        key, values = parts[0].lower(), parts[1:]
+        if key == "nameserver":
+            nameservers.extend(values)
+        elif key == "search":
+            search.extend(values)
+        elif key == "domain":
+            domain = values[0]
+    return {
+        "nameservers": nameservers,
+        "search": search,
+        "domain": domain,
+    }
+
+
+def local_ipv4_addresses():
+    addresses = set()
+    for host in {socket.gethostname(), socket.getfqdn(), "localhost"}:
+        try:
+            infos = socket.getaddrinfo(host, None, socket.AF_INET, socket.SOCK_STREAM)
+        except socket.gaierror:
+            continue
+        for info in infos:
+            address = info[4][0]
+            if address:
+                addresses.add(address)
+    try:
+        with socket.socket(socket.AF_INET, socket.SOCK_DGRAM) as sock:
+            sock.connect(("8.8.8.8", 80))
+            addresses.add(sock.getsockname()[0])
+    except OSError:
+        pass
+    return sorted(addresses)
+
+
+def external_ip_summary(timeout=5):
+    try:
+        with urllib.request.urlopen(IP_API_URL, timeout=timeout) as response:
+            payload = json.loads(response.read().decode("utf-8"))
+    except (OSError, urllib.error.URLError, json.JSONDecodeError, TimeoutError) as exc:
+        return {
+            "ok": False,
+            "source": "ip-api.com",
+            "error": str(exc),
+        }
+    if payload.get("status") != "success":
+        return {
+            "ok": False,
+            "source": "ip-api.com",
+            "error": payload.get("message", "lookup failed"),
+            "payload": payload,
+        }
+    return {
+        "ok": True,
+        "source": "ip-api.com",
+        **payload,
+    }
+
+
+def network_summary():
+    settings = effective_settings()
+    resolv = parse_resolv_conf(text_load(Path("/etc/resolv.conf")))
+    addresses = local_ipv4_addresses()
+    return {
+        "hostname": socket.gethostname(),
+        "fqdn": socket.getfqdn(),
+        "local_ipv4": addresses,
+        "primary_ipv4": next((address for address in addresses if not address.startswith("127.")), addresses[0] if addresses else ""),
+        "dns": resolv,
+        "bird": {
+            "router_id": settings.get("ROUTER_ID", ""),
+            "bird_ip": settings.get("BIRD_IP", ""),
+            "mikrotik_ip": settings.get("MT_IP", ""),
+            "bgp_protocol": settings.get("BGP_PROTOCOL", ""),
+            "my_as": settings.get("MY_AS", ""),
+            "mt_as": settings.get("MT_AS", ""),
+        },
+        "admin": {
+            "port": os.environ.get("ADMIN_PORT", "8080"),
+        },
+        "external": external_ip_summary(),
+        "fetched_at": int(time.time()),
+    }
+
+
+def login_network_payload():
+    settings = effective_settings()
+    labels = []
+    for key in ("ROUTER_ID", "BIRD_IP", "MT_IP"):
+        value = settings.get(key, "").strip()
+        if value and value not in labels:
+            labels.append(value)
+    for value in local_ipv4_addresses():
+        if not value.startswith("127.") and value not in labels:
+            labels.append(value)
+    if not labels:
+        labels.append("127.0.0.1")
+    return {
+        "labels": labels[:4],
+    }
+
+
 def cookie_header(name, value, max_age=None):
     parts = [f"{name}={value}", "Path=/", "HttpOnly", "SameSite=Strict"]
     if max_age is not None:
@@ -525,7 +641,11 @@ class AdminHandler(BaseHTTPRequestHandler):
 
     def handle_api_get(self, path, parsed):
         if path == "/api/session":
-            self.send_json({"authenticated": self.authenticated(), "version": __version__})
+            self.send_json({
+                "authenticated": self.authenticated(),
+                "version": __version__,
+                "login_network": login_network_payload(),
+            })
             return
 
         if not self.require_auth():
@@ -567,6 +687,10 @@ class AdminHandler(BaseHTTPRequestHandler):
 
         if path == "/api/settings":
             self.send_json(settings_payload())
+            return
+
+        if path == "/api/tools/network":
+            self.send_json(network_summary())
             return
 
         if path == "/api/lists":
@@ -721,6 +845,10 @@ class AdminHandler(BaseHTTPRequestHandler):
 
 
 def main():
+    if os.environ.get("ADMIN_ENABLED", "0") != "1":
+        print("admin server is disabled (ADMIN_ENABLED != 1)", flush=True)
+        return 0
+
     port = int(os.environ.get("ADMIN_PORT", "8080"))
     password = os.environ.get("ADMIN_PASSWORD", "")
     if not password:
