@@ -46,7 +46,20 @@ def env_int(name, default):
     return number
 
 
-def write_runtime_progress(stage, message, *, active=True, percent=None, items_done=None, items_total=None):
+def write_runtime_progress(
+    stage,
+    message,
+    *,
+    active=True,
+    percent=None,
+    items_done=None,
+    items_total=None,
+    current_kind=None,
+    current_name=None,
+    current_index=None,
+    current_attempt=None,
+    current_attempt_total=None,
+):
     runtime_file = env_path(*GENERATED_PATH_SPECS["runtime_file"])
     value = PROGRESS_STEPS.get(stage, 0 if active else 100) if percent is None else percent
     try:
@@ -60,6 +73,11 @@ def write_runtime_progress(stage, message, *, active=True, percent=None, items_d
         "generation_progress_percent": max(0, min(100, int(value))),
         "generation_items_done": items_done,
         "generation_items_total": items_total,
+        "generation_current_kind": current_kind,
+        "generation_current_name": current_name,
+        "generation_current_index": current_index,
+        "generation_current_attempt": current_attempt,
+        "generation_current_attempt_total": current_attempt_total,
     })
     try:
         runtime_file.parent.mkdir(parents=True, exist_ok=True)
@@ -102,7 +120,7 @@ def read_cache(cache_file, now, max_age):
     return cache_file.read_text(encoding="utf-8"), age
 
 
-def fetch_url(url, timeout=None, attempts=None, delay=None):
+def fetch_url(url, timeout=None, attempts=None, delay=None, progress_callback=None):
     timeout = int(os.environ.get("FETCH_TIMEOUT", "30")) if timeout is None else timeout
     attempts = int(os.environ.get("FETCH_ATTEMPTS", "5")) if attempts is None else attempts
     delay = float(os.environ.get("FETCH_RETRY_DELAY", "5")) if delay is None else delay
@@ -110,6 +128,8 @@ def fetch_url(url, timeout=None, attempts=None, delay=None):
     request = urllib.request.Request(url, headers={"User-Agent": "BGP-Antifilter/1.0"})
 
     for attempt in range(attempts):
+        if progress_callback is not None:
+            progress_callback(attempt + 1, attempts)
         try:
             with urllib.request.urlopen(request, timeout=timeout) as response:
                 return response.read().decode("utf-8", errors="replace").replace("\r", "")
@@ -138,7 +158,7 @@ def count_source_routes(text, *, extract=True):
     return count
 
 
-def fetch_text_source(kind, name, url, cache_file, now, max_age):
+def fetch_text_source(kind, name, url, cache_file, now, max_age, progress_callback=None):
     record = {
         "kind": kind,
         "name": name,
@@ -152,7 +172,7 @@ def fetch_text_source(kind, name, url, cache_file, now, max_age):
     }
 
     try:
-        text = fetch_url(url)
+        text = fetch_url(url, progress_callback=progress_callback)
         cache_file.write_text(text, encoding="utf-8")
         record["status"] = "fresh"
         record["bytes"] = len(text.encode("utf-8"))
@@ -424,17 +444,32 @@ def collect_sources(cache_dir, cache_max_age, include_google):
     )
     processed_items = 0
 
-    def update_collection_progress(message):
+    def update_collection_progress(
+        message,
+        *,
+        current_kind=None,
+        current_name=None,
+        current_index=None,
+        current_attempt=None,
+        current_attempt_total=None,
+        current_step=0.0,
+    ):
         if total_items <= 0:
             percent = 65
         else:
-            percent = 10 + round((processed_items / total_items) * 55)
+            ratio = min(total_items, max(0.0, processed_items + current_step)) / total_items
+            percent = 10 + round(ratio * 55)
         write_runtime_progress(
             "collecting-sources",
             message,
             percent=percent,
             items_done=processed_items,
             items_total=total_items,
+            current_kind=current_kind,
+            current_name=current_name,
+            current_index=current_index,
+            current_attempt=current_attempt,
+            current_attempt_total=current_attempt_total,
         )
 
     update_collection_progress("Collecting route sources")
@@ -449,8 +484,32 @@ def collect_sources(cache_dir, cache_max_age, include_google):
     )
 
     for index, url in enumerate(url_sources, 1):
+        current_index = processed_items + 1
+        update_collection_progress(
+            f"Fetching URL {current_index}/{total_items}",
+            current_kind="url",
+            current_name=url,
+            current_index=current_index,
+            current_step=0.15,
+        )
         progress("fetching url", index=index, total=len(url_sources), url=url)
-        text, record, ok = fetch_text_source("url", url, url, cache_path(cache_dir, "url", url), now, cache_max_age)
+        text, record, ok = fetch_text_source(
+            "url",
+            url,
+            url,
+            cache_path(cache_dir, "url", url),
+            now,
+            cache_max_age,
+            progress_callback=lambda attempt, attempts, current_index=current_index, url=url: update_collection_progress(
+                f"Fetching URL {current_index}/{total_items}",
+                current_kind="url",
+                current_name=url,
+                current_index=current_index,
+                current_attempt=attempt,
+                current_attempt_total=attempts,
+                current_step=min(0.9, attempt / max(1, attempts)),
+            ),
+        )
         record["required"] = require_all_url_sources
         sources.append(record)
         if require_all_url_sources:
@@ -465,9 +524,22 @@ def collect_sources(cache_dir, cache_max_age, include_google):
             )
             errors.append(record)
         processed_items += 1
-        update_collection_progress(f"Processed URL sources: {processed_items}/{total_items}")
+        update_collection_progress(
+            f"Processed URL {processed_items}/{total_items}",
+            current_kind="url",
+            current_name=url,
+            current_index=processed_items,
+        )
 
     for index, asn in enumerate(asn_sources, 1):
+        current_index = processed_items + 1
+        update_collection_progress(
+            f"Fetching ASN {current_index}/{total_items}",
+            current_kind="asn",
+            current_name=asn,
+            current_index=current_index,
+            current_step=0.15,
+        )
         progress("fetching ASN", index=index, total=len(asn_sources), asn=asn)
         asn_number = asn.upper().removeprefix("AS")
         if not asn_number.isdigit():
@@ -476,11 +548,32 @@ def collect_sources(cache_dir, cache_max_age, include_google):
             errors.append(record)
             source_failed = True
             processed_items += 1
-            update_collection_progress(f"Processed sources: {processed_items}/{total_items}")
+            update_collection_progress(
+                f"Processed ASN {processed_items}/{total_items}",
+                current_kind="asn",
+                current_name=asn,
+                current_index=processed_items,
+            )
             continue
 
         url = f"https://api.routeviews.org/asn/{asn_number}"
-        text, record, ok = fetch_text_source("asn", f"AS{asn_number}", url, cache_path(cache_dir, "asn", asn_number), now, cache_max_age)
+        text, record, ok = fetch_text_source(
+            "asn",
+            f"AS{asn_number}",
+            url,
+            cache_path(cache_dir, "asn", asn_number),
+            now,
+            cache_max_age,
+            progress_callback=lambda attempt, attempts, current_index=current_index, asn=asn: update_collection_progress(
+                f"Fetching ASN {current_index}/{total_items}",
+                current_kind="asn",
+                current_name=asn,
+                current_index=current_index,
+                current_attempt=attempt,
+                current_attempt_total=attempts,
+                current_step=min(0.9, attempt / max(1, attempts)),
+            ),
+        )
         sources.append(record)
         source_failed = source_failed or not ok
         if ok:
@@ -488,22 +581,58 @@ def collect_sources(cache_dir, cache_max_age, include_google):
         else:
             errors.append(record)
         processed_items += 1
-        update_collection_progress(f"Processed sources: {processed_items}/{total_items}")
+        update_collection_progress(
+            f"Processed ASN {processed_items}/{total_items}",
+            current_kind="asn",
+            current_name=f"AS{asn_number}",
+            current_index=processed_items,
+        )
 
     if include_google:
+        current_index = processed_items + 1
+        update_collection_progress(
+            f"Fetching Google ranges {current_index}-{current_index + 1}/{total_items}",
+            current_kind="google",
+            current_name="goog.json / cloud.json",
+            current_index=current_index,
+            current_step=0.15,
+        )
         progress("fetching Google ranges")
         google_text, google_record, google_ok = fetch_text_source(
             "google", "goog.json", "https://www.gstatic.com/ipranges/goog.json",
-            cache_path(cache_dir, "google", "goog.json", ".json"), now, cache_max_age
+            cache_path(cache_dir, "google", "goog.json", ".json"), now, cache_max_age,
+            progress_callback=lambda attempt, attempts, current_index=current_index: update_collection_progress(
+                f"Fetching Google ranges {current_index}-{current_index + 1}/{total_items}",
+                current_kind="google",
+                current_name="goog.json",
+                current_index=current_index,
+                current_attempt=attempt,
+                current_attempt_total=attempts,
+                current_step=min(0.45, attempt / max(1, attempts) * 0.45),
+            ),
         )
         cloud_text, cloud_record, cloud_ok = fetch_text_source(
             "google", "cloud.json", "https://www.gstatic.com/ipranges/cloud.json",
-            cache_path(cache_dir, "google", "cloud.json", ".json"), now, cache_max_age
+            cache_path(cache_dir, "google", "cloud.json", ".json"), now, cache_max_age,
+            progress_callback=lambda attempt, attempts, current_index=current_index: update_collection_progress(
+                f"Fetching Google ranges {current_index}-{current_index + 1}/{total_items}",
+                current_kind="google",
+                current_name="cloud.json",
+                current_index=current_index + 1,
+                current_attempt=attempt,
+                current_attempt_total=attempts,
+                current_step=min(0.9, 0.45 + (attempt / max(1, attempts) * 0.45)),
+            ),
         )
         sources.extend([google_record, cloud_record])
         source_failed = source_failed or not google_ok or not cloud_ok
         processed_items += 2
-        update_collection_progress(f"Processed sources: {processed_items}/{total_items}")
+        update_collection_progress(
+            f"Processed Google ranges {processed_items}/{total_items}",
+            current_kind="google",
+            current_name="goog.json / cloud.json",
+            current_index=processed_items,
+        )
 
         if google_ok and cloud_ok:
             try:
@@ -526,6 +655,16 @@ def collect_sources(cache_dir, cache_max_age, include_google):
         sources.append({"kind": "google", "name": "ranges", "status": "disabled"})
 
     for index, domain in enumerate(exclude_domains, 1):
+        current_index = processed_items + 1
+        update_collection_progress(
+            f"Resolving exclude domain {current_index}/{total_items}",
+            current_kind="exclude-domain",
+            current_name=domain,
+            current_index=current_index,
+            current_attempt=1,
+            current_attempt_total=1,
+            current_step=0.15,
+        )
         progress("resolving exclude domain", index=index, total=len(exclude_domains), domain=domain)
         text, record, ok = resolve_domain("exclude-domain", domain, cache_path(cache_dir, "exclude-domain", domain), now, cache_max_age)
         sources.append(record)
@@ -535,9 +674,24 @@ def collect_sources(cache_dir, cache_max_age, include_google):
         else:
             errors.append(record)
         processed_items += 1
-        update_collection_progress(f"Processed sources: {processed_items}/{total_items}")
+        update_collection_progress(
+            f"Processed exclude domain {processed_items}/{total_items}",
+            current_kind="exclude-domain",
+            current_name=domain,
+            current_index=processed_items,
+        )
 
     for index, domain in enumerate(include_domains, 1):
+        current_index = processed_items + 1
+        update_collection_progress(
+            f"Resolving include domain {current_index}/{total_items}",
+            current_kind="include-domain",
+            current_name=domain,
+            current_index=current_index,
+            current_attempt=1,
+            current_attempt_total=1,
+            current_step=0.15,
+        )
         progress("resolving include domain", index=index, total=len(include_domains), domain=domain)
         text, record, ok = resolve_domain("include-domain", domain, cache_path(cache_dir, "include-domain", domain), now, cache_max_age)
         if ok:
@@ -548,7 +702,12 @@ def collect_sources(cache_dir, cache_max_age, include_google):
             progress("skipping optional include domain", domain=domain, status="skipped")
         sources.append(record)
         processed_items += 1
-        update_collection_progress(f"Processed sources: {processed_items}/{total_items}")
+        update_collection_progress(
+            f"Processed include domain {processed_items}/{total_items}",
+            current_kind="include-domain",
+            current_name=domain,
+            current_index=processed_items,
+        )
 
     return source_failed, sources, errors, base_text, include_text, exclude_text
 

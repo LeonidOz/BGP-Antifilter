@@ -41,6 +41,8 @@ const dict = {
     mikrotikWaitingInitial: "BGP session will appear after BIRD startup", progress: "Progress",
     stageBootstrap: "Preparing update", stageCollectingSources: "Collecting sources", stageBuildingRoutes: "Building routes",
     stageWritingRoutes: "Writing routes.conf", stageWritingStatus: "Writing status and metrics", stageCompleted: "Completed"
+    ,currentSource: "Current source", sourceUrl: "URL", sourceAsn: "ASN", sourceGoogle: "Google ranges",
+    sourceIncludeDomain: "Include domain", sourceExcludeDomain: "Exclude domain", attempt: "Attempt"
   },
   ru: {
     dashboard: "Панель", lists: "Списки", tools: "Инструменты", settings: "Настройки", loginTitle: "Вход",
@@ -84,6 +86,8 @@ const dict = {
     mikrotikWaitingInitial: "BGP-сессия появится после запуска BIRD", progress: "Прогресс",
     stageBootstrap: "Подготовка обновления", stageCollectingSources: "Сбор источников", stageBuildingRoutes: "Сборка маршрутов",
     stageWritingRoutes: "Запись routes.conf", stageWritingStatus: "Запись status и metrics", stageCompleted: "Завершено"
+    ,currentSource: "Текущий источник", sourceUrl: "URL", sourceAsn: "ASN", sourceGoogle: "Google ranges",
+    sourceIncludeDomain: "Include domain", sourceExcludeDomain: "Exclude domain", attempt: "Попытка"
   }
 };
 
@@ -335,16 +339,24 @@ function formatBytes(value) {
 
 function loginCanvasSubnets() {
   const fallback = ["192.168.77.111", "192.168.55.1", "172.21.0.2", "127.0.0.1"];
-  const labels = (loginNetworkLabels.length ? loginNetworkLabels : fallback)
-    .filter(Boolean)
-    .slice(0, 4)
-    .map(label => {
-      const match = String(label).trim().match(/^(\d{1,3}\.\d{1,3}\.\d{1,3})\.\d{1,3}$/);
-      return {
-        raw: String(label).trim(),
-        text: match ? `${match[1]}.0/24` : String(label).trim(),
-      };
+  const labels = [];
+  const seen = new Set();
+  for (const label of (loginNetworkLabels.length ? loginNetworkLabels : fallback).filter(Boolean)) {
+    const raw = String(label).trim();
+    const match = raw.match(/^(\d{1,3}\.\d{1,3}\.\d{1,3})\.\d{1,3}$/);
+    const text = match ? `${match[1]}.0/24` : raw;
+    if (seen.has(text)) {
+      continue;
+    }
+    seen.add(text);
+    labels.push({
+      raw,
+      text,
     });
+    if (labels.length >= 4) {
+      break;
+    }
+  }
   const layout = [
     {x: .2, y: .28, count: 5},
     {x: .78, y: .26, count: 5},
@@ -421,6 +433,17 @@ function runtimeStageLabel(stage) {
   return labels[stage] || stage || t("stageRunning");
 }
 
+function runtimeSourceKindLabel(kind) {
+  const labels = {
+    "url": t("sourceUrl"),
+    "asn": t("sourceAsn"),
+    "google": t("sourceGoogle"),
+    "include-domain": t("sourceIncludeDomain"),
+    "exclude-domain": t("sourceExcludeDomain"),
+  };
+  return labels[kind] || kind || "";
+}
+
 function renderRuntimeBanner(payload) {
   const banner = $("runtime-banner");
   const runtimeState = runtimeGenerationState(payload);
@@ -433,8 +456,17 @@ function renderRuntimeBanner(payload) {
   const percent = Math.max(0, Math.min(100, Number(payload?.runtime?.generation_progress_percent || 0)));
   const stageTitle = runtimeStageLabel(payload?.runtime?.generation_stage || "");
   const stageMessage = payload?.runtime?.generation_stage_message || runtimeState.message || "";
+  const currentKind = payload?.runtime?.generation_current_kind || "";
+  const currentName = payload?.runtime?.generation_current_name || "";
+  const currentIndex = Number(payload?.runtime?.generation_current_index || 0) || null;
+  const currentAttempt = Number(payload?.runtime?.generation_current_attempt || 0) || null;
+  const currentAttemptTotal = Number(payload?.runtime?.generation_current_attempt_total || 0) || null;
   const itemsLabel = runtimeState.itemsDone != null && runtimeState.itemsTotal != null && runtimeState.itemsTotal > 0
     ? `${runtimeState.itemsDone} / ${runtimeState.itemsTotal}`
+    : "";
+  const attemptLabel = currentAttempt && currentAttemptTotal ? `${t("attempt")} ${currentAttempt}/${currentAttemptTotal}` : "";
+  const currentSourceLabel = currentName
+    ? `${runtimeSourceKindLabel(currentKind)}${currentIndex ? ` ${currentIndex}/${runtimeState.itemsTotal || "?"}` : ""}: ${currentName}${attemptLabel ? ` · ${attemptLabel}` : ""}`
     : "";
   const meta = [
     runtimeState.startedAt ? `<span class="chip warn">${escapeHtml(t("startedAt"))}: ${escapeHtml(formatDateTime(runtimeState.startedAt * 1000))}</span>` : "",
@@ -455,6 +487,7 @@ function renderRuntimeBanner(payload) {
         <span>${escapeHtml(stageTitle)}${stageMessage ? ` · ${escapeHtml(stageMessage)}` : ""}</span>
         <strong>${escapeHtml(t("progress"))}: ${percent}%</strong>
       </div>
+      ${currentSourceLabel ? `<div class="runtime-progress-head"><span>${escapeHtml(t("currentSource"))}: ${escapeHtml(currentSourceLabel)}</span></div>` : ""}
       <div class="runtime-progress-track"><div class="runtime-progress-bar" style="width:${percent}%"></div></div>
     </div>
     ${meta ? `<div class="runtime-banner-meta">${meta}</div>` : ""}

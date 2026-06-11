@@ -1,5 +1,11 @@
 # Changelog
 
+## 0.2.3 - 2026-06-12
+
+- Improved startup and reload progress reporting in the admin UI with a live banner, progress bar, current source details, and fetch attempt counters.
+- Fixed `update_routes.py` runtime progress writes to stay best-effort outside the container, so local and CI unit tests continue to pass without `/etc/bird` access.
+- Deduplicated identical `/24` network labels in the login canvas so multiple IPs from the same subnet no longer render as duplicate network nodes.
+
 ## 0.2.2 - 2026-06-12
 
 - Added `REQUIRE_ALL_URL_SOURCES` to control whether missing URL sources fail the update or are skipped when other inputs can still produce routes.
