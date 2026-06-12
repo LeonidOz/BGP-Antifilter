@@ -17,6 +17,7 @@ BGP_COMMUNITY="${BGP_COMMUNITY:-65432,500}"
 BIRD_TEMPLATE="${BIRD_TEMPLATE:-/etc/bird/bird.conf.template}"
 BIRD_CONFIG="${BIRD_CONFIG:-/etc/bird/bird.conf}"
 ROUTES="/etc/bird/generated/routes.conf"
+LAST_GOOD_ROUTES="${LAST_GOOD_ROUTES_FILE:-/etc/bird/generated/routes.last-good.conf}"
 CACHE_DIR="${CACHE_DIR:-/etc/bird/generated/cache}"
 STATUS_FILE="${STATUS_FILE:-/etc/bird/generated/status.json}"
 METRICS_FILE="${METRICS_FILE:-/etc/bird/generated/metrics.prom}"
@@ -168,14 +169,7 @@ update_routes() {
   load_settings_env
 
   if [ "$apply" = "apply" ]; then
-    case "$reason" in
-      scheduled)
-        update_message="Running scheduled route update"
-        ;;
-      *)
-        update_message="Running manual route update"
-        ;;
-    esac
+    update_message="$(python3 -m bgp_antifilter.route_runtime update-message "$reason")"
     ROUTE_UPDATE_REASON="$reason" ROUTE_UPDATE_MESSAGE="$update_message" /reload-routes.sh
     return $?
   fi
@@ -206,6 +200,16 @@ write_runtime() {
   export GENERATION_STAGE_MESSAGE="${GENERATION_STAGE_MESSAGE:-}"
   export GENERATION_ITEMS_DONE="${GENERATION_ITEMS_DONE:-}"
   export GENERATION_ITEMS_TOTAL="${GENERATION_ITEMS_TOTAL:-}"
+  export STARTUP_SNAPSHOT_USED="${STARTUP_SNAPSHOT_USED:-0}"
+  export STARTUP_SNAPSHOT_SIZE_BYTES="${STARTUP_SNAPSHOT_SIZE_BYTES:-0}"
+  export STARTUP_SNAPSHOT_MTIME_UNIX="${STARTUP_SNAPSHOT_MTIME_UNIX:-}"
+  export STARTUP_SNAPSHOT_AGE_SECONDS="${STARTUP_SNAPSHOT_AGE_SECONDS:-}"
+  export LAST_UPDATE_REASON="${LAST_UPDATE_REASON:-}"
+  export LAST_UPDATE_MESSAGE="${LAST_UPDATE_MESSAGE:-}"
+  export LAST_UPDATE_SUCCESS="${LAST_UPDATE_SUCCESS:-}"
+  export LAST_UPDATE_FINISHED_AT_UNIX="${LAST_UPDATE_FINISHED_AT_UNIX:-}"
+  export DEGRADED="${DEGRADED:-0}"
+  export DEGRADED_REASON="${DEGRADED_REASON:-}"
   python3 - "$next_update" <<'PY'
 import json
 import os
@@ -232,6 +236,16 @@ data = {
     "generation_stage_message": os.environ.get("GENERATION_STAGE_MESSAGE", ""),
     "generation_items_done": int(os.environ["GENERATION_ITEMS_DONE"]) if os.environ.get("GENERATION_ITEMS_DONE") else None,
     "generation_items_total": int(os.environ["GENERATION_ITEMS_TOTAL"]) if os.environ.get("GENERATION_ITEMS_TOTAL") else None,
+    "startup_snapshot_used": os.environ.get("STARTUP_SNAPSHOT_USED", "0") == "1",
+    "startup_snapshot_size_bytes": int(os.environ.get("STARTUP_SNAPSHOT_SIZE_BYTES", "0") or 0),
+    "startup_snapshot_mtime_unix": int(os.environ["STARTUP_SNAPSHOT_MTIME_UNIX"]) if os.environ.get("STARTUP_SNAPSHOT_MTIME_UNIX") else None,
+    "startup_snapshot_age_seconds": int(os.environ["STARTUP_SNAPSHOT_AGE_SECONDS"]) if os.environ.get("STARTUP_SNAPSHOT_AGE_SECONDS") else None,
+    "last_update_reason": os.environ.get("LAST_UPDATE_REASON", ""),
+    "last_update_message": os.environ.get("LAST_UPDATE_MESSAGE", ""),
+    "last_update_success": None if os.environ.get("LAST_UPDATE_SUCCESS", "") == "" else os.environ.get("LAST_UPDATE_SUCCESS") == "1",
+    "last_update_finished_at_unix": int(os.environ["LAST_UPDATE_FINISHED_AT_UNIX"]) if os.environ.get("LAST_UPDATE_FINISHED_AT_UNIX") else None,
+    "degraded": os.environ.get("DEGRADED", "0") == "1",
+    "degraded_reason": os.environ.get("DEGRADED_REASON", "") if os.environ.get("DEGRADED", "0") == "1" else "",
 }
 tmp = path.with_suffix(path.suffix + ".tmp")
 tmp.write_text(json.dumps(data, indent=2) + "\n", encoding="utf-8")
@@ -250,6 +264,7 @@ ensure_runtime_config_file "$INCLUDE_ASNS_FILE" "include-asns.txt"
 ensure_runtime_config_file "$INCLUDE_DOMAINS_FILE" "include-domains.txt"
 ensure_runtime_config_file "$EXCLUDE_DOMAINS_FILE" "exclude-domains.txt"
 touch "$ROUTES"
+touch "$LAST_GOOD_ROUTES"
 touch "$CONTAINER_LOG_FILE"
 exec >>"$CONTAINER_LOG_FILE" 2>&1
 echo "container log started at $(date -u '+%Y-%m-%dT%H:%M:%SZ')"
@@ -257,41 +272,87 @@ echo "container log started at $(date -u '+%Y-%m-%dT%H:%M:%SZ')"
 export LISTS_FILE INCLUDE_ASNS_FILE INCLUDE_DOMAINS_FILE EXCLUDE_DOMAINS_FILE
 export INCLUDE_GOOGLE_RANGES CACHE_DIR CACHE_MAX_AGE STATUS_FILE METRICS_FILE RUNTIME_FILE SETTINGS_ENV_FILE
 export ROUTES_FILE="$ROUTES"
+export LAST_GOOD_ROUTES_FILE="$LAST_GOOD_ROUTES"
 export ADMIN_ENABLED ADMIN_PORT ADMIN_PASSWORD
 
 render_bird_config
 
-GENERATION_ACTIVE=1
-GENERATION_KIND="initial"
-GENERATION_MESSAGE="Preparing routes before BIRD startup"
-GENERATION_STARTED_AT="$(date +%s)"
-GENERATION_PROGRESS_PERCENT=0
-GENERATION_STAGE="bootstrap"
-GENERATION_STAGE_MESSAGE="Preparing initial route generation"
-GENERATION_ITEMS_DONE=""
-GENERATION_ITEMS_TOTAL=""
-write_runtime 0
-update_routes noapply
-GENERATION_ACTIVE=0
-GENERATION_KIND=""
-GENERATION_MESSAGE=""
-GENERATION_STARTED_AT=""
-GENERATION_PROGRESS_PERCENT=100
-GENERATION_STAGE="completed"
-GENERATION_STAGE_MESSAGE="Initial route generation complete"
-GENERATION_ITEMS_DONE=""
-GENERATION_ITEMS_TOTAL=""
-write_runtime 0
+startup_refresh_in_background=0
+startup_mode="$(python3 -m bgp_antifilter.route_runtime startup-mode "$LAST_GOOD_ROUTES")"
+startup_snapshot_json="$(python3 -m bgp_antifilter.route_runtime startup-mode "$LAST_GOOD_ROUTES" --json)"
+startup_snapshot_values="$(python3 - "$startup_snapshot_json" <<'PY'
+import json
+import sys
 
-if [ ! -s "$ROUTES" ]; then
-  echo "No routes are available after initial update, refusing to start BIRD with an empty table" >&2
-  exit 1
+data = json.loads(sys.argv[1])
+print("1" if data.get("startup_snapshot_used") else "0")
+print(int(data.get("startup_snapshot_size_bytes") or 0))
+print("" if data.get("startup_snapshot_mtime_unix") is None else int(data["startup_snapshot_mtime_unix"]))
+print("" if data.get("startup_snapshot_age_seconds") is None else int(data["startup_snapshot_age_seconds"]))
+PY
+)"
+STARTUP_SNAPSHOT_USED="$(printf '%s\n' "$startup_snapshot_values" | sed -n '1p')"
+STARTUP_SNAPSHOT_SIZE_BYTES="$(printf '%s\n' "$startup_snapshot_values" | sed -n '2p')"
+STARTUP_SNAPSHOT_MTIME_UNIX="$(printf '%s\n' "$startup_snapshot_values" | sed -n '3p')"
+STARTUP_SNAPSHOT_AGE_SECONDS="$(printf '%s\n' "$startup_snapshot_values" | sed -n '4p')"
+if [ "$startup_mode" = "background-refresh" ]; then
+  echo "Starting BIRD with existing route snapshot while refreshing routes in background"
+  cp "$LAST_GOOD_ROUTES" "$ROUTES"
+  GENERATION_ACTIVE=1
+  GENERATION_KIND="startup"
+  GENERATION_MESSAGE="Starting with previous routes while refreshing in background"
+  GENERATION_STARTED_AT="$(date +%s)"
+  GENERATION_PROGRESS_PERCENT=0
+  GENERATION_STAGE="bootstrap"
+  GENERATION_STAGE_MESSAGE="Using previous route snapshot until refresh completes"
+  GENERATION_ITEMS_DONE=""
+  GENERATION_ITEMS_TOTAL=""
+  write_runtime 0
+  startup_refresh_in_background=1
+else
+  GENERATION_ACTIVE=1
+  GENERATION_KIND="initial"
+  GENERATION_MESSAGE="Preparing routes before BIRD startup"
+  GENERATION_STARTED_AT="$(date +%s)"
+  GENERATION_PROGRESS_PERCENT=0
+  GENERATION_STAGE="bootstrap"
+  GENERATION_STAGE_MESSAGE="Preparing initial route generation"
+  GENERATION_ITEMS_DONE=""
+  GENERATION_ITEMS_TOTAL=""
+  write_runtime 0
+  update_routes noapply
+  GENERATION_ACTIVE=0
+  GENERATION_KIND=""
+  GENERATION_MESSAGE=""
+  GENERATION_STARTED_AT=""
+  GENERATION_PROGRESS_PERCENT=100
+  GENERATION_STAGE="completed"
+  GENERATION_STAGE_MESSAGE="Initial route generation complete"
+  GENERATION_ITEMS_DONE=""
+  GENERATION_ITEMS_TOTAL=""
+  LAST_UPDATE_REASON="initial"
+  LAST_UPDATE_MESSAGE="Initial route generation complete"
+  LAST_UPDATE_SUCCESS=1
+  LAST_UPDATE_FINISHED_AT_UNIX="$(date +%s)"
+  DEGRADED=0
+  DEGRADED_REASON=""
+  cp "$ROUTES" "$LAST_GOOD_ROUTES"
+  write_runtime 0
+
+  if [ ! -s "$ROUTES" ]; then
+    echo "No routes are available after initial update, refusing to start BIRD with an empty table" >&2
+    exit 1
+  fi
 fi
 
 bird -f -c "$BIRD_CONFIG" &
 BIRD_PID="$!"
 
 sleep 2
+
+if [ "$startup_refresh_in_background" = "1" ]; then
+  update_routes apply startup &
+fi
 
 while true; do
   load_settings_env

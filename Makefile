@@ -1,4 +1,4 @@
-.PHONY: test shellcheck compose-config build up down logs ps reload dry-run check-sources check-ip version release-version
+.PHONY: test smoke-test shellcheck compose-config build up down logs ps reload dry-run check-sources check-ip version release-version
 
 IP ?= 1.2.3.4
 VERSION ?= $(shell cat VERSION)
@@ -6,6 +6,9 @@ COMPOSE := docker compose
 
 test:
 	python -m unittest discover -s tests
+
+smoke-test:
+	RUN_DOCKER_SMOKE=1 python -m unittest tests.test_smoke_docker -v
 
 shellcheck:
 	shellcheck deploy/entrypoint.sh deploy/healthcheck.sh deploy/reload-routes.sh

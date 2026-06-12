@@ -2,7 +2,7 @@ name: bgp-antifilter
 
 services:
   bird:
-    image: "bgp-antifilter-bird:${BGP_ANTIFILTER_VERSION:-0.2.4}"
+    image: "bgp-antifilter-bird:${BGP_ANTIFILTER_VERSION:-0.2.5}"
     build:
       context: .
       dockerfile: deploy/Dockerfile
@@ -30,6 +30,7 @@ services:
       ALLOW_BROAD_ROUTES: "${ALLOW_BROAD_ROUTES:-0}"
       UPDATE_LOCK_DIR: "${UPDATE_LOCK_DIR:-/etc/bird/generated/update.lock}"
       HEALTHCHECK_REQUIRE_BGP: "${HEALTHCHECK_REQUIRE_BGP:-1}"
+      HEALTHCHECK_FAIL_ON_DEGRADED: "${HEALTHCHECK_FAIL_ON_DEGRADED:-0}"
       BGP_PROTOCOL: "${BGP_PROTOCOL:-mikrotik}"
       ADMIN_ENABLED: "${ADMIN_ENABLED:-0}"
       ADMIN_PORT: "${ADMIN_PORT:-8080}"
@@ -40,7 +41,7 @@ services:
       SETTINGS_ENV_FILE: /etc/bird/generated/settings.env
 
   admin:
-    image: "bgp-antifilter-bird:${BGP_ANTIFILTER_VERSION:-0.2.4}"
+    image: "bgp-antifilter-bird:${BGP_ANTIFILTER_VERSION:-0.2.5}"
     build:
       context: .
       dockerfile: deploy/Dockerfile
@@ -69,6 +70,7 @@ services:
       UPDATE_LOCK_DIR: "${UPDATE_LOCK_DIR:-/etc/bird/generated/update.lock}"
       BGP_PROTOCOL: "${BGP_PROTOCOL:-mikrotik}"
       HEALTHCHECK_REQUIRE_BGP: "${HEALTHCHECK_REQUIRE_BGP:-1}"
+      HEALTHCHECK_FAIL_ON_DEGRADED: "${HEALTHCHECK_FAIL_ON_DEGRADED:-0}"
       ADMIN_ENABLED: "${ADMIN_ENABLED:-0}"
       ADMIN_PORT: "${ADMIN_PORT:-8080}"
       ADMIN_PASSWORD: "${ADMIN_PASSWORD:-}"

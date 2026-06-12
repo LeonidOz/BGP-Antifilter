@@ -1,5 +1,12 @@
 # Changelog
 
+## 0.2.5 - 2026-06-13
+
+- Reworked route application around a dedicated `generated/routes.last-good.conf` snapshot so startup, apply, and rollback now use a confirmed last-known-good state instead of relying only on the current `routes.conf`.
+- Added degraded-state tracking across `runtime.json`, `status.json`, healthcheck behavior, and the admin UI, including optional `HEALTHCHECK_FAIL_ON_DEGRADED=1` for operators who want degraded refresh failures to mark the container unhealthy.
+- Expanded verification coverage with startup/runtime unit tests and Docker smoke scenarios for startup snapshot reuse, background refresh, and failed refresh rollback behavior.
+- Restructured the README files with quick start, startup/rollback model, troubleshooting runbook tables, clearer admin UI guidance, and updated English copy to match the revised Russian documentation.
+
 ## 0.2.4 - 2026-06-12
 
 - Refined startup and reload progress reporting in the admin UI: the banner now shows the current source, fetch attempts, and clearer movement during long-running source checks.

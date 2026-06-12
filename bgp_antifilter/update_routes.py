@@ -348,10 +348,15 @@ def write_metrics(path, status):
 
 def build_status(success, started_at, sources, routes, errors, cache_max_age, dry_run=False, check_sources=False):
     now = int(time.time())
+    degraded = os.environ.get("DEGRADED", "0") == "1"
     return {
         "success": success,
+        "degraded": degraded,
+        "degraded_reason": os.environ.get("DEGRADED_REASON", "") if degraded else "",
         "dry_run": dry_run,
         "check_sources": check_sources,
+        "run_reason": os.environ.get("ROUTE_UPDATE_REASON", "manual"),
+        "run_message": os.environ.get("ROUTE_UPDATE_MESSAGE", ""),
         "updated_at_unix": now,
         "updated_at": time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime(now)),
         "duration_seconds": round(time.time() - started_at, 3),

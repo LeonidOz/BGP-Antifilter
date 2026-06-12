@@ -42,7 +42,11 @@ const dict = {
     stageBootstrap: "Preparing update", stageCollectingSources: "Collecting sources", stageBuildingRoutes: "Building routes",
     stageWritingRoutes: "Writing routes.conf", stageWritingStatus: "Writing status and metrics", stageCompleted: "Completed"
     ,currentSource: "Current source", sourceUrl: "URL", sourceAsn: "ASN", sourceGoogle: "Google ranges",
-    sourceIncludeDomain: "Include domain", sourceExcludeDomain: "Exclude domain", attempt: "Attempt"
+    sourceIncludeDomain: "Include domain", sourceExcludeDomain: "Exclude domain", attempt: "Attempt",
+    startupSnapshot: "Startup snapshot", snapshotAge: "Snapshot age", snapshotActive: "Started with previous routes",
+    startupRefreshOk: "Startup refresh completed", startupRefreshFailed: "Startup refresh failed",
+    lastUpdateFinished: "Finished", unknownTime: "unknown time",
+    degradedState: "Degraded", degradedReason: "Degraded reason"
   },
   ru: {
     dashboard: "Панель", lists: "Списки", tools: "Инструменты", settings: "Настройки", loginTitle: "Вход",
@@ -87,7 +91,11 @@ const dict = {
     stageBootstrap: "Подготовка обновления", stageCollectingSources: "Сбор источников", stageBuildingRoutes: "Сборка маршрутов",
     stageWritingRoutes: "Запись routes.conf", stageWritingStatus: "Запись status и metrics", stageCompleted: "Завершено"
     ,currentSource: "Текущий источник", sourceUrl: "URL", sourceAsn: "ASN", sourceGoogle: "Google ranges",
-    sourceIncludeDomain: "Include domain", sourceExcludeDomain: "Exclude domain", attempt: "Попытка"
+    sourceIncludeDomain: "Include domain", sourceExcludeDomain: "Exclude domain", attempt: "Попытка",
+    startupSnapshot: "Стартовый snapshot", snapshotAge: "Возраст snapshot", snapshotActive: "Запуск со старыми маршрутами",
+    startupRefreshOk: "Стартовый refresh завершен", startupRefreshFailed: "Стартовый refresh завершился ошибкой",
+    lastUpdateFinished: "Завершено", unknownTime: "время неизвестно",
+    degradedState: "Деградация", degradedReason: "Причина деградации"
   }
 };
 
@@ -444,6 +452,35 @@ function runtimeSourceKindLabel(kind) {
   return labels[kind] || kind || "";
 }
 
+function runtimeSnapshotChip(runtime) {
+  if (!runtime?.startup_snapshot_used) return "";
+  const details = [];
+  const age = runtime.startup_snapshot_age_seconds;
+  const size = runtime.startup_snapshot_size_bytes;
+  if (age != null) details.push(`${t("snapshotAge")}: ${formatSecondsShort(age)}`);
+  if (Number.isFinite(Number(size)) && Number(size) > 0) details.push(formatBytes(size));
+  const label = details.length ? `${t("snapshotActive")} · ${details.join(" · ")}` : t("snapshotActive");
+  return `<span class="chip warn">${escapeHtml(label)}</span>`;
+}
+
+function runtimeStartupRefreshSummary(runtime) {
+  if ((runtime?.last_update_reason || "") !== "startup") return "";
+  const success = runtime?.last_update_success;
+  if (success == null) return "";
+  const label = success ? t("startupRefreshOk") : t("startupRefreshFailed");
+  const finishedAt = runtime?.last_update_finished_at_unix
+    ? formatDateTime(runtime.last_update_finished_at_unix * 1000)
+    : t("unknownTime");
+  return `${label} · ${t("lastUpdateFinished")}: ${finishedAt}`;
+}
+
+function runtimeDegradedSummary(runtime, status) {
+  const degraded = Boolean(runtime?.degraded || status?.degraded);
+  if (!degraded) return "";
+  const reason = runtime?.degraded_reason || status?.degraded_reason || "";
+  return reason ? `${t("degradedState")} · ${t("degradedReason")}: ${reason}` : t("degradedState");
+}
+
 function renderRuntimeBanner(payload) {
   const banner = $("runtime-banner");
   const runtimeState = runtimeGenerationState(payload);
@@ -461,6 +498,7 @@ function renderRuntimeBanner(payload) {
   const currentIndex = Number(payload?.runtime?.generation_current_index || 0) || null;
   const currentAttempt = Number(payload?.runtime?.generation_current_attempt || 0) || null;
   const currentAttemptTotal = Number(payload?.runtime?.generation_current_attempt_total || 0) || null;
+  const snapshotChip = runtimeSnapshotChip(payload?.runtime || {});
   const itemsLabel = runtimeState.itemsDone != null && runtimeState.itemsTotal != null && runtimeState.itemsTotal > 0
     ? `${runtimeState.itemsDone} / ${runtimeState.itemsTotal}`
     : "";
@@ -472,6 +510,7 @@ function renderRuntimeBanner(payload) {
     runtimeState.startedAt ? `<span class="chip warn">${escapeHtml(t("startedAt"))}: ${escapeHtml(formatDateTime(runtimeState.startedAt * 1000))}</span>` : "",
     runtimeState.elapsedSeconds != null ? `<span class="chip warn">${escapeHtml(t("elapsed"))}: ${escapeHtml(formatSecondsShort(runtimeState.elapsedSeconds))}</span>` : "",
     itemsLabel ? `<span class="chip warn">${escapeHtml(t("sources"))}: ${escapeHtml(itemsLabel)}</span>` : "",
+    snapshotChip,
   ].filter(Boolean).join("");
   banner.innerHTML = `
     <div class="runtime-banner-head">
@@ -1180,9 +1219,20 @@ function renderMetricsView(text) {
       };
     })
     .filter(row => row.rawValue !== 0);
+  const runtime = lastStatusPayload?.runtime || {};
+  const status = lastStatusPayload?.status || {};
+  const snapshotSummary = runtime?.startup_snapshot_used
+    ? `${t("startupSnapshot")}: ${formatSecondsShort(runtime.startup_snapshot_age_seconds)}`
+    : "";
+  const runtimeSummary = runtimeStartupRefreshSummary(runtime);
+  const degradedSummary = runtimeDegradedSummary(runtime, status);
+  const extraSummary = [snapshotSummary, runtimeSummary, degradedSummary].filter(Boolean);
   return `
     <div class="result-card">
       <div class="result-head"><span class="status-pill ok">${rows.length} ${lang === "ru" ? "значимых метрик" : "non-zero metrics"}</span></div>
+      ${extraSummary.length ? `
+        <div class="muted-box">${extraSummary.map(item => escapeHtml(item)).join("<br>")}</div>
+      ` : ""}
       <div class="data-table">
         ${rows.map(row => `
           <div class="data-table-row">
@@ -1290,9 +1340,9 @@ function buildStages(payload) {
       sources.filter(source => source.cache_file)
     ),
     generator: stageState(
-      runtimeState ? "warn" : status.success === false ? "fail" : routes.invalid ? "warn" : "ok",
+      runtimeState ? "warn" : status.degraded ? "warn" : status.success === false ? "fail" : routes.invalid ? "warn" : "ok",
       t("generator"),
-      runtimeState ? t("generatorBusy") : `${routes.final ?? 0} final routes`,
+      runtimeState ? t("generatorBusy") : status.degraded ? (status.degraded_reason || t("degradedState")) : `${routes.final ?? 0} final routes`,
       runtimeState ? [
         [t("elapsed"), formatSecondsShort(runtimeState.elapsedSeconds)],
         [t("startedAt"), runtimeState.startedAt ? formatDateTime(runtimeState.startedAt * 1000) : "-"],
@@ -1371,6 +1421,9 @@ async function loadStatus() {
   resultCard.classList.remove("ok", "fail", "warn");
   if (runtimeState) {
     $("last-result").textContent = runtimeGenerationLabel(runtimeState);
+    resultCard.classList.add("warn");
+  } else if (runtime.degraded || status.degraded) {
+    $("last-result").textContent = t("statusWarn");
     resultCard.classList.add("warn");
   } else if (status.success === true) {
     $("last-result").textContent = "OK";

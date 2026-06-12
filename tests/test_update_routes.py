@@ -1,6 +1,7 @@
 import contextlib
 import io
 import ipaddress
+import json
 import os
 import socket
 import tempfile
@@ -20,6 +21,20 @@ def run_main_quiet(argv):
     with contextlib.redirect_stdout(stdout), contextlib.redirect_stderr(io.StringIO()):
         exit_code = update_routes.main(argv)
     return exit_code, stdout.getvalue()
+
+
+def parse_first_json_object(text):
+    decoder = json.JSONDecoder()
+    for index, char in enumerate(text):
+        if char != "{":
+            continue
+        try:
+            value, _ = decoder.raw_decode(text[index:])
+        except json.JSONDecodeError:
+            continue
+        if isinstance(value, dict) and "sources" in value and "routes" in value:
+            return value
+    raise AssertionError("JSON object not found in output")
 
 
 class CacheTests(unittest.TestCase):
@@ -68,6 +83,91 @@ class SourceRouteCountTests(unittest.TestCase):
 
 
 class MainTests(unittest.TestCase):
+    def test_dry_run_status_includes_run_reason_and_message(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            source = root / "source.txt"
+            lists = root / "lists.txt"
+            include_asns = root / "include-asns.txt"
+            include_domains = root / "include-domains.txt"
+            exclude_domains = root / "exclude-domains.txt"
+
+            source.write_text("192.0.2.0/24\n", encoding="utf-8")
+            lists.write_text(f"{source.as_uri()}\n", encoding="utf-8")
+            include_asns.write_text("", encoding="utf-8")
+            include_domains.write_text("", encoding="utf-8")
+            exclude_domains.write_text("", encoding="utf-8")
+
+            old_env = os.environ.copy()
+            os.environ.update(
+                {
+                    "LISTS_FILE": str(lists),
+                    "INCLUDE_ASNS_FILE": str(include_asns),
+                    "INCLUDE_DOMAINS_FILE": str(include_domains),
+                    "EXCLUDE_DOMAINS_FILE": str(exclude_domains),
+                    "INCLUDE_GOOGLE_RANGES": "0",
+                    "CACHE_DIR": str(root / "cache"),
+                    "CACHE_MAX_AGE": "604800",
+                    "ROUTE_UPDATE_REASON": "startup",
+                    "ROUTE_UPDATE_MESSAGE": "Refreshing routes after startup using previous route snapshot",
+                }
+            )
+
+            try:
+                exit_code, output_text = run_main_quiet(["--dry-run"])
+            finally:
+                os.environ.clear()
+                os.environ.update(old_env)
+
+            payload = parse_first_json_object(output_text)
+            self.assertEqual(exit_code, 0)
+            self.assertEqual(payload["run_reason"], "startup")
+            self.assertEqual(
+                payload["run_message"],
+                "Refreshing routes after startup using previous route snapshot",
+            )
+
+    def test_dry_run_status_can_report_degraded_state(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            source = root / "source.txt"
+            lists = root / "lists.txt"
+            include_asns = root / "include-asns.txt"
+            include_domains = root / "include-domains.txt"
+            exclude_domains = root / "exclude-domains.txt"
+
+            source.write_text("192.0.2.0/24\n", encoding="utf-8")
+            lists.write_text(f"{source.as_uri()}\n", encoding="utf-8")
+            include_asns.write_text("", encoding="utf-8")
+            include_domains.write_text("", encoding="utf-8")
+            exclude_domains.write_text("", encoding="utf-8")
+
+            old_env = os.environ.copy()
+            os.environ.update(
+                {
+                    "LISTS_FILE": str(lists),
+                    "INCLUDE_ASNS_FILE": str(include_asns),
+                    "INCLUDE_DOMAINS_FILE": str(include_domains),
+                    "EXCLUDE_DOMAINS_FILE": str(exclude_domains),
+                    "INCLUDE_GOOGLE_RANGES": "0",
+                    "CACHE_DIR": str(root / "cache"),
+                    "CACHE_MAX_AGE": "604800",
+                    "DEGRADED": "1",
+                    "DEGRADED_REASON": "Previous snapshot remains active",
+                }
+            )
+
+            try:
+                exit_code, output_text = run_main_quiet(["--dry-run"])
+            finally:
+                os.environ.clear()
+                os.environ.update(old_env)
+
+            payload = parse_first_json_object(output_text)
+            self.assertEqual(exit_code, 0)
+            self.assertTrue(payload["degraded"])
+            self.assertEqual(payload["degraded_reason"], "Previous snapshot remains active")
+
     def test_missing_include_domain_is_skipped_without_failing_update(self):
         with tempfile.TemporaryDirectory() as tmp:
             root = Path(tmp)

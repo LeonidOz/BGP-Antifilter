@@ -28,6 +28,9 @@ jobs:
       - name: Build canonical Docker image
         run: docker compose --env-file .env.example build
 
+      - name: Run Docker smoke test
+        run: RUN_DOCKER_SMOKE=1 python -m unittest tests.test_smoke_docker -v
+
   shellcheck:
     name: ShellCheck
     runs-on: ubuntu-latest
