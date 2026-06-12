@@ -69,6 +69,7 @@ class DockerSmokeTests(unittest.TestCase):
     def tearDown(self):
         try:
             self.compose("down", "--remove-orphans", check=False)
+            self.restore_generated_permissions()
         finally:
             self.server.shutdown()
             self.server.server_close()
@@ -128,6 +129,28 @@ class DockerSmokeTests(unittest.TestCase):
             ["docker", "compose", "-p", self.project_name, "-f", str(self.compose_file), *args],
             cwd=self.repo_root,
             check=check,
+            capture_output=True,
+            text=True,
+        )
+
+    def restore_generated_permissions(self):
+        if not self.generated_dir.exists() or not sys.platform.startswith("linux"):
+            return
+        uid = os.getuid()
+        gid = os.getgid()
+        subprocess.run(
+            [
+                "docker",
+                "run",
+                "--rm",
+                "-v",
+                f"{self.root.as_posix()}:/work",
+                "bgp-antifilter-bird:smoke",
+                "sh",
+                "-c",
+                f"chown -R {uid}:{gid} /work || true",
+            ],
+            check=False,
             capture_output=True,
             text=True,
         )

@@ -91,6 +91,9 @@ class MainTests(unittest.TestCase):
             include_asns = root / "include-asns.txt"
             include_domains = root / "include-domains.txt"
             exclude_domains = root / "exclude-domains.txt"
+            output = root / "routes.conf"
+            status = root / "status.json"
+            metrics = root / "metrics.prom"
 
             source.write_text("192.0.2.0/24\n", encoding="utf-8")
             lists.write_text(f"{source.as_uri()}\n", encoding="utf-8")
@@ -114,7 +117,15 @@ class MainTests(unittest.TestCase):
             )
 
             try:
-                exit_code, output_text = run_main_quiet(["--dry-run"])
+                exit_code, output_text = run_main_quiet([
+                    "--dry-run",
+                    "--output",
+                    str(output),
+                    "--status",
+                    str(status),
+                    "--metrics",
+                    str(metrics),
+                ])
             finally:
                 os.environ.clear()
                 os.environ.update(old_env)
@@ -135,6 +146,9 @@ class MainTests(unittest.TestCase):
             include_asns = root / "include-asns.txt"
             include_domains = root / "include-domains.txt"
             exclude_domains = root / "exclude-domains.txt"
+            output = root / "routes.conf"
+            status = root / "status.json"
+            metrics = root / "metrics.prom"
 
             source.write_text("192.0.2.0/24\n", encoding="utf-8")
             lists.write_text(f"{source.as_uri()}\n", encoding="utf-8")
@@ -158,7 +172,15 @@ class MainTests(unittest.TestCase):
             )
 
             try:
-                exit_code, output_text = run_main_quiet(["--dry-run"])
+                exit_code, output_text = run_main_quiet([
+                    "--dry-run",
+                    "--output",
+                    str(output),
+                    "--status",
+                    str(status),
+                    "--metrics",
+                    str(metrics),
+                ])
             finally:
                 os.environ.clear()
                 os.environ.update(old_env)
