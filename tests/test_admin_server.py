@@ -277,6 +277,64 @@ class AdminServerHelperTests(unittest.TestCase):
 
         self.assertEqual(payload["generation_kind"], "startup")
 
+    def test_reconcile_runtime_state_clears_stale_active_runtime_without_lock_or_thread(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            runtime_file = Path(tmp) / "runtime.json"
+            lock_dir = Path(tmp) / "update.lock"
+            runtime_file.write_text(
+                '{'
+                '"generation_active": true,'
+                '"generation_kind": "startup",'
+                '"generation_message": "Starting with previous routes while refreshing in background",'
+                '"generation_started_at_unix": 123,'
+                '"generation_stage": "bootstrap",'
+                '"generation_stage_message": "Using previous route snapshot until refresh completes"'
+                '}',
+                encoding="utf-8",
+            )
+
+            old_runtime = admin_server.RUNTIME_FILE
+            old_lock_dir = admin_server.UPDATE_LOCK_DIR
+            old_thread = admin_server.RELOAD_THREAD
+            admin_server.RUNTIME_FILE = runtime_file
+            admin_server.UPDATE_LOCK_DIR = lock_dir
+            admin_server.RELOAD_THREAD = None
+            try:
+                payload = admin_server.reconcile_runtime_state(admin_server.json_load(runtime_file, {}))
+                stored = admin_server.json_load(runtime_file, {})
+            finally:
+                admin_server.RUNTIME_FILE = old_runtime
+                admin_server.UPDATE_LOCK_DIR = old_lock_dir
+                admin_server.RELOAD_THREAD = old_thread
+
+        self.assertFalse(payload["generation_active"])
+        self.assertEqual(payload["generation_kind"], "")
+        self.assertEqual(payload["generation_stage"], "")
+        self.assertFalse(stored["generation_active"])
+
+    def test_reconcile_runtime_state_keeps_active_runtime_when_lock_exists(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            runtime_file = Path(tmp) / "runtime.json"
+            lock_dir = Path(tmp) / "update.lock"
+            runtime_file.write_text('{"generation_active": true, "generation_kind": "startup"}', encoding="utf-8")
+            lock_dir.mkdir()
+
+            old_runtime = admin_server.RUNTIME_FILE
+            old_lock_dir = admin_server.UPDATE_LOCK_DIR
+            old_thread = admin_server.RELOAD_THREAD
+            admin_server.RUNTIME_FILE = runtime_file
+            admin_server.UPDATE_LOCK_DIR = lock_dir
+            admin_server.RELOAD_THREAD = None
+            try:
+                payload = admin_server.reconcile_runtime_state(admin_server.json_load(runtime_file, {}))
+            finally:
+                admin_server.RUNTIME_FILE = old_runtime
+                admin_server.UPDATE_LOCK_DIR = old_lock_dir
+                admin_server.RELOAD_THREAD = old_thread
+
+        self.assertTrue(payload["generation_active"])
+        self.assertEqual(payload["generation_kind"], "startup")
+
     def test_external_ip_summary_parses_success_payload(self):
         body = (
             '{"status":"success","query":"203.0.113.10","country":"Testland",'

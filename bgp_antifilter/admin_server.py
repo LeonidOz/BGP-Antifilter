@@ -37,6 +37,7 @@ UPDATE_RUNTIME_FILE = PATHS["update_runtime_file"]
 CONTAINER_LOG_FILE = PATHS["container_log_file"]
 SETTINGS_FILE = PATHS["settings_file"]
 SETTINGS_ENV_FILE = PATHS["settings_env_file"]
+UPDATE_LOCK_DIR = env_path("UPDATE_LOCK_DIR", "/etc/bird/generated/update.lock")
 
 LIST_FILES = env_paths(LIST_FILE_SPECS)
 
@@ -326,12 +327,42 @@ def run_command(command, timeout=120):
 
 
 def reload_runtime_active():
-    runtime = json_load(RUNTIME_FILE, {})
+    runtime = reconcile_runtime_state(json_load(RUNTIME_FILE, {}))
     return bool(runtime.get("generation_active"))
 
 
 def reload_thread_active():
     return RELOAD_THREAD is not None and RELOAD_THREAD.is_alive()
+
+
+def reload_lock_active():
+    return UPDATE_LOCK_DIR.exists()
+
+
+def reconcile_runtime_state(runtime):
+    state = dict(runtime or {})
+    if not state.get("generation_active"):
+        return state
+    if reload_thread_active() or reload_lock_active():
+        return state
+
+    state.update({
+        "generation_active": False,
+        "generation_kind": "",
+        "generation_message": "",
+        "generation_started_at_unix": None,
+        "generation_progress_percent": 0,
+        "generation_stage": "",
+        "generation_stage_message": "",
+        "generation_items_done": None,
+        "generation_items_total": None,
+        "updated_at_unix": int(time.time()),
+    })
+    try:
+        write_text_atomic(RUNTIME_FILE, json.dumps(state, ensure_ascii=False, indent=2) + "\n")
+    except OSError:
+        pass
+    return state
 
 
 def apply_reload():
@@ -353,7 +384,7 @@ def start_reload():
 
 
 def visible_runtime_state(runtime):
-    state = dict(runtime or {})
+    state = reconcile_runtime_state(runtime)
     if state.get("generation_active") or not reload_thread_active():
         return state
     state.update({

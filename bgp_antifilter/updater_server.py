@@ -287,10 +287,9 @@ def reconcile_runtime(current_version):
     runtime = runtime_payload()
     if not runtime:
         return runtime
-    stage = str(runtime.get("stage") or "")
     active = bool(runtime.get("active"))
     target_version = str(runtime.get("target_version") or "")
-    if active and target_version == str(current_version or ""):
+    if target_version == str(current_version or "") and (active or runtime.get("success") is False):
         write_runtime(
             active=False,
             stage="completed",
@@ -299,6 +298,7 @@ def reconcile_runtime(current_version):
             success=True,
             current_version=target_version,
             error="",
+            rollback={},
         )
         return runtime_payload()
     return runtime

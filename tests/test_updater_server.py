@@ -176,6 +176,32 @@ class UpdaterServerTests(unittest.TestCase):
         self.assertTrue(payload["success"])
         self.assertEqual(payload["current_version"], "0.3.1")
 
+    def test_reconcile_runtime_clears_failed_status_after_external_upgrade_to_target_version(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            runtime_file = Path(tmp) / "update-runtime.json"
+            runtime_file.write_text(
+                '{'
+                '"active": false,'
+                '"stage": "failed",'
+                '"target_version": "0.3.4",'
+                '"current_version": "0.3.3",'
+                '"success": false,'
+                '"error": "docker compose up failed",'
+                '"rollback": {"ok": false, "error": "rollback failed"}'
+                '}',
+                encoding="utf-8",
+            )
+
+            with mock.patch.object(updater_server, "UPDATE_RUNTIME_FILE", runtime_file):
+                payload = updater_server.reconcile_runtime("0.3.4")
+
+        self.assertFalse(payload["active"])
+        self.assertEqual(payload["stage"], "completed")
+        self.assertTrue(payload["success"])
+        self.assertEqual(payload["current_version"], "0.3.4")
+        self.assertEqual(payload["error"], "")
+        self.assertEqual(payload["rollback"], {})
+
     def test_apply_update_rolls_back_to_version_from_env_file(self):
         with tempfile.TemporaryDirectory() as tmp:
             env_file = Path(tmp) / ".env"

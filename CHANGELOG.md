@@ -1,5 +1,12 @@
 # Changelog
 
+## 0.3.5 - 2026-06-15
+
+- Fixed self-update Compose compatibility by preferring `docker compose` v2 when available and falling back to a legacy `docker-compose` v1 command line that strips top-level `name:` while preserving the project name.
+- Pinned the default Compose network to `enable_ipv6: false` so stack updates no longer fail on existing deployments that were created without an explicit IPv6 setting.
+- Fixed stale admin UI status after external `make update` upgrades by auto-completing `generated/update-runtime.json` when the running version already matches the recorded target release.
+- Fixed stale dashboard generation banners after restarts by clearing orphaned `runtime.json` active states when no real route-update lock or background reload thread is present.
+
 ## 0.3.4 - 2026-06-14
 
 - Fixed updater version detection so rollback and reported current version use `BGP_ANTIFILTER_VERSION` from `.env` instead of the repository `VERSION` file.

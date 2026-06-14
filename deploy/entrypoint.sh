@@ -352,6 +352,15 @@ sleep 2
 
 if [ "$startup_refresh_in_background" = "1" ]; then
   update_routes apply startup &
+  GENERATION_ACTIVE=0
+  GENERATION_KIND=""
+  GENERATION_MESSAGE=""
+  GENERATION_STARTED_AT=""
+  GENERATION_PROGRESS_PERCENT=0
+  GENERATION_STAGE=""
+  GENERATION_STAGE_MESSAGE=""
+  GENERATION_ITEMS_DONE=""
+  GENERATION_ITEMS_TOTAL=""
 fi
 
 while true; do
