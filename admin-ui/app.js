@@ -150,13 +150,15 @@ const listLabels = {
   "urls": "URLs",
   "asns": "ASNs",
   "include-domains": "Include domains",
-  "exclude-domains": "Exclude domains"
+  "exclude-domains": "Exclude domains",
+  "google-ranges": "Google ranges"
 };
 const listIcons = {
   "urls": "link-2",
   "asns": "hash",
   "include-domains": "circle-plus",
-  "exclude-domains": "circle-minus"
+  "exclude-domains": "circle-minus",
+  "google-ranges": "globe"
 };
 const settingLabels = {
   UPDATE_INTERVAL: {ru: "Интервал автообновления", en: "Auto refresh interval"},
@@ -253,33 +255,6 @@ function refreshSettingsDirtyState(message = "", tone = "") {
   setStatusTone($("settings-save-status"), settingsDirty ? "warn" : "");
 }
 
-function renderListSourceSettings() {
-  if (!settingsPayload) {
-    $("list-source-settings").innerHTML = "";
-    return;
-  }
-  const enabled = String(settingsPayload.values?.INCLUDE_GOOGLE_RANGES || "0") === "1";
-  $("list-source-settings").innerHTML = `
-    <article class="panel settings-section">
-      <h2>${escapeHtml(t("sourceOptions"))}</h2>
-      <p class="muted">${escapeHtml(t("sourceOptionsHint"))}</p>
-      <div class="settings-grid">
-        <label class="setting-card">
-          <span class="setting-head">
-            <strong>${escapeHtml(settingLabel("INCLUDE_GOOGLE_RANGES"))}</strong>
-          </span>
-          <span class="setting-control">
-            <span class="toggle">
-              <input type="checkbox" id="list-include-google-ranges" ${enabled ? "checked" : ""}>
-              <span></span>
-            </span>
-          </span>
-        </label>
-      </div>
-    </article>
-  `;
-}
-
 function markListDirty(dirty) {
   listDirty = dirty;
   refreshListDirtyState();
@@ -307,7 +282,9 @@ function applyLang() {
       markSettingsDirty();
     }
   }
-  renderListSourceSettings();
+  if (!$("lists").classList.contains("hidden")) {
+    renderListTiles();
+  }
   refreshListDirtyState();
   renderUpdateStatus(updateStatusPayload);
   renderIcons();
@@ -1832,7 +1809,6 @@ function renderSettings(data) {
     </article>
   `).join("");
   refreshSettingsDirtyState();
-  renderListSourceSettings();
 }
 
 async function loadSettings() {
@@ -1891,8 +1867,25 @@ async function loadList(name) {
   }
   currentList = name;
   document.querySelectorAll("[data-list]").forEach(button => button.classList.toggle("active", button.dataset.list === name));
-  const data = await api(`/api/lists/${name}`);
   $("list-title").textContent = listLabels[name];
+  const special = isSpecialList(name);
+  $("add-list-form").classList.toggle("hidden", special);
+  $("list-source-settings").classList.toggle("hidden", !special);
+  $("list-tiles").classList.toggle("hidden", false);
+  $("dry-after-save-btn").closest(".list-actions").classList.toggle("hidden", special);
+  $("list-editor").closest(".raw-list-editor").classList.toggle("hidden", special);
+  if (special) {
+    listSavedContent = "";
+    listSavedPath = settingsPayload?.settings_env_file || "";
+    $("list-editor").value = "";
+    $("add-list-input").value = "";
+    markListDirty(false);
+    renderListTiles();
+    refreshListDirtyState(listSavedPath);
+    return;
+  }
+  $("list-source-settings").innerHTML = "";
+  const data = await api(`/api/lists/${name}`);
   listSavedContent = data.content || "";
   listSavedPath = data.path || "";
   $("list-editor").value = listSavedContent;
@@ -1943,8 +1936,15 @@ function normalizeAsn(value) {
   return trimmed.startsWith("AS") ? trimmed : `AS${trimmed}`;
 }
 
+function isSpecialList(name) {
+  return name === "google-ranges";
+}
+
 function listSourceRecord(listName, value) {
   const sources = lastStatusPayload?.status?.sources || [];
+  if (listName === "google-ranges") {
+    return sources.find(source => source.kind === "google-ranges");
+  }
   if (listName === "urls") {
     return sources.find(source => source.kind === "url" && (source.url === value || source.name === value));
   }
@@ -1959,6 +1959,35 @@ function listSourceRecord(listName, value) {
     return sources.find(source => source.kind === "exclude-domain" && source.name === value);
   }
   return null;
+}
+
+function renderGoogleRangesTab() {
+  const enabled = String(settingsPayload?.values?.INCLUDE_GOOGLE_RANGES || "0") === "1";
+  const record = listSourceRecord("google-ranges", "");
+  const level = record ? eventLevel(record) : (enabled ? "warn" : "");
+  $("list-source-settings").innerHTML = `
+    <article class="panel settings-section">
+      <h2>${escapeHtml(settingLabel("INCLUDE_GOOGLE_RANGES"))}</h2>
+      <p class="muted">${escapeHtml(t("sourceOptionsHint"))}</p>
+      <div class="settings-grid">
+        <label class="setting-card">
+          <span class="setting-head">
+            <strong>${escapeHtml(t("sourceOptions"))}</strong>
+            <span class="setting-badges">
+              <span class="chip ${enabled ? "ok" : "warn"}">${enabled ? t("yes") : t("no")}</span>
+            </span>
+          </span>
+          <span class="setting-control">
+            <span class="toggle">
+              <input type="checkbox" id="list-include-google-ranges" ${enabled ? "checked" : ""}>
+              <span></span>
+            </span>
+          </span>
+        </label>
+      </div>
+      ${record ? `<div class="list-card ${level}">${renderListSourceStats(record)}</div>` : ""}
+    </article>
+  `;
 }
 
 function renderListSourceStats(record) {
@@ -1979,6 +2008,12 @@ function renderListSourceStats(record) {
 }
 
 function renderListTiles() {
+  if (currentList === "google-ranges") {
+    $("list-tiles").innerHTML = "";
+    renderGoogleRangesTab();
+    renderIcons();
+    return;
+  }
   const lines = parseListLines($("list-editor").value);
   const active = lines.filter(line => line.active);
   const comments = lines.filter(line => line.comment);
@@ -2034,9 +2069,14 @@ async function saveListSourceSetting(key, value) {
     renderSettings(result);
     renderIcons();
     await loadStatus();
+    if (currentList === "google-ranges") {
+      renderListTiles();
+    }
     refreshListDirtyState(`${t("saved")}: ${settingLabel(key)}`, "ok");
   } catch (err) {
-    renderListSourceSettings();
+    if (currentList === "google-ranges") {
+      renderListTiles();
+    }
     refreshListDirtyState(`${t("failed")}: ${typeof err === "string" ? err : (err.error || err.message || "request failed")}`, "fail");
   }
 }
