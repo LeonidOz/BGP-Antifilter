@@ -45,10 +45,18 @@ class UpdaterServerTests(unittest.TestCase):
             compose_file = workspace / "docker-compose.yml"
             compose_file.write_text("services: {}\n", encoding="utf-8")
 
+            real_exists = Path.exists
+
+            def exists_side_effect(path_obj):
+                if path_obj == Path("/var/run/docker.sock"):
+                    return False
+                return real_exists(path_obj)
+
             with mock.patch.object(updater_server, "WORKSPACE_DIR", workspace):
                 with mock.patch.object(updater_server, "COMPOSE_FILE", compose_file):
                     with mock.patch.object(updater_server.shutil, "which", return_value="docker-compose"):
-                        ok, error = updater_server.health_status()
+                        with mock.patch.object(Path, "exists", autospec=True, side_effect=exists_side_effect):
+                            ok, error = updater_server.health_status()
 
         self.assertFalse(ok)
         self.assertIn("docker socket", error)
