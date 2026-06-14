@@ -3,11 +3,10 @@ import json
 import os
 from pathlib import Path
 import re
+import shutil
 import subprocess
 import threading
 import time
-from http import HTTPStatus
-from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 
 
 WORKSPACE_DIR = Path(os.environ.get("WORKSPACE_DIR", "/workspace"))
@@ -66,6 +65,35 @@ def validate_version(value):
     return raw
 
 
+def runtime_payload():
+    return read_json(UPDATE_RUNTIME_FILE, {})
+
+
+def compose_base_command():
+    docker_compose = shutil.which("docker-compose")
+    if docker_compose:
+        return [docker_compose, "-f", str(COMPOSE_FILE)]
+    docker = shutil.which("docker")
+    if docker:
+        return [docker, "compose", "-f", str(COMPOSE_FILE)]
+    raise FileNotFoundError("docker compose executable is not available inside admin container")
+
+
+def health_status():
+    if not WORKSPACE_DIR.exists():
+        return False, f"workspace directory not found: {WORKSPACE_DIR}"
+    if not COMPOSE_FILE.exists():
+        return False, f"compose file not found: {COMPOSE_FILE}"
+    try:
+        compose_base_command()
+    except OSError as exc:
+        return False, str(exc)
+    docker_socket = Path("/var/run/docker.sock")
+    if not docker_socket.exists():
+        return False, "docker socket is not mounted"
+    return True, ""
+
+
 def update_env_version(path, version):
     line = f"BGP_ANTIFILTER_VERSION={version}"
     try:
@@ -90,7 +118,7 @@ def update_env_version(path, version):
 
 def run_compose(*args, timeout=1800):
     started = time.time()
-    command = ["docker", "compose", "-f", str(COMPOSE_FILE), *args]
+    command = [*compose_base_command(), *args]
     completed = subprocess.run(
         command,
         cwd=str(WORKSPACE_DIR),
@@ -157,6 +185,7 @@ def apply_update(version):
             message=f"Update to v{version} completed",
             finished_at_unix=int(time.time()),
             success=True,
+            current_version=version,
         )
     except Exception as exc:
         rollback_result = rollback(previous_version) if previous_version else {"ok": False, "error": "previous version is unknown"}
@@ -170,74 +199,40 @@ def apply_update(version):
             rollback=rollback_result,
         )
 
-
-class UpdaterHandler(BaseHTTPRequestHandler):
-    server_version = "BGPAntifilterUpdater/0.1"
-
-    def log_message(self, fmt, *args):
-        print(f"updater {self.address_string()} - {fmt % args}", flush=True)
-
-    def send_json(self, data, status=HTTPStatus.OK):
-        payload = json.dumps(data, ensure_ascii=False).encode("utf-8")
-        self.send_response(status)
-        self.send_header("Content-Type", "application/json; charset=utf-8")
-        self.send_header("Content-Length", str(len(payload)))
-        self.end_headers()
-        self.wfile.write(payload)
-
-    def read_json(self):
-        length = int(self.headers.get("Content-Length", "0"))
-        if length <= 0:
-            return {}
-        body = self.rfile.read(length).decode("utf-8")
-        return json.loads(body) if body else {}
-
-    def do_GET(self):
-        if self.path == "/health":
-            active = bool(read_json(UPDATE_RUNTIME_FILE, {}).get("active"))
-            self.send_json({"ok": True, "active": active})
-            return
-        if self.path == "/api/update/runtime":
-            self.send_json(read_json(UPDATE_RUNTIME_FILE, {}))
-            return
-        self.send_json({"error": "not found"}, HTTPStatus.NOT_FOUND)
-
-    def do_POST(self):
-        global UPDATE_THREAD
-        if self.path != "/api/update/apply":
-            self.send_json({"error": "not found"}, HTTPStatus.NOT_FOUND)
-            return
-        try:
-            data = self.read_json()
-        except (UnicodeDecodeError, json.JSONDecodeError):
-            self.send_json({"error": "invalid json"}, HTTPStatus.BAD_REQUEST)
-            return
-        try:
-            version = validate_version(data.get("version"))
-        except ValueError as exc:
-            self.send_json({"error": str(exc)}, HTTPStatus.BAD_REQUEST)
-            return
-        with UPDATE_LOCK:
-            if UPDATE_THREAD is not None and UPDATE_THREAD.is_alive():
-                self.send_json({"error": "update already running"}, HTTPStatus.CONFLICT)
-                return
-            UPDATE_THREAD = threading.Thread(target=apply_update, args=(version,), daemon=True)
-            UPDATE_THREAD.start()
-        self.send_json({
-            "ok": True,
-            "accepted": True,
-            "target_version": version,
-            "current_version": version_value(),
-        }, HTTPStatus.ACCEPTED)
+def reconcile_runtime(current_version):
+    runtime = runtime_payload()
+    if not runtime:
+        return runtime
+    stage = str(runtime.get("stage") or "")
+    target_version = str(runtime.get("target_version") or "")
+    if stage == "restarting" and target_version == str(current_version or ""):
+        write_runtime(
+            active=False,
+            stage="completed",
+            message=f"Update to v{target_version} completed",
+            finished_at_unix=int(time.time()),
+            success=True,
+            current_version=target_version,
+            error="",
+        )
+        return runtime_payload()
+    return runtime
 
 
-def main():
-    port = int(os.environ.get("UPDATER_PORT", "8091"))
-    UPDATE_RUNTIME_FILE.parent.mkdir(parents=True, exist_ok=True)
-    server = ThreadingHTTPServer(("", port), UpdaterHandler)
-    print(f"updater server listening on port {port}", flush=True)
-    try:
-        server.serve_forever()
-    except KeyboardInterrupt:
-        return 0
-
+def start_update(version):
+    global UPDATE_THREAD
+    target_version = validate_version(version)
+    ok, error = health_status()
+    if not ok:
+        raise RuntimeError(error)
+    with UPDATE_LOCK:
+        if UPDATE_THREAD is not None and UPDATE_THREAD.is_alive():
+            raise RuntimeError("update already running")
+        UPDATE_THREAD = threading.Thread(target=apply_update, args=(target_version,), daemon=True)
+        UPDATE_THREAD.start()
+    return {
+        "ok": True,
+        "accepted": True,
+        "target_version": target_version,
+        "current_version": version_value(),
+    }

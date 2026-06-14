@@ -1,9 +1,13 @@
 # Changelog
 
+## 0.3.1 - 2026-06-14
+
+- Removed the dedicated updater sidecar and moved self-update execution into the `admin` container while keeping the same admin UI flow and persisted update runtime state.
+
 ## 0.3.0 - 2026-06-14
 
-- Added a staged self-update workflow in the admin UI: GitHub release checks, a dedicated `Инструменты -> Обновления` screen, an updater sidecar service, persisted update progress in `generated/update-runtime.json`, and one-click image pull/restart orchestration for `bird` and `admin`.
-- Added updater runtime/server code plus Docker/Compose wiring for host-level update execution, including repository metadata labels in the image and Compose services.
+- Added a staged self-update workflow in the admin UI: GitHub release checks, a dedicated `Инструменты -> Обновления` screen, persisted update progress in `generated/update-runtime.json`, and one-click image pull/restart orchestration for `bird` and `admin`.
+- Added local updater runtime/helper code plus Docker/Compose wiring for host-level update execution directly from the `admin` container, including repository metadata labels in the image and Compose services.
 - Refined the dashboard UX around updates by keeping only a compact notice there when a new release exists and moving the full release management flow into the tools area with dedicated actions and icons.
 - Refreshed documentation screenshots and moved the authenticated admin screenshot into the web-admin sections of both README files so the intro now keeps the login screen while detailed admin visuals live with the admin documentation.
 

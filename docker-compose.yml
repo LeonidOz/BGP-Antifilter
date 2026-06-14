@@ -2,7 +2,7 @@ name: bgp-antifilter
 
 services:
   bird:
-    image: "bgp-antifilter-bird:${BGP_ANTIFILTER_VERSION:-0.3.0}"
+    image: "bgp-antifilter-bird:${BGP_ANTIFILTER_VERSION:-0.3.1}"
     build:
       context: .
       dockerfile: deploy/Dockerfile
@@ -45,7 +45,7 @@ services:
       SETTINGS_ENV_FILE: /etc/bird/generated/settings.env
 
   admin:
-    image: "bgp-antifilter-bird:${BGP_ANTIFILTER_VERSION:-0.3.0}"
+    image: "bgp-antifilter-bird:${BGP_ANTIFILTER_VERSION:-0.3.1}"
     build:
       context: .
       dockerfile: deploy/Dockerfile
@@ -56,6 +56,8 @@ services:
     volumes:
       - ./generated:/etc/bird/generated
       - bird-run:/run/bird
+      - ./:/workspace
+      - /var/run/docker.sock:/var/run/docker.sock
     labels:
       org.opencontainers.image.source: "https://github.com/LeonidOz/BGP-Antifilter"
       org.opencontainers.image.url: "https://github.com/LeonidOz/BGP-Antifilter"
@@ -86,34 +88,19 @@ services:
       CONTAINER_LOG_FILE: /etc/bird/generated/container.log
       SETTINGS_FILE: /etc/bird/generated/settings.json
       SETTINGS_ENV_FILE: /etc/bird/generated/settings.env
-      UPDATER_URL: "http://updater:8091"
+      WORKSPACE_DIR: /workspace
+      ENV_FILE: /workspace/.env
+      VERSION_FILE: /workspace/VERSION
+      COMPOSE_FILE: /workspace/docker-compose.yml
+      UPDATER_COMPOSE_SERVICES: "bird admin"
     depends_on:
       - bird
-      - updater
     healthcheck:
       test: ["CMD-SHELL", "[ \"${ADMIN_ENABLED:-0}\" != \"1\" ] || curl -fsS \"http://127.0.0.1:${ADMIN_PORT:-8080}/api/session\" >/dev/null"]
       interval: 30s
       timeout: 5s
       start_period: 10s
       retries: 3
-
-  updater:
-    image: "bgp-antifilter-updater-local"
-    build:
-      context: .
-      dockerfile: deploy/updater.Dockerfile
-    restart: unless-stopped
-    volumes:
-      - ./:/workspace
-      - /var/run/docker.sock:/var/run/docker.sock
-    environment:
-      WORKSPACE_DIR: /workspace
-      ENV_FILE: /workspace/.env
-      VERSION_FILE: /workspace/VERSION
-      COMPOSE_FILE: /workspace/docker-compose.yml
-      UPDATE_RUNTIME_FILE: /workspace/generated/update-runtime.json
-      UPDATER_PORT: "8091"
-      UPDATER_COMPOSE_SERVICES: "bird admin"
 
 volumes:
   bird-run:

@@ -22,6 +22,7 @@ from urllib.parse import parse_qs, urlparse
 from . import __version__
 from . import dns_resolver
 from .runtime_paths import GENERATED_PATH_SPECS, LIST_FILE_SPECS, env_path, env_paths
+from . import updater_server
 
 
 ROOT = env_path("ADMIN_STATIC_DIR", "/admin-ui")
@@ -94,7 +95,6 @@ UPDATE_CHECK_CACHE = {
     "checked_at": 0.0,
     "payload": None,
 }
-UPDATER_URL = os.environ.get("UPDATER_URL", "http://updater:8091")
 
 
 def json_load(path, default):
@@ -535,25 +535,8 @@ def update_status_payload(force=False):
     return payload
 
 
-def updater_request(path, *, method="GET", payload=None, timeout=10):
-    url = f"{UPDATER_URL.rstrip('/')}{path}"
-    body = None
-    headers = {"User-Agent": "BGP-Antifilter-Admin/1.0"}
-    if payload is not None:
-        body = json.dumps(payload).encode("utf-8")
-        headers["Content-Type"] = "application/json"
-    request = urllib.request.Request(url, data=body, headers=headers, method=method)
-    with urllib.request.urlopen(request, timeout=timeout) as response:
-        raw = response.read().decode("utf-8")
-    return json.loads(raw) if raw else {}
-
-
 def updater_health():
-    try:
-        payload = updater_request("/health", timeout=3)
-    except (OSError, urllib.error.URLError, json.JSONDecodeError, TimeoutError) as exc:
-        return False, str(exc)
-    return bool(payload.get("ok")), str(payload.get("error") or "")
+    return updater_server.health_status()
 
 
 def network_summary():
@@ -823,7 +806,7 @@ class AdminHandler(BaseHTTPRequestHandler):
             query = parse_qs(parsed.query or "")
             force = query.get("force", ["0"])[0].strip().lower() in {"1", "true", "yes", "on"}
             payload = update_status_payload(force=force)
-            runtime = json_load(UPDATE_RUNTIME_FILE, {})
+            runtime = updater_server.reconcile_runtime(__version__)
             updater_ok, updater_error = updater_health()
             payload.update({
                 "runtime": runtime,
@@ -905,11 +888,15 @@ class AdminHandler(BaseHTTPRequestHandler):
                 self.send_json({"error": "version is required"}, HTTPStatus.BAD_REQUEST)
                 return
             try:
-                payload = updater_request("/api/update/apply", method="POST", payload={"version": version}, timeout=15)
-            except (OSError, urllib.error.URLError, json.JSONDecodeError, TimeoutError) as exc:
-                self.send_json({"error": str(exc)}, HTTPStatus.SERVICE_UNAVAILABLE)
+                payload = updater_server.start_update(version)
+            except ValueError as exc:
+                self.send_json({"error": str(exc)}, HTTPStatus.BAD_REQUEST)
                 return
-            self.send_json(payload)
+            except RuntimeError as exc:
+                status = HTTPStatus.CONFLICT if "already running" in str(exc) else HTTPStatus.SERVICE_UNAVAILABLE
+                self.send_json({"error": str(exc)}, status)
+                return
+            self.send_json(payload, HTTPStatus.ACCEPTED)
             return
         if path == "/api/tools/check-ip":
             data = self.read_json_or_error()
@@ -1012,6 +999,7 @@ def main():
         return 1
 
     ROOT.mkdir(parents=True, exist_ok=True)
+    updater_server.reconcile_runtime(__version__)
     server = ThreadingHTTPServer(("", port), AdminHandler)
     print(f"admin server listening on port {port}", flush=True)
     try:

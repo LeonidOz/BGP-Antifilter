@@ -1,6 +1,7 @@
 import tempfile
 import unittest
 from pathlib import Path
+from unittest import mock
 
 from bgp_antifilter import updater_server
 
@@ -37,6 +38,41 @@ class UpdaterServerTests(unittest.TestCase):
                 path.read_text(encoding="utf-8"),
                 "FOO=bar\n\nBGP_ANTIFILTER_VERSION=0.2.6\n",
             )
+
+    def test_health_status_requires_docker_socket(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            workspace = Path(tmp)
+            compose_file = workspace / "docker-compose.yml"
+            compose_file.write_text("services: {}\n", encoding="utf-8")
+
+            with mock.patch.object(updater_server, "WORKSPACE_DIR", workspace):
+                with mock.patch.object(updater_server, "COMPOSE_FILE", compose_file):
+                    with mock.patch.object(updater_server.shutil, "which", return_value="docker-compose"):
+                        ok, error = updater_server.health_status()
+
+        self.assertFalse(ok)
+        self.assertIn("docker socket", error)
+
+    def test_reconcile_runtime_marks_restart_as_completed_after_version_switch(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            runtime_file = Path(tmp) / "update-runtime.json"
+            runtime_file.write_text(
+                '{'
+                '"active": true,'
+                '"stage": "restarting",'
+                '"target_version": "0.3.0",'
+                '"current_version": "0.2.9"'
+                '}',
+                encoding="utf-8",
+            )
+
+            with mock.patch.object(updater_server, "UPDATE_RUNTIME_FILE", runtime_file):
+                payload = updater_server.reconcile_runtime("0.3.0")
+
+        self.assertFalse(payload["active"])
+        self.assertEqual(payload["stage"], "completed")
+        self.assertTrue(payload["success"])
+        self.assertEqual(payload["current_version"], "0.3.0")
 
 
 if __name__ == "__main__":
