@@ -11,7 +11,7 @@ const dict = {
     generatedRoutes: "Generated routes", sources: "Sources", rawDetails: "Details",
     cache: "Cache", generator: "Generator", bird: "BIRD", mikrotik: "MikroTik",
     statusOk: "OK", statusWarn: "Warning", statusFail: "Failed", lastGeneration: "Last generation", birdUptime: "BIRD uptime",
-    cacheHits: "Used from cache", freshDownloads: "Fresh downloads", skippedSources: "Skipped sources", cacheTtl: "Cache TTL",
+    cacheHits: "Used from cache", cachedCount: "From cache", freshDownloads: "Fresh downloads", skippedSources: "Skipped sources", cacheTtl: "Cache TTL",
     noCacheUsed: "All sources were freshly loaded", cacheUsed: "Sources served from cache",
     total: "Total", fresh: "Fresh", skipped: "Skipped", failedCount: "Failed", base: "From external sources",
     include: "Added by domains and ASNs", exclude: "Exclusion prefixes loaded", invalid: "Rejected as invalid", excludeRules: "Exclusion rule hits",
@@ -29,6 +29,7 @@ const dict = {
     noChanges: "No changes", backupSaved: "Backup", discardListChanges: "Discard unsaved list changes?",
     discardSettingsChanges: "Discard unsaved settings changes?", leavePageWarning: "You have unsaved changes.",
     loading: "Loading...", networkSummary: "Network summary", dnsResolvers: "DNS resolvers",
+    customDnsResolvers: "Custom DNS", dnsQueryTimeout: "DNS timeout", systemDnsResolvers: "System DNS",
     localAddresses: "Local IPv4", primaryAddress: "Primary IPv4", hostName: "Hostname", fqdn: "FQDN",
     externalNetwork: "External IP", provider: "Provider", organization: "Organization", location: "Location",
     timezone: "Timezone", coordinates: "Coordinates", proxy: "Proxy", hosting: "Hosting", mobile: "Mobile",
@@ -60,7 +61,7 @@ const dict = {
     generatedRoutes: "Маршруты", sources: "Источники", rawDetails: "Детали",
     cache: "Кеш", generator: "Генератор", bird: "BIRD", mikrotik: "MikroTik",
     statusOk: "OK", statusWarn: "Внимание", statusFail: "Ошибка", lastGeneration: "Последняя генерация", birdUptime: "Аптайм BIRD",
-    cacheHits: "Использовано из кеша", freshDownloads: "Свежие загрузки", skippedSources: "Пропущено источников", cacheTtl: "Время жизни кеша",
+    cacheHits: "Использовано из кеша", cachedCount: "Из кеша", freshDownloads: "Свежие загрузки", skippedSources: "Пропущено источников", cacheTtl: "Время жизни кеша",
     noCacheUsed: "Все источники загружены свежими", cacheUsed: "Источники отданы из кеша",
     total: "Всего", fresh: "Свежие", skipped: "Пропущено", failedCount: "Ошибки", base: "Из внешних источников",
     include: "Добавлено доменами и ASN", exclude: "Загружено префиксов исключения", invalid: "Отброшено как невалидное", excludeRules: "Срабатываний исключений",
@@ -78,6 +79,7 @@ const dict = {
     noChanges: "Изменений нет", backupSaved: "Бэкап", discardListChanges: "Отбросить несохраненные изменения списка?",
     discardSettingsChanges: "Отбросить несохраненные изменения настроек?", leavePageWarning: "Есть несохраненные изменения.",
     loading: "Загрузка...", networkSummary: "Сводка сети", dnsResolvers: "DNS-резолверы",
+    customDnsResolvers: "Пользовательские DNS", dnsQueryTimeout: "Таймаут DNS", systemDnsResolvers: "Системный DNS",
     localAddresses: "Локальные IPv4", primaryAddress: "Основной IPv4", hostName: "Hostname", fqdn: "FQDN",
     externalNetwork: "Внешний IP", provider: "Провайдер", organization: "Организация", location: "Локация",
     timezone: "Часовой пояс", coordinates: "Координаты", proxy: "Прокси", hosting: "Хостинг", mobile: "Мобильная сеть",
@@ -113,6 +115,7 @@ let settingsSavedValues = {};
 let settingsDirty = false;
 let checkIpPending = false;
 let loginNetworkLabels = [];
+const STATUS_POLL_INTERVAL_MS = 2000;
 const listLabels = {
   "urls": "URLs",
   "asns": "ASNs",
@@ -131,6 +134,8 @@ const settingLabels = {
   FETCH_TIMEOUT: {ru: "Таймаут загрузки", en: "Fetch timeout"},
   FETCH_ATTEMPTS: {ru: "Попыток загрузки", en: "Fetch attempts"},
   FETCH_RETRY_DELAY: {ru: "Пауза между попытками", en: "Retry delay"},
+  DNS_RESOLVERS: {ru: "Пользовательские DNS", en: "Custom DNS resolvers"},
+  DNS_RESOLVE_TIMEOUT: {ru: "Таймаут DNS-запроса", en: "DNS query timeout"},
   INCLUDE_GOOGLE_RANGES: {ru: "Добавлять Google ranges", en: "Include Google ranges"},
   MIN_PREFIX_LENGTH: {ru: "Минимальная длина префикса", en: "Minimum prefix length"},
   ALLOW_BROAD_ROUTES: {ru: "Разрешить широкие маршруты", en: "Allow broad routes"},
@@ -1069,6 +1074,7 @@ function renderCheckTargetResult(response) {
 function renderNetworkView(data) {
   const localAddresses = (data.local_ipv4 || []).map(address => `<span class="route-pill">${escapeHtml(address)}</span>`).join("");
   const resolvers = (data.dns?.nameservers || []).map(server => `<span class="route-pill">${escapeHtml(server)}</span>`).join("");
+  const customResolvers = (data.custom_dns?.nameservers || []).map(server => `<span class="route-pill">${escapeHtml(server)}</span>`).join("");
   const searchDomains = (data.dns?.search || []).join(", ");
   const external = data.external || {};
   const externalStatus = external.ok ? "ok" : "warn";
@@ -1117,6 +1123,9 @@ function renderNetworkView(data) {
       <h3>${t("dnsResolvers")}</h3>
       <div class="route-list">${resolvers || "—"}</div>
       ${searchDomains ? `<div class="muted">${escapeHtml(searchDomains)}</div>` : ""}
+      <h3>${t("customDnsResolvers")}</h3>
+      <div class="route-list">${customResolvers || "—"}</div>
+      ${data.custom_dns?.enabled ? `<div class="muted">${t("dnsQueryTimeout")}: ${escapeHtml(String(data.custom_dns?.timeout_seconds ?? "-"))}s</div>` : `<div class="muted">${t("systemDnsResolvers")}</div>`}
       <h3>${t("networkSettings")}</h3>
       ${renderRows(settingsRows)}
       <h3>${t("externalNetwork")}</h3>
@@ -1319,9 +1328,10 @@ function buildStages(payload) {
     sources: stageState(
       failed ? "fail" : skipped || cached ? "warn" : "ok",
       t("sources"),
-      `${sources.length} ${t("total").toLowerCase()} · ${counts.fresh || 0} ${t("fresh").toLowerCase()} · ${skipped} ${t("skipped").toLowerCase()} · ${failed} ${t("failedCount").toLowerCase()}`,
+      `${sources.length} ${t("total").toLowerCase()} · ${counts.fresh || 0} ${t("fresh").toLowerCase()} · ${cached} ${t("cachedCount").toLowerCase()} · ${skipped} ${t("skipped").toLowerCase()} · ${failed} ${t("failedCount").toLowerCase()}`,
       [
         [t("fresh"), counts.fresh || 0],
+        [t("cachedCount"), cached],
         [t("skipped"), skipped],
         [t("failedCount"), failed],
       ],
@@ -1390,6 +1400,7 @@ function renderStageDetails(stage) {
   $("stage-title").textContent = stage.title;
   $("stage-pill").textContent = stage.level === "ok" ? t("statusOk") : stage.level === "warn" ? t("statusWarn") : t("statusFail");
   $("stage-pill").className = `status-pill ${stage.level}`;
+  const rowsClass = stage.rows.length >= 4 ? "kv-grid compact" : "kv-grid";
   const isRouteStats = stage.raw && typeof stage.raw === "object" && "final" in stage.raw && "base" in stage.raw;
   const details = isRouteStats
     ? renderRouteMath(stage.raw)
@@ -1398,7 +1409,7 @@ function renderStageDetails(stage) {
     : `<details><summary>${t("rawDetails")}</summary>${renderDataTree(stage.raw)}</details>`;
   $("stage-details").innerHTML = `
     <p>${escapeHtml(stage.subtitle)}</p>
-    ${stage.rows.length ? `<div class="kv-grid">${stage.rows.map(([key, value]) => `
+    ${stage.rows.length ? `<div class="${rowsClass}">${stage.rows.map(([key, value]) => `
       <div class="kv ${rowLevel(key)}"><span>${escapeHtml(key)}</span><strong>${escapeHtml(value)}</strong></div>
     `).join("")}</div>` : ""}
     ${renderStageOutput(stage)}
@@ -1582,6 +1593,9 @@ function renderSettingInput(item) {
         <input type="checkbox" data-setting-key="${key}" ${item.value === "1" ? "checked" : ""}>
         <span></span>
       </span>`;
+  }
+  if (item.type === "dns_list") {
+    return `<textarea data-setting-key="${key}" rows="4" spellcheck="false" placeholder="1.1.1.1&#10;8.8.8.8">${escapeHtml(String(item.value || "").replaceAll(",", "\n"))}</textarea>`;
   }
   const inputType = item.type === "int" || item.type === "number" || item.type === "asn" ? "number" : "text";
   const attrs = [
@@ -1819,7 +1833,7 @@ async function init() {
     showAdmin();
     setupLists();
     await Promise.all([loadStatus(), loadList(currentList)]);
-    statusTimer = setInterval(() => { loadStatus().catch(() => {}); }, 10000);
+    statusTimer = setInterval(() => { loadStatus().catch(() => {}); }, STATUS_POLL_INTERVAL_MS);
     setInterval(tickCountdown, 1000);
   } else {
     showLogin();

@@ -20,6 +20,7 @@ from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from urllib.parse import parse_qs, urlparse
 
 from . import __version__
+from . import dns_resolver
 from .runtime_paths import GENERATED_PATH_SPECS, LIST_FILE_SPECS, env_path, env_paths
 
 
@@ -51,6 +52,8 @@ SETTINGS_SECTIONS = [
             {"key": "FETCH_RETRY_DELAY", "type": "number", "default": "5", "min": 0, "max": 120, "unit": "sec"},
             {"key": "INCLUDE_GOOGLE_RANGES", "type": "bool", "default": "1"},
             {"key": "REQUIRE_ALL_URL_SOURCES", "type": "bool", "default": "0"},
+            {"key": "DNS_RESOLVE_TIMEOUT", "type": "number", "default": "3", "min": 0.1, "max": 30, "unit": "sec"},
+            {"key": "DNS_RESOLVERS", "type": "dns_list", "default": "", "allow_empty": True},
         ],
     },
     {
@@ -135,6 +138,8 @@ def validate_setting(key, value):
     if not spec:
         raise ValueError(f"unknown setting: {key}")
     raw = str(value).strip()
+    if raw == "" and spec.get("allow_empty"):
+        return ""
     if raw == "":
         raise ValueError(f"{key} must not be empty")
     setting_type = spec["type"]
@@ -166,6 +171,14 @@ def validate_setting(key, value):
         if "max" in spec and number > spec["max"]:
             raise ValueError(f"{key} must be at most {spec['max']}")
         return str(int(number)) if number.is_integer() else str(number)
+    if setting_type == "dns_list":
+        try:
+            values = dns_resolver.parse_nameservers(raw)
+        except ValueError as exc:
+            raise ValueError(f"{key} must contain IPv4 DNS servers separated by spaces or commas") from exc
+        if not values:
+            raise ValueError(f"{key} must contain at least one IPv4 address")
+        return ",".join(values)
     if setting_type == "ipv4":
         try:
             return str(ipaddress.IPv4Address(raw))
@@ -357,11 +370,13 @@ def resolve_ipv4_targets(value):
     if any(char.isspace() for char in target):
         return [], "target must be an IPv4 address or domain"
     try:
-        addresses = sorted({
-            item[4][0]
-            for item in socket.getaddrinfo(target, None, socket.AF_INET, socket.SOCK_STREAM)
-        })
-    except socket.gaierror as exc:
+        settings = effective_settings()
+        addresses = dns_resolver.resolve_ipv4_addresses(
+            target,
+            nameservers=dns_resolver.parse_nameservers(settings.get("DNS_RESOLVERS", "")),
+            timeout=float(settings.get("DNS_RESOLVE_TIMEOUT", dns_resolver.DEFAULT_TIMEOUT)),
+        )
+    except (socket.gaierror, OSError, RuntimeError, ValueError) as exc:
         return [], str(exc)
     if not addresses:
         return [], "domain has no IPv4 addresses"
@@ -440,6 +455,7 @@ def external_ip_summary(timeout=5):
 def network_summary():
     settings = effective_settings()
     resolv = parse_resolv_conf(text_load(Path("/etc/resolv.conf")))
+    custom_resolvers = dns_resolver.parse_nameservers(settings.get("DNS_RESOLVERS", ""))
     addresses = local_ipv4_addresses()
     return {
         "hostname": socket.gethostname(),
@@ -447,6 +463,11 @@ def network_summary():
         "local_ipv4": addresses,
         "primary_ipv4": next((address for address in addresses if not address.startswith("127.")), addresses[0] if addresses else ""),
         "dns": resolv,
+        "custom_dns": {
+            "nameservers": custom_resolvers,
+            "timeout_seconds": float(settings.get("DNS_RESOLVE_TIMEOUT", dns_resolver.DEFAULT_TIMEOUT)),
+            "enabled": bool(custom_resolvers),
+        },
         "bird": {
             "router_id": settings.get("ROUTER_ID", ""),
             "bird_ip": settings.get("BIRD_IP", ""),

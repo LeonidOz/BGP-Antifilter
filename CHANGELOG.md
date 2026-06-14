@@ -1,5 +1,11 @@
 # Changelog
 
+## 0.2.6 - 2026-06-14
+
+- Added configurable custom DNS resolvers in the admin settings, including a multiline UI field, DNS timeout control, and runtime diagnostics that distinguish system DNS from user-defined resolvers.
+- Switched route generation DNS lookups for include/exclude domains, URL sources, ASN fetches, Google ranges, and the check-IP tool to use the configured resolvers directly instead of relying only on the container's system DNS.
+- Tightened the admin UI around long-running updates by polling progress every 2 seconds, keeping source summary cards on one row, and moving the custom DNS field to the end of the update settings so it does not stretch shorter controls.
+
 ## 0.2.5 - 2026-06-13
 
 - Reworked route application around a dedicated `generated/routes.last-good.conf` snapshot so startup, apply, and rollback now use a confirmed last-known-good state instead of relying only on the current `routes.conf`.

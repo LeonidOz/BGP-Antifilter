@@ -1,4 +1,5 @@
 import argparse
+import http.client
 import hashlib
 import ipaddress
 import json
@@ -9,7 +10,9 @@ import sys
 import time
 import urllib.error
 import urllib.request
+from urllib.parse import urljoin, urlsplit
 
+from . import dns_resolver
 from . import generate_routes
 from .logging import progress
 from .runtime_paths import GENERATED_PATH_SPECS, LIST_FILE_SPECS, env_path, env_paths
@@ -17,6 +20,7 @@ from .runtime_paths import GENERATED_PATH_SPECS, LIST_FILE_SPECS, env_path, env_
 
 DEFAULT_CACHE_MAX_AGE = 7 * 24 * 60 * 60
 DEFAULT_MIN_PREFIX_LENGTH = 8
+DEFAULT_DNS_HTTP_REDIRECTS = 5
 PROGRESS_STEPS = {
     "collecting-sources": 15,
     "building-routes": 70,
@@ -24,6 +28,19 @@ PROGRESS_STEPS = {
     "writing-status": 95,
     "completed": 100,
 }
+
+
+class CustomDnsHTTPSConnection(http.client.HTTPSConnection):
+    def __init__(self, connect_host, connect_port, *, server_hostname, timeout):
+        super().__init__(server_hostname, connect_port, timeout=timeout)
+        self._connect_host = connect_host
+
+    def connect(self):
+        sock = socket.create_connection((self._connect_host, self.port), self.timeout, self.source_address)
+        if self._tunnel_host:
+            self.sock = sock
+            self._tunnel()
+        self.sock = self._context.wrap_socket(sock, server_hostname=self.host)
 
 
 def env_bool(name, default=False):
@@ -43,6 +60,17 @@ def env_int(name, default):
     if number <= 0:
         raise SystemExit(f"{name} must be greater than zero")
 
+    return number
+
+
+def env_float(name, default):
+    value = os.environ.get(name, str(default))
+    try:
+        number = float(value)
+    except ValueError:
+        raise SystemExit(f"{name} must be a number")
+    if number <= 0:
+        raise SystemExit(f"{name} must be greater than zero")
     return number
 
 
@@ -120,7 +148,66 @@ def read_cache(cache_file, now, max_age):
     return cache_file.read_text(encoding="utf-8"), age
 
 
-def fetch_url(url, timeout=None, attempts=None, delay=None, progress_callback=None):
+def fetch_via_custom_dns(url, *, timeout, nameservers):
+    current_url = url
+    headers = {"User-Agent": "BGP-Antifilter/1.0"}
+
+    for _ in range(DEFAULT_DNS_HTTP_REDIRECTS + 1):
+        parts = urlsplit(current_url)
+        if parts.scheme not in {"http", "https"}:
+            raise RuntimeError(f"unsupported URL scheme: {parts.scheme}")
+        if not parts.hostname:
+            raise RuntimeError("URL hostname is required")
+
+        port = parts.port or (443 if parts.scheme == "https" else 80)
+        path = parts.path or "/"
+        if parts.query:
+            path = f"{path}?{parts.query}"
+
+        addresses = dns_resolver.resolve_ipv4_addresses(parts.hostname, nameservers=nameservers, timeout=timeout)
+        if not addresses:
+            raise RuntimeError(f"no IPv4 addresses returned for {parts.hostname}")
+        address = addresses[0]
+
+        if parts.scheme == "https":
+            connection = CustomDnsHTTPSConnection(
+                address,
+                port,
+                server_hostname=parts.hostname,
+                timeout=timeout,
+            )
+        else:
+            connection = http.client.HTTPConnection(address, port, timeout=timeout)
+        try:
+            connection.putrequest("GET", path, skip_host=True)
+            host_header = parts.hostname if parts.port is None else f"{parts.hostname}:{parts.port}"
+            connection.putheader("Host", host_header)
+            for key, value in headers.items():
+                connection.putheader(key, value)
+            connection.endheaders()
+            response = connection.getresponse()
+            status = response.status
+
+            if status in {301, 302, 303, 307, 308}:
+                location = response.getheader("Location")
+                response.read()
+                if not location:
+                    raise RuntimeError(f"redirect {status} without Location header")
+                current_url = urljoin(current_url, location)
+                continue
+
+            if status >= 400:
+                body = response.read(200).decode("utf-8", errors="replace")
+                raise RuntimeError(f"HTTP Error {status}: {body or response.reason}")
+
+            return response.read().decode("utf-8", errors="replace").replace("\r", "")
+        finally:
+            connection.close()
+
+    raise RuntimeError("too many HTTP redirects")
+
+
+def fetch_url(url, timeout=None, attempts=None, delay=None, progress_callback=None, dns_nameservers=None):
     timeout = int(os.environ.get("FETCH_TIMEOUT", "30")) if timeout is None else timeout
     attempts = int(os.environ.get("FETCH_ATTEMPTS", "5")) if attempts is None else attempts
     delay = float(os.environ.get("FETCH_RETRY_DELAY", "5")) if delay is None else delay
@@ -131,12 +218,16 @@ def fetch_url(url, timeout=None, attempts=None, delay=None, progress_callback=No
         if progress_callback is not None:
             progress_callback(attempt + 1, attempts)
         try:
+            if dns_nameservers:
+                return fetch_via_custom_dns(url, timeout=timeout, nameservers=dns_nameservers)
             with urllib.request.urlopen(request, timeout=timeout) as response:
                 return response.read().decode("utf-8", errors="replace").replace("\r", "")
         except (urllib.error.URLError, TimeoutError, OSError) as exc:
             last_error = exc
-            if attempt + 1 < attempts:
-                time.sleep(delay)
+        except RuntimeError as exc:
+            last_error = exc
+        if attempt + 1 < attempts:
+            time.sleep(delay)
 
     raise RuntimeError(str(last_error))
 
@@ -158,7 +249,7 @@ def count_source_routes(text, *, extract=True):
     return count
 
 
-def fetch_text_source(kind, name, url, cache_file, now, max_age, progress_callback=None):
+def fetch_text_source(kind, name, url, cache_file, now, max_age, progress_callback=None, dns_nameservers=None):
     record = {
         "kind": kind,
         "name": name,
@@ -172,7 +263,7 @@ def fetch_text_source(kind, name, url, cache_file, now, max_age, progress_callba
     }
 
     try:
-        text = fetch_url(url, progress_callback=progress_callback)
+        text = fetch_url(url, progress_callback=progress_callback, dns_nameservers=dns_nameservers)
         cache_file.write_text(text, encoding="utf-8")
         record["status"] = "fresh"
         record["bytes"] = len(text.encode("utf-8"))
@@ -198,7 +289,7 @@ def fetch_text_source(kind, name, url, cache_file, now, max_age, progress_callba
         return "", record, False
 
 
-def resolve_domain(kind, domain, cache_file, now, max_age):
+def resolve_domain(kind, domain, cache_file, now, max_age, dns_nameservers=None, dns_timeout=dns_resolver.DEFAULT_TIMEOUT):
     record = {
         "kind": kind,
         "name": domain,
@@ -210,11 +301,10 @@ def resolve_domain(kind, domain, cache_file, now, max_age):
     }
 
     try:
-        addresses = sorted(
-            {
-                item[4][0]
-                for item in socket.getaddrinfo(domain, None, socket.AF_INET, socket.SOCK_STREAM)
-            }
+        addresses = dns_resolver.resolve_ipv4_addresses(
+            domain,
+            nameservers=dns_nameservers,
+            timeout=dns_timeout,
         )
         if not addresses:
             raise RuntimeError("no IPv4 addresses returned")
@@ -428,6 +518,8 @@ def collect_sources(cache_dir, cache_max_age, include_google):
     now = int(time.time())
     list_files = env_paths(LIST_FILE_SPECS)
     require_all_url_sources = env_bool("REQUIRE_ALL_URL_SOURCES", default=False)
+    dns_nameservers = dns_resolver.parse_nameservers(os.environ.get("DNS_RESOLVERS", ""))
+    dns_timeout = env_float("DNS_RESOLVE_TIMEOUT", dns_resolver.DEFAULT_TIMEOUT)
 
     sources = []
     errors = []
@@ -505,6 +597,7 @@ def collect_sources(cache_dir, cache_max_age, include_google):
             cache_path(cache_dir, "url", url),
             now,
             cache_max_age,
+            dns_nameservers=dns_nameservers,
             progress_callback=lambda attempt, attempts, current_index=current_index, url=url: update_collection_progress(
                 f"Fetching URL {current_index}/{total_items}",
                 current_kind="url",
@@ -569,6 +662,7 @@ def collect_sources(cache_dir, cache_max_age, include_google):
             cache_path(cache_dir, "asn", asn_number),
             now,
             cache_max_age,
+            dns_nameservers=dns_nameservers,
             progress_callback=lambda attempt, attempts, current_index=current_index, asn=asn: update_collection_progress(
                 f"Fetching ASN {current_index}/{total_items}",
                 current_kind="asn",
@@ -606,6 +700,7 @@ def collect_sources(cache_dir, cache_max_age, include_google):
         google_text, google_record, google_ok = fetch_text_source(
             "google", "goog.json", "https://www.gstatic.com/ipranges/goog.json",
             cache_path(cache_dir, "google", "goog.json", ".json"), now, cache_max_age,
+            dns_nameservers=dns_nameservers,
             progress_callback=lambda attempt, attempts, current_index=current_index: update_collection_progress(
                 f"Fetching Google ranges {current_index}-{current_index + 1}/{total_items}",
                 current_kind="google",
@@ -619,6 +714,7 @@ def collect_sources(cache_dir, cache_max_age, include_google):
         cloud_text, cloud_record, cloud_ok = fetch_text_source(
             "google", "cloud.json", "https://www.gstatic.com/ipranges/cloud.json",
             cache_path(cache_dir, "google", "cloud.json", ".json"), now, cache_max_age,
+            dns_nameservers=dns_nameservers,
             progress_callback=lambda attempt, attempts, current_index=current_index: update_collection_progress(
                 f"Fetching Google ranges {current_index}-{current_index + 1}/{total_items}",
                 current_kind="google",
@@ -671,7 +767,15 @@ def collect_sources(cache_dir, cache_max_age, include_google):
             current_step=0.15,
         )
         progress("resolving exclude domain", index=index, total=len(exclude_domains), domain=domain)
-        text, record, ok = resolve_domain("exclude-domain", domain, cache_path(cache_dir, "exclude-domain", domain), now, cache_max_age)
+        text, record, ok = resolve_domain(
+            "exclude-domain",
+            domain,
+            cache_path(cache_dir, "exclude-domain", domain),
+            now,
+            cache_max_age,
+            dns_nameservers=dns_nameservers,
+            dns_timeout=dns_timeout,
+        )
         sources.append(record)
         source_failed = source_failed or not ok
         if ok:
@@ -698,7 +802,15 @@ def collect_sources(cache_dir, cache_max_age, include_google):
             current_step=0.15,
         )
         progress("resolving include domain", index=index, total=len(include_domains), domain=domain)
-        text, record, ok = resolve_domain("include-domain", domain, cache_path(cache_dir, "include-domain", domain), now, cache_max_age)
+        text, record, ok = resolve_domain(
+            "include-domain",
+            domain,
+            cache_path(cache_dir, "include-domain", domain),
+            now,
+            cache_max_age,
+            dns_nameservers=dns_nameservers,
+            dns_timeout=dns_timeout,
+        )
         if ok:
             include_text.append(text)
         else:

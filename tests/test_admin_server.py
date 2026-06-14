@@ -1,6 +1,7 @@
 import tempfile
 import unittest
 import errno
+import socket
 from pathlib import Path
 from unittest import mock
 
@@ -115,6 +116,13 @@ class AdminServerHelperTests(unittest.TestCase):
         self.assertEqual(admin_server.validate_setting("REQUIRE_ALL_URL_SOURCES", "yes"), "1")
         self.assertEqual(admin_server.validate_setting("FETCH_RETRY_DELAY", "2.5"), "2.5")
         self.assertEqual(admin_server.validate_setting("MIN_PREFIX_LENGTH", "24"), "24")
+        self.assertEqual(
+            admin_server.validate_setting("DNS_RESOLVERS", "1.1.1.1, 8.8.8.8"),
+            "1.1.1.1,8.8.8.8",
+        )
+
+    def test_validate_setting_allows_empty_custom_dns_list(self):
+        self.assertEqual(admin_server.validate_setting("DNS_RESOLVERS", ""), "")
 
     def test_validate_setting_rejects_invalid_ipv4(self):
         with self.assertRaises(ValueError):
@@ -132,6 +140,7 @@ class AdminServerHelperTests(unittest.TestCase):
                 values = admin_server.save_settings({
                     "CACHE_MAX_AGE": "3600",
                     "INCLUDE_GOOGLE_RANGES": "0",
+                    "DNS_RESOLVERS": "1.1.1.1 8.8.8.8",
                     "BGP_PROTOCOL": "mt_main",
                 })
             finally:
@@ -140,7 +149,39 @@ class AdminServerHelperTests(unittest.TestCase):
 
             self.assertEqual(values["CACHE_MAX_AGE"], "3600")
             self.assertEqual(values["INCLUDE_GOOGLE_RANGES"], "0")
+            self.assertEqual(values["DNS_RESOLVERS"], "1.1.1.1,8.8.8.8")
             self.assertIn("BGP_PROTOCOL=mt_main", (root / "settings.env").read_text(encoding="utf-8"))
+
+    def test_resolve_ipv4_targets_uses_effective_custom_dns(self):
+        with mock.patch.object(admin_server, "effective_settings", return_value={
+            "DNS_RESOLVERS": "1.1.1.1,8.8.8.8",
+            "DNS_RESOLVE_TIMEOUT": "2.5",
+        }):
+            with mock.patch.object(admin_server.dns_resolver, "resolve_ipv4_addresses", return_value=["203.0.113.10"]) as resolve_mock:
+                addresses, error = admin_server.resolve_ipv4_targets("example.com")
+
+        self.assertIsNone(error)
+        self.assertEqual(addresses, ["203.0.113.10"])
+        resolve_mock.assert_called_once_with(
+            "example.com",
+            nameservers=["1.1.1.1", "8.8.8.8"],
+            timeout=2.5,
+        )
+
+    def test_resolve_ipv4_targets_returns_custom_dns_error(self):
+        with mock.patch.object(admin_server, "effective_settings", return_value={
+            "DNS_RESOLVERS": "1.1.1.1",
+            "DNS_RESOLVE_TIMEOUT": "3",
+        }):
+            with mock.patch.object(
+                admin_server.dns_resolver,
+                "resolve_ipv4_addresses",
+                side_effect=socket.gaierror(socket.EAI_NONAME, "Name or service not known"),
+            ):
+                addresses, error = admin_server.resolve_ipv4_targets("missing.example")
+
+        self.assertEqual(addresses, [])
+        self.assertIn("Name or service not known", error)
 
     def test_save_settings_keeps_only_values_different_from_environment(self):
         with tempfile.TemporaryDirectory() as tmp, mock.patch.dict(admin_server.os.environ, {"CACHE_MAX_AGE": "604800"}, clear=False):

@@ -82,6 +82,32 @@ class SourceRouteCountTests(unittest.TestCase):
         self.assertEqual(count, 3)
 
 
+class CustomDnsFetchTests(unittest.TestCase):
+    def test_fetch_url_uses_custom_dns_for_http_sources(self):
+        response = unittest.mock.Mock()
+        response.status = 200
+        response.read.return_value = b"192.0.2.0/24\r\n"
+
+        connection = unittest.mock.Mock()
+        connection.getresponse.return_value = response
+
+        with unittest.mock.patch.object(update_routes.dns_resolver, "resolve_ipv4_addresses", return_value=["203.0.113.5"]) as resolve_mock:
+            with unittest.mock.patch("bgp_antifilter.update_routes.http.client.HTTPConnection", return_value=connection) as http_mock:
+                text = update_routes.fetch_url(
+                    "http://example.com/routes.txt",
+                    timeout=4,
+                    attempts=1,
+                    dns_nameservers=["1.1.1.1", "8.8.8.8"],
+                )
+
+        self.assertEqual(text, "192.0.2.0/24\n")
+        resolve_mock.assert_called_once_with("example.com", nameservers=["1.1.1.1", "8.8.8.8"], timeout=4)
+        http_mock.assert_called_once_with("203.0.113.5", 80, timeout=4)
+        connection.putrequest.assert_called_once_with("GET", "/routes.txt", skip_host=True)
+        connection.putheader.assert_any_call("Host", "example.com")
+        connection.close.assert_called_once()
+
+
 class MainTests(unittest.TestCase):
     def test_dry_run_status_includes_run_reason_and_message(self):
         with tempfile.TemporaryDirectory() as tmp:
@@ -248,6 +274,58 @@ class MainTests(unittest.TestCase):
             self.assertIn("route 192.0.2.0/24 blackhole;", output.read_text(encoding="utf-8"))
             self.assertIn('"status": "skipped"', status.read_text(encoding="utf-8"))
             self.assertIn('status="skipped"', metrics.read_text(encoding="utf-8"))
+
+    def test_custom_dns_resolvers_are_used_for_domain_resolution(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            source = root / "source.txt"
+            lists = root / "lists.txt"
+            include_asns = root / "include-asns.txt"
+            include_domains = root / "include-domains.txt"
+            exclude_domains = root / "exclude-domains.txt"
+            output = root / "routes.conf"
+            status = root / "status.json"
+            metrics = root / "metrics.prom"
+
+            source.write_text("192.0.2.0/24\n", encoding="utf-8")
+            lists.write_text(f"{source.as_uri()}\n", encoding="utf-8")
+            include_asns.write_text("", encoding="utf-8")
+            include_domains.write_text("example.com\n", encoding="utf-8")
+            exclude_domains.write_text("", encoding="utf-8")
+
+            old_env = os.environ.copy()
+            os.environ.update(
+                {
+                    "LISTS_FILE": str(lists),
+                    "INCLUDE_ASNS_FILE": str(include_asns),
+                    "INCLUDE_DOMAINS_FILE": str(include_domains),
+                    "EXCLUDE_DOMAINS_FILE": str(exclude_domains),
+                    "INCLUDE_GOOGLE_RANGES": "0",
+                    "CACHE_DIR": str(root / "cache"),
+                    "CACHE_MAX_AGE": "604800",
+                    "DNS_RESOLVERS": "1.1.1.1, 8.8.8.8",
+                    "DNS_RESOLVE_TIMEOUT": "1.5",
+                }
+            )
+
+            with unittest.mock.patch.object(
+                update_routes.dns_resolver,
+                "resolve_ipv4_addresses",
+                return_value=["203.0.113.10"],
+            ) as resolve_mock:
+                try:
+                    exit_code, _ = run_main_quiet(["--output", str(output), "--status", str(status), "--metrics", str(metrics)])
+                finally:
+                    os.environ.clear()
+                    os.environ.update(old_env)
+
+            self.assertEqual(exit_code, 0)
+            self.assertIn("route 203.0.113.10/32 blackhole;", output.read_text(encoding="utf-8"))
+            resolve_mock.assert_called_with(
+                "example.com",
+                nameservers=["1.1.1.1", "8.8.8.8"],
+                timeout=1.5,
+            )
 
     def test_required_url_without_cache_fails_and_does_not_write_routes(self):
         with tempfile.TemporaryDirectory() as tmp:
