@@ -15,8 +15,6 @@ The project downloads route lists from public sources, enriches them with IPv4 a
 
 ![BGP Antifilter login screen](docs/assets/admin-login.png)
 
-![BGP Antifilter dashboard](docs/assets/admin-dashboard.png)
-
 ## Navigation
 
 - [Quick Start](#quick-start)
@@ -87,7 +85,7 @@ If you are upgrading from the previous repository layout, move your custom list 
 Main settings:
 
 ```dotenv
-BGP_ANTIFILTER_VERSION=0.2.6
+BGP_ANTIFILTER_VERSION=0.3.0
 MY_AS=64500
 MT_AS=65455
 MT_IP=192.168.55.1
@@ -109,7 +107,7 @@ ADMIN_PORT=8080
 ADMIN_PASSWORD=
 ```
 
-- `BGP_ANTIFILTER_VERSION` - local Docker image tag; defaults to `0.2.6`.
+- `BGP_ANTIFILTER_VERSION` - local Docker image tag; defaults to `0.3.0`.
 - `MY_AS` - AS number used by the BIRD container.
 - `MT_AS` - MikroTik AS number.
 - `MT_IP` - MikroTik IP address.
@@ -141,6 +139,8 @@ ADMIN_ENABLED=1
 ADMIN_PORT=8080
 ADMIN_PASSWORD=change-me
 ```
+
+![BGP Antifilter dashboard](docs/assets/admin-dashboard.png)
 
 After restarting the container, the interface is available on the configured host port. The UI includes an RU/EN language switch, a dashboard with the next auto-refresh countdown, BIRD/BGP status, route counts and source summary, `dry-run`, `check-sources`, `reload`, IP or domain lookup, metrics, route and container log views, `routes.conf` download, an editor for all four list files, and a settings page.
 

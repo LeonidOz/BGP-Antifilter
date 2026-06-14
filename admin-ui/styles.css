@@ -101,6 +101,13 @@ button.danger { border-color: rgba(255, 107, 122, .6); color: #ffd9de; }
 }
 .brand { display: flex; align-items: center; gap: 14px; margin-bottom: 14px; }
 .brand span { display: block; color: var(--muted); font-size: 13px; margin-top: 3px; }
+.version-link {
+  display: inline-flex;
+  align-items: center;
+  color: var(--muted);
+  font-size: 13px;
+  margin-top: 3px;
+}
 .brand-mark {
   display: grid;
   place-items: center;
@@ -228,6 +235,45 @@ main { padding: 24px 32px; position: relative; z-index: 1; min-width: 0; width: 
 .panel { padding: 18px; }
 .panel + .panel { margin-top: 0; }
 .panel h2 { margin: 0 0 12px; font-size: 16px; }
+.update-panel {
+  display: grid;
+  gap: 14px;
+}
+.update-notice {
+  display: grid;
+  gap: 12px;
+  border-color: rgba(243, 189, 77, .38);
+  background: linear-gradient(145deg, rgba(243, 189, 77, .10), rgba(16, 26, 35, .90) 58%);
+}
+.update-notice-head {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 12px;
+  flex-wrap: wrap;
+}
+.update-notice-head h2 {
+  margin-bottom: 6px;
+}
+.update-panel-head {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 12px;
+  flex-wrap: wrap;
+}
+.update-panel-head h2 {
+  margin-bottom: 6px;
+}
+.update-actions {
+  justify-content: flex-start;
+}
+#tool-updates .update-panel {
+  padding: 0;
+  border: 0;
+  background: transparent;
+  box-shadow: none;
+}
 .runtime-banner {
   display: grid;
   gap: 10px;
@@ -497,12 +543,35 @@ pre {
   background: #071017;
 }
 .login-card form { display: grid; gap: 12px; }
+.footer-meta {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+  flex-wrap: wrap;
+}
 .login-footer {
   grid-row: 4;
   align-self: end;
   color: rgba(229,242,255,.54);
   font-size: 13px;
   padding-bottom: 4px;
+}
+.admin-footer {
+  margin-top: 12px;
+  color: rgba(229,242,255,.54);
+  font-size: 13px;
+  padding: 4px 0 2px;
+}
+.repo-link {
+  color: rgba(143, 220, 255, .88);
+  text-decoration: none;
+  transition: color .18s ease, text-shadow .18s ease;
+}
+.repo-link:hover,
+.repo-link:focus-visible {
+  color: #dffaff;
+  text-shadow: 0 0 16px rgba(61,214,255,.25);
 }
 .tabs {
   display: flex;

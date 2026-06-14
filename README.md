@@ -15,8 +15,6 @@ BGP Antifilter - контейнеризированная конфигураци
 
 ![Экран входа BGP Antifilter](docs/assets/admin-login.png)
 
-![Панель BGP Antifilter](docs/assets/admin-dashboard.png)
-
 ## Навигация
 
 - [Быстрый старт](#быстрый-старт)
@@ -86,7 +84,7 @@ cp .env.example .env
 Основные параметры:
 
 ```dotenv
-BGP_ANTIFILTER_VERSION=0.2.6
+BGP_ANTIFILTER_VERSION=0.3.0
 MY_AS=64500
 MT_AS=65455
 MT_IP=192.168.55.1
@@ -111,7 +109,7 @@ ADMIN_PASSWORD=
 Где:
 
 - `MY_AS` - AS контейнера с BIRD.
-- `BGP_ANTIFILTER_VERSION` - тег локального Docker-образа, по умолчанию `0.2.6`.
+- `BGP_ANTIFILTER_VERSION` - тег локального Docker-образа, по умолчанию `0.3.0`.
 - `MT_AS` - AS MikroTik.
 - `MT_IP` - IP-адрес MikroTik.
 - `BIRD_IP` - IP-адрес хоста или интерфейса, с которого BIRD устанавливает BGP-сессию.
@@ -142,6 +140,8 @@ ADMIN_ENABLED=1
 ADMIN_PORT=8080
 ADMIN_PASSWORD=change-me
 ```
+
+![Панель BGP Antifilter](docs/assets/admin-dashboard.png)
 
 После перезапуска контейнера интерфейс будет доступен на указанном порту хоста. В админке есть RU/EN-переключатель, dashboard с таймером до следующего автообновления, статусом BIRD/BGP, количеством маршрутов и источниками, запуск `dry-run`, `check-sources`, `reload`, проверка IP или домена, просмотр метрик, маршрутов и логов контейнера, скачивание `routes.conf`, редактор четырех списков и страница настроек.
 

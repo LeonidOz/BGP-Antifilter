@@ -47,7 +47,18 @@ const dict = {
     startupSnapshot: "Startup snapshot", snapshotAge: "Snapshot age", snapshotActive: "Started with previous routes",
     startupRefreshOk: "Startup refresh completed", startupRefreshFailed: "Startup refresh failed",
     lastUpdateFinished: "Finished", unknownTime: "unknown time",
-    degradedState: "Degraded", degradedReason: "Degraded reason"
+    degradedState: "Degraded", degradedReason: "Degraded reason",
+    updateStatus: "Updates", currentVersion: "Current version", latestVersion: "Latest version",
+    publishedAt: "Published", repository: "Repository", checkUpdates: "Check for updates",
+    openRelease: "Open release", updateAvailableShort: "Update available", upToDate: "Up to date",
+    updateCheckFailed: "Update check failed", updateUnknown: "Unknown", latestReleaseAvailable: "A newer release is available.",
+    latestReleaseNotAvailable: "This instance already runs the latest published release.",
+    openUpdatesTab: "Open updates",
+    applyUpdate: "Update now", updateApplying: "Updating...", updateStarting: "Starting update...",
+    updaterUnavailable: "Automatic update is unavailable", updateStagePreparing: "Preparing update",
+    updateStagePulling: "Pulling images", updateStageRestarting: "Restarting services",
+    updateStageCompleted: "Update completed", updateStageFailed: "Update failed",
+    updateRollbackOk: "Rollback completed", updateRollbackFailed: "Rollback failed"
   },
   ru: {
     dashboard: "Панель", lists: "Списки", tools: "Инструменты", settings: "Настройки", loginTitle: "Вход",
@@ -97,7 +108,19 @@ const dict = {
     startupSnapshot: "Стартовый snapshot", snapshotAge: "Возраст snapshot", snapshotActive: "Запуск со старыми маршрутами",
     startupRefreshOk: "Стартовый refresh завершен", startupRefreshFailed: "Стартовый refresh завершился ошибкой",
     lastUpdateFinished: "Завершено", unknownTime: "время неизвестно",
-    degradedState: "Деградация", degradedReason: "Причина деградации"
+    degradedState: "Деградация", degradedReason: "Причина деградации",
+    updateStatus: "Обновления", currentVersion: "Текущая версия", latestVersion: "Последняя версия",
+    publishedAt: "Опубликовано", repository: "Репозиторий", checkUpdates: "Проверить обновления",
+    openRelease: "Открыть релиз", updateAvailableShort: "Есть обновление", upToDate: "Актуально",
+    updateCheckFailed: "Не удалось проверить обновления", updateUnknown: "Неизвестно",
+    latestReleaseAvailable: "Для этой установки доступен более новый релиз.",
+    latestReleaseNotAvailable: "Эта установка уже работает на последнем опубликованном релизе.",
+    openUpdatesTab: "Открыть обновления",
+    applyUpdate: "Обновить сейчас", updateApplying: "Идет обновление...", updateStarting: "Запускаем обновление...",
+    updaterUnavailable: "Автообновление недоступно", updateStagePreparing: "Подготавливаем обновление",
+    updateStagePulling: "Скачиваем образы", updateStageRestarting: "Перезапускаем сервисы",
+    updateStageCompleted: "Обновление завершено", updateStageFailed: "Обновление завершилось ошибкой",
+    updateRollbackOk: "Откат выполнен", updateRollbackFailed: "Откат не удался"
   }
 };
 
@@ -115,7 +138,10 @@ let settingsSavedValues = {};
 let settingsDirty = false;
 let checkIpPending = false;
 let loginNetworkLabels = [];
+let updateStatusPayload = null;
+let updateStatusTimer = null;
 const STATUS_POLL_INTERVAL_MS = 2000;
+const UPDATE_STATUS_POLL_INTERVAL_MS = 15 * 60 * 1000;
 const listLabels = {
   "urls": "URLs",
   "asns": "ASNs",
@@ -251,6 +277,7 @@ function applyLang() {
     }
   }
   refreshListDirtyState();
+  renderUpdateStatus(updateStatusPayload);
   renderIcons();
 }
 
@@ -390,6 +417,114 @@ function setVersion(version) {
   const value = version ? `v${version}` : "v-";
   $("version").textContent = value;
   $("login-footer-version").textContent = value;
+  $("admin-footer-version").textContent = value;
+}
+
+function updateStatusLevel(data) {
+  if (!data) return "warn";
+  if (data.runtime?.active) return "warn";
+  if (data.runtime?.success === false) return "fail";
+  if (!data.ok) return "fail";
+  return data.update_available ? "warn" : "ok";
+}
+
+function updateStageLabel(stage) {
+  const map = {
+    preparing: "updateStagePreparing",
+    pulling: "updateStagePulling",
+    restarting: "updateStageRestarting",
+    completed: "updateStageCompleted",
+    failed: "updateStageFailed",
+  };
+  return t(map[stage] || "updateUnknown");
+}
+
+function renderUpdateStatus(data) {
+  updateStatusPayload = data;
+  const level = updateStatusLevel(data);
+  const runtime = data?.runtime || {};
+  $("update-pill").textContent = !data
+    ? t("loading")
+    : runtime.active
+    ? t("updateApplying")
+    : runtime.success === false
+    ? t("updateStageFailed")
+    : !data.ok
+    ? t("updateCheckFailed")
+    : data.update_available
+    ? t("updateAvailableShort")
+    : t("upToDate");
+  $("update-pill").className = `status-pill ${level}`;
+  $("update-current-version").textContent = data?.current_version ? `v${data.current_version}` : t("updateUnknown");
+  $("update-latest-version").textContent = data?.latest_tag || (data?.latest_version ? `v${data.latest_version}` : t("updateUnknown"));
+  $("update-published-at").textContent = data?.published_at ? formatDateTime(data.published_at) : t("never");
+  let summary = !data
+    ? t("loading")
+    : runtime.active
+    ? `${updateStageLabel(runtime.stage)}: ${runtime.target_version ? `v${runtime.target_version}` : ""}`.trim()
+    : runtime.success === false
+    ? `${t("updateStageFailed")}: ${runtime.error || t("failed")}`
+    : !data.ok
+    ? `${t("updateCheckFailed")}: ${data.error || t("failed")}`
+    : data.update_available
+    ? t("latestReleaseAvailable")
+    : t("latestReleaseNotAvailable");
+  if (runtime.success === false && runtime.rollback) {
+    summary += runtime.rollback.ok ? ` · ${t("updateRollbackOk")}` : ` · ${t("updateRollbackFailed")}`;
+  }
+  $("update-summary").textContent = summary;
+  $("update-release-link").href = data?.repository_url || "https://github.com/LeonidOz/BGP-Antifilter";
+  $("open-release-link").href = data?.release_url || data?.repository_url || "https://github.com/LeonidOz/BGP-Antifilter";
+  $("open-release-link").classList.toggle("hidden", !data?.ok);
+  $("apply-update-btn").classList.toggle("hidden", !(data?.apply_available || runtime.active));
+  $("apply-update-btn").disabled = Boolean(runtime.active) || !data?.apply_available;
+  $("apply-update-btn").querySelector("span").textContent = runtime.active
+    ? t("updateApplying")
+    : data?.latest_tag
+    ? `${t("applyUpdate")} ${data.latest_tag}`
+    : t("applyUpdate");
+  $("check-updates-btn").disabled = Boolean(runtime.active);
+  const noticeVisible = Boolean(runtime.active) || Boolean(data?.update_available);
+  $("update-notice").classList.toggle("hidden", !noticeVisible);
+  $("update-notice-pill").textContent = runtime.active
+    ? t("updateApplying")
+    : data?.latest_tag || t("updateAvailableShort");
+  $("update-notice-summary").textContent = runtime.active
+    ? summary
+    : data?.latest_tag
+    ? `${t("latestReleaseAvailable")} ${data.latest_tag}`
+    : t("latestReleaseAvailable");
+}
+
+async function loadUpdateStatus(force = false) {
+  const path = force ? "/api/update/status?force=1" : "/api/update/status";
+  const data = await api(path);
+  renderUpdateStatus(data);
+}
+
+async function applyUpdate() {
+  const version = updateStatusPayload?.latest_version;
+  if (!version) return;
+  $("update-summary").textContent = t("updateStarting");
+  $("apply-update-btn").disabled = true;
+  try {
+    await api("/api/update/apply", {
+      method: "POST",
+      body: JSON.stringify({version})
+    });
+    await loadUpdateStatus(true);
+  } catch (err) {
+    renderUpdateStatus({
+      ...(updateStatusPayload || {}),
+      ok: updateStatusPayload?.ok ?? false,
+      runtime: {
+        active: false,
+        success: false,
+        stage: "failed",
+        error: typeof err === "string" ? err : (err.error || err.message || "request failed"),
+      },
+    });
+  }
 }
 
 function sourceCacheFact(source) {
@@ -1462,6 +1597,9 @@ async function loadStatus() {
   tickCountdown();
   renderRuntimeBanner(data);
   renderPipeline(data);
+  if (updateStatusPayload?.runtime?.active) {
+    loadUpdateStatus().catch(() => {});
+  }
   if (!$("lists").classList.contains("hidden")) {
     renderListTiles();
   }
@@ -1544,6 +1682,12 @@ function switchView(view) {
 async function loadToolTab(tabName) {
   if (tabName === "network") {
     $("network-view").innerHTML = renderNetworkView(await api("/api/tools/network"));
+  } else if (tabName === "updates") {
+    if (!updateStatusPayload) {
+      await loadUpdateStatus();
+    } else {
+      renderUpdateStatus(updateStatusPayload);
+    }
   } else if (tabName === "metrics") {
     $("metrics-view").innerHTML = renderMetricsView(await api("/api/metrics", {headers: {"Content-Type": "text/plain"}}));
   } else if (tabName === "routes") {
@@ -1832,8 +1976,9 @@ async function init() {
   if (session.authenticated) {
     showAdmin();
     setupLists();
-    await Promise.all([loadStatus(), loadList(currentList)]);
+    await Promise.all([loadStatus(), loadList(currentList), loadUpdateStatus()]);
     statusTimer = setInterval(() => { loadStatus().catch(() => {}); }, STATUS_POLL_INTERVAL_MS);
+    updateStatusTimer = setInterval(() => { loadUpdateStatus().catch(() => {}); }, UPDATE_STATUS_POLL_INTERVAL_MS);
     setInterval(tickCountdown, 1000);
   } else {
     showLogin();
@@ -1857,10 +2002,34 @@ $("logout-btn").addEventListener("click", async () => {
   }
   await api("/api/logout", {method: "POST", body: "{}"});
   if (statusTimer) clearInterval(statusTimer);
+  if (updateStatusTimer) clearInterval(updateStatusTimer);
   showLogin();
 });
 
 $("refresh-btn").addEventListener("click", () => loadStatus());
+$("check-updates-btn").addEventListener("click", () => {
+  $("update-summary").textContent = t("loading");
+  loadUpdateStatus(true).catch(err => {
+    renderUpdateStatus({
+      ok: false,
+      current_version: $("version").textContent.replace(/^v/, "") || "",
+      latest_version: "",
+      latest_tag: "",
+      repository_url: "https://github.com/LeonidOz/BGP-Antifilter",
+      release_url: "https://github.com/LeonidOz/BGP-Antifilter",
+      published_at: "",
+      update_available: false,
+      error: typeof err === "string" ? err : (err.error || err.message || "request failed"),
+    });
+  });
+});
+$("apply-update-btn").addEventListener("click", () => {
+  applyUpdate().catch(() => {});
+});
+$("open-updates-tab-btn").addEventListener("click", () => {
+  switchView("tools");
+  switchToolTab("updates");
+});
 document.querySelectorAll("[data-action]").forEach(button => {
   button.addEventListener("click", () => runAction(button.dataset.action));
 });

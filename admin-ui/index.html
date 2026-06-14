@@ -17,7 +17,13 @@
         </div>
         <div>
           <strong>BGP Antifilter</strong>
-          <span id="version">v-</span>
+          <a
+            id="version-link"
+            class="repo-link version-link"
+            href="https://github.com/LeonidOz/BGP-Antifilter"
+            target="_blank"
+            rel="noreferrer noopener"
+          ><span id="version">v-</span></a>
         </div>
       </div>
       <div class="language">
@@ -52,7 +58,15 @@
           </form>
           <p id="login-error"></p>
         </div>
-        <footer class="login-footer">&copy; 2026 BGP Antifilter <span id="login-footer-version">v-</span></footer>
+        <footer class="login-footer footer-meta">
+          <span>&copy; 2026</span>
+          <a
+            class="repo-link"
+            href="https://github.com/LeonidOz/BGP-Antifilter"
+            target="_blank"
+            rel="noreferrer noopener"
+          >LeonidOz/BGP-Antifilter <span id="login-footer-version">v-</span></a>
+        </footer>
       </section>
 
       <section id="admin-view" class="hidden">
@@ -93,6 +107,19 @@
               <strong id="duration">-</strong>
             </article>
           </div>
+
+          <article class="panel update-notice hidden" id="update-notice">
+            <div class="update-notice-head">
+              <div>
+                <h2 data-i18n="updateAvailableShort">Update available</h2>
+                <p id="update-notice-summary" class="muted">-</p>
+              </div>
+              <span class="status-pill warn" id="update-notice-pill">-</span>
+            </div>
+            <div class="button-row update-actions">
+              <button type="button" id="open-updates-tab-btn"><i data-lucide="arrow-right-circle"></i><span data-i18n="openUpdatesTab">Open updates</span></button>
+            </div>
+          </article>
 
           <article id="runtime-banner" class="runtime-banner hidden"></article>
 
@@ -159,6 +186,7 @@
           <div class="tabs" id="tool-tabs">
             <button class="active" data-tool-tab="check"><i data-lucide="search"></i><span data-i18n="checkTarget">Check IP / domain</span></button>
             <button data-tool-tab="network"><i data-lucide="globe"></i><span data-i18n="network">Network</span></button>
+            <button data-tool-tab="updates"><i data-lucide="download"></i><span data-i18n="updateStatus">Updates</span></button>
             <button data-tool-tab="metrics"><i data-lucide="activity"></i><span data-i18n="loadMetrics">Load metrics</span></button>
             <button data-tool-tab="routes"><i data-lucide="route"></i><span data-i18n="loadRoutes">Load routes</span></button>
             <button data-tool-tab="logs"><i data-lucide="scroll-text"></i><span data-i18n="logs">Logs</span></button>
@@ -174,6 +202,40 @@
             </div>
             <div class="tool-tab hidden" id="tool-network">
               <div id="network-view" class="result-view"></div>
+            </div>
+            <div class="tool-tab hidden" id="tool-updates">
+              <article class="update-panel" id="update-panel">
+                <div class="update-panel-head">
+                  <div>
+                    <h2 data-i18n="updateStatus">Update status</h2>
+                    <p id="update-summary" class="muted">-</p>
+                  </div>
+                  <span class="status-pill" id="update-pill">-</span>
+                </div>
+                <div class="kv-grid compact" id="update-kv-grid">
+                  <div class="kv">
+                    <span data-i18n="currentVersion">Current version</span>
+                    <strong id="update-current-version">-</strong>
+                  </div>
+                  <div class="kv">
+                    <span data-i18n="latestVersion">Latest version</span>
+                    <strong id="update-latest-version">-</strong>
+                  </div>
+                  <div class="kv">
+                    <span data-i18n="publishedAt">Published</span>
+                    <strong id="update-published-at">-</strong>
+                  </div>
+                  <div class="kv">
+                    <span data-i18n="repository">Repository</span>
+                    <strong><a id="update-release-link" class="repo-link" href="https://github.com/LeonidOz/BGP-Antifilter" target="_blank" rel="noreferrer noopener">LeonidOz/BGP-Antifilter</a></strong>
+                  </div>
+                </div>
+                <div class="button-row update-actions">
+                  <button type="button" id="check-updates-btn"><i data-lucide="refresh-cw"></i><span data-i18n="checkUpdates">Check for updates</span></button>
+                  <button type="button" id="apply-update-btn" class="danger hidden"><i data-lucide="download"></i><span data-i18n="applyUpdate">Update now</span></button>
+                  <a id="open-release-link" class="button-link hidden" href="https://github.com/LeonidOz/BGP-Antifilter" target="_blank" rel="noreferrer noopener"><i data-lucide="external-link"></i><span data-i18n="openRelease">Open release</span></a>
+                </div>
+              </article>
             </div>
             <div class="tool-tab hidden" id="tool-metrics">
               <div id="metrics-view" class="result-view"></div>
@@ -198,6 +260,16 @@
             <span id="settings-save-status" class="muted"></span>
           </div>
         </section>
+
+        <footer class="admin-footer footer-meta">
+          <span>&copy; 2026</span>
+          <a
+            class="repo-link"
+            href="https://github.com/LeonidOz/BGP-Antifilter"
+            target="_blank"
+            rel="noreferrer noopener"
+          >LeonidOz/BGP-Antifilter <span id="admin-footer-version">v-</span></a>
+        </footer>
       </section>
     </main>
   </div>

@@ -1,5 +1,10 @@
 FROM debian:bookworm-slim
 
+LABEL org.opencontainers.image.title="BGP Antifilter" \
+      org.opencontainers.image.source="https://github.com/LeonidOz/BGP-Antifilter" \
+      org.opencontainers.image.url="https://github.com/LeonidOz/BGP-Antifilter" \
+      org.opencontainers.image.documentation="https://github.com/LeonidOz/BGP-Antifilter"
+
 RUN apt-get update \
  && apt-get install -y --no-install-recommends bird2 curl ca-certificates tini python3 \
  && rm -rf /var/lib/apt/lists/*

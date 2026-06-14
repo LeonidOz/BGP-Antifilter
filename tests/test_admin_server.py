@@ -251,6 +251,65 @@ class AdminServerHelperTests(unittest.TestCase):
         self.assertEqual(payload["source"], "ip-api.com")
         self.assertIn("network down", payload["error"])
 
+    def test_parse_semver_accepts_plain_and_v_prefixed_versions(self):
+        self.assertEqual(admin_server.parse_semver("0.2.6"), (0, 2, 6))
+        self.assertEqual(admin_server.parse_semver("v1.10.3"), (1, 10, 3))
+
+    def test_github_latest_release_extracts_expected_fields(self):
+        body = (
+            '{"tag_name":"v0.2.7","html_url":"https://github.com/LeonidOz/BGP-Antifilter/releases/tag/v0.2.7",'
+            '"published_at":"2026-06-15T10:00:00Z","name":"Release v0.2.7"}'
+        ).encode("utf-8")
+        response = mock.MagicMock()
+        response.__enter__.return_value.read.return_value = body
+        response.__exit__.return_value = False
+
+        with mock.patch("urllib.request.urlopen", return_value=response):
+            payload = admin_server.github_latest_release()
+
+        self.assertEqual(payload["version"], "0.2.7")
+        self.assertEqual(payload["tag_name"], "v0.2.7")
+        self.assertEqual(payload["name"], "Release v0.2.7")
+
+    def test_update_status_payload_reports_available_release(self):
+        old_cache = dict(admin_server.UPDATE_CHECK_CACHE)
+        admin_server.UPDATE_CHECK_CACHE["checked_at"] = 0.0
+        admin_server.UPDATE_CHECK_CACHE["payload"] = None
+
+        try:
+            with mock.patch.object(admin_server, "github_latest_release", return_value={
+                "version": "9.9.9",
+                "tag_name": "v9.9.9",
+                "html_url": "https://github.com/LeonidOz/BGP-Antifilter/releases/tag/v9.9.9",
+                "published_at": "2026-06-15T10:00:00Z",
+                "name": "Release v9.9.9",
+            }):
+                payload = admin_server.update_status_payload(force=True)
+        finally:
+            admin_server.UPDATE_CHECK_CACHE.clear()
+            admin_server.UPDATE_CHECK_CACHE.update(old_cache)
+
+        self.assertTrue(payload["ok"])
+        self.assertTrue(payload["update_available"])
+        self.assertEqual(payload["latest_version"], "9.9.9")
+        self.assertEqual(payload["current_version"], admin_server.__version__)
+
+    def test_update_status_payload_returns_error_when_release_check_fails(self):
+        old_cache = dict(admin_server.UPDATE_CHECK_CACHE)
+        admin_server.UPDATE_CHECK_CACHE["checked_at"] = 0.0
+        admin_server.UPDATE_CHECK_CACHE["payload"] = None
+
+        try:
+            with mock.patch.object(admin_server, "github_latest_release", side_effect=OSError("offline")):
+                payload = admin_server.update_status_payload(force=True)
+        finally:
+            admin_server.UPDATE_CHECK_CACHE.clear()
+            admin_server.UPDATE_CHECK_CACHE.update(old_cache)
+
+        self.assertFalse(payload["ok"])
+        self.assertFalse(payload["update_available"])
+        self.assertIn("offline", payload["error"])
+
 
 if __name__ == "__main__":
     unittest.main()

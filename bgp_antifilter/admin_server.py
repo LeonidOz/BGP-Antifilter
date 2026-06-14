@@ -31,6 +31,7 @@ ROUTES_FILE = PATHS["routes_file"]
 STATUS_FILE = PATHS["status_file"]
 METRICS_FILE = PATHS["metrics_file"]
 RUNTIME_FILE = PATHS["runtime_file"]
+UPDATE_RUNTIME_FILE = PATHS["update_runtime_file"]
 CONTAINER_LOG_FILE = PATHS["container_log_file"]
 SETTINGS_FILE = PATHS["settings_file"]
 SETTINGS_ENV_FILE = PATHS["settings_env_file"]
@@ -86,6 +87,14 @@ IP_API_URL = (
     "status,message,query,country,countryCode,region,regionName,city,district,zip,"
     "lat,lon,timezone,offset,isp,org,as,asname,mobile,proxy,hosting"
 )
+REPOSITORY_URL = "https://github.com/LeonidOz/BGP-Antifilter"
+LATEST_RELEASE_API_URL = "https://api.github.com/repos/LeonidOz/BGP-Antifilter/releases/latest"
+UPDATE_CHECK_TTL_SECONDS = 15 * 60
+UPDATE_CHECK_CACHE = {
+    "checked_at": 0.0,
+    "payload": None,
+}
+UPDATER_URL = os.environ.get("UPDATER_URL", "http://updater:8091")
 
 
 def json_load(path, default):
@@ -452,6 +461,101 @@ def external_ip_summary(timeout=5):
     }
 
 
+def parse_semver(value):
+    raw = str(value or "").strip()
+    if raw.lower().startswith("v"):
+        raw = raw[1:]
+    parts = raw.split(".")
+    if len(parts) != 3:
+        raise ValueError("version must use MAJOR.MINOR.PATCH")
+    numbers = tuple(int(part) for part in parts)
+    return numbers
+
+
+def github_latest_release(timeout=5):
+    request = urllib.request.Request(
+        LATEST_RELEASE_API_URL,
+        headers={
+            "User-Agent": "BGP-Antifilter-Admin/1.0",
+            "Accept": "application/vnd.github+json",
+        },
+    )
+    with urllib.request.urlopen(request, timeout=timeout) as response:
+        payload = json.loads(response.read().decode("utf-8"))
+    tag_name = str(payload.get("tag_name") or "").strip()
+    version = tag_name[1:] if tag_name.lower().startswith("v") else tag_name
+    if not version:
+        raise ValueError("latest release payload does not include tag_name")
+    return {
+        "tag_name": tag_name or f"v{version}",
+        "version": version,
+        "html_url": str(payload.get("html_url") or REPOSITORY_URL),
+        "published_at": str(payload.get("published_at") or ""),
+        "name": str(payload.get("name") or ""),
+    }
+
+
+def update_status_payload(force=False):
+    now = time.time()
+    cached = UPDATE_CHECK_CACHE.get("payload")
+    checked_at = float(UPDATE_CHECK_CACHE.get("checked_at") or 0.0)
+    if not force and cached is not None and now - checked_at < UPDATE_CHECK_TTL_SECONDS:
+        return cached
+
+    current_version = __version__
+    payload = {
+        "ok": False,
+        "repository_url": REPOSITORY_URL,
+        "current_version": current_version,
+        "latest_version": current_version,
+        "latest_tag": f"v{current_version}",
+        "release_url": REPOSITORY_URL,
+        "release_name": "",
+        "published_at": "",
+        "update_available": False,
+        "error": "",
+        "checked_at_unix": int(now),
+    }
+    try:
+        latest = github_latest_release()
+        payload.update({
+            "ok": True,
+            "latest_version": latest["version"],
+            "latest_tag": latest["tag_name"],
+            "release_url": latest["html_url"],
+            "release_name": latest["name"],
+            "published_at": latest["published_at"],
+            "update_available": parse_semver(latest["version"]) > parse_semver(current_version),
+        })
+    except (OSError, urllib.error.URLError, json.JSONDecodeError, TimeoutError, ValueError) as exc:
+        payload["error"] = str(exc)
+
+    UPDATE_CHECK_CACHE["checked_at"] = now
+    UPDATE_CHECK_CACHE["payload"] = payload
+    return payload
+
+
+def updater_request(path, *, method="GET", payload=None, timeout=10):
+    url = f"{UPDATER_URL.rstrip('/')}{path}"
+    body = None
+    headers = {"User-Agent": "BGP-Antifilter-Admin/1.0"}
+    if payload is not None:
+        body = json.dumps(payload).encode("utf-8")
+        headers["Content-Type"] = "application/json"
+    request = urllib.request.Request(url, data=body, headers=headers, method=method)
+    with urllib.request.urlopen(request, timeout=timeout) as response:
+        raw = response.read().decode("utf-8")
+    return json.loads(raw) if raw else {}
+
+
+def updater_health():
+    try:
+        payload = updater_request("/health", timeout=3)
+    except (OSError, urllib.error.URLError, json.JSONDecodeError, TimeoutError) as exc:
+        return False, str(exc)
+    return bool(payload.get("ok")), str(payload.get("error") or "")
+
+
 def network_summary():
     settings = effective_settings()
     resolv = parse_resolv_conf(text_load(Path("/etc/resolv.conf")))
@@ -715,6 +819,21 @@ class AdminHandler(BaseHTTPRequestHandler):
             self.send_json(network_summary())
             return
 
+        if path == "/api/update/status":
+            query = parse_qs(parsed.query or "")
+            force = query.get("force", ["0"])[0].strip().lower() in {"1", "true", "yes", "on"}
+            payload = update_status_payload(force=force)
+            runtime = json_load(UPDATE_RUNTIME_FILE, {})
+            updater_ok, updater_error = updater_health()
+            payload.update({
+                "runtime": runtime,
+                "updater_ok": updater_ok,
+                "updater_error": updater_error,
+                "apply_available": bool(payload.get("ok")) and bool(payload.get("update_available")) and updater_ok and not runtime.get("active", False),
+            })
+            self.send_json(payload)
+            return
+
         if path == "/api/lists":
             self.send_json({
                 name: {"path": str(path), "bytes": path.stat().st_size if path.exists() else 0}
@@ -776,6 +895,21 @@ class AdminHandler(BaseHTTPRequestHandler):
             return
         if path == "/api/actions/reload":
             self.send_json(run_command(["/reload-routes.sh"], timeout=600))
+            return
+        if path == "/api/update/apply":
+            data = self.read_json_or_error()
+            if data is None:
+                return
+            version = str(data.get("version") or "").strip()
+            if not version:
+                self.send_json({"error": "version is required"}, HTTPStatus.BAD_REQUEST)
+                return
+            try:
+                payload = updater_request("/api/update/apply", method="POST", payload={"version": version}, timeout=15)
+            except (OSError, urllib.error.URLError, json.JSONDecodeError, TimeoutError) as exc:
+                self.send_json({"error": str(exc)}, HTTPStatus.SERVICE_UNAVAILABLE)
+                return
+            self.send_json(payload)
             return
         if path == "/api/tools/check-ip":
             data = self.read_json_or_error()

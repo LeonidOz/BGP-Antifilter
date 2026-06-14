@@ -2,7 +2,7 @@ name: bgp-antifilter
 
 services:
   bird:
-    image: "bgp-antifilter-bird:${BGP_ANTIFILTER_VERSION:-0.2.6}"
+    image: "bgp-antifilter-bird:${BGP_ANTIFILTER_VERSION:-0.3.0}"
     build:
       context: .
       dockerfile: deploy/Dockerfile
@@ -12,6 +12,9 @@ services:
       - ./deploy/bird.conf.template:/etc/bird/bird.conf.template:ro
       - ./generated:/etc/bird/generated
       - bird-run:/run/bird
+    labels:
+      org.opencontainers.image.source: "https://github.com/LeonidOz/BGP-Antifilter"
+      org.opencontainers.image.url: "https://github.com/LeonidOz/BGP-Antifilter"
     environment:
       MY_AS: "${MY_AS:-64500}"
       MT_AS: "${MT_AS:-65455}"
@@ -36,12 +39,13 @@ services:
       ADMIN_PORT: "${ADMIN_PORT:-8080}"
       ADMIN_PASSWORD: "${ADMIN_PASSWORD:-}"
       RUNTIME_FILE: /etc/bird/generated/runtime.json
+      UPDATE_RUNTIME_FILE: /etc/bird/generated/update-runtime.json
       CONTAINER_LOG_FILE: /etc/bird/generated/container.log
       SETTINGS_FILE: /etc/bird/generated/settings.json
       SETTINGS_ENV_FILE: /etc/bird/generated/settings.env
 
   admin:
-    image: "bgp-antifilter-bird:${BGP_ANTIFILTER_VERSION:-0.2.6}"
+    image: "bgp-antifilter-bird:${BGP_ANTIFILTER_VERSION:-0.3.0}"
     build:
       context: .
       dockerfile: deploy/Dockerfile
@@ -52,6 +56,9 @@ services:
     volumes:
       - ./generated:/etc/bird/generated
       - bird-run:/run/bird
+    labels:
+      org.opencontainers.image.source: "https://github.com/LeonidOz/BGP-Antifilter"
+      org.opencontainers.image.url: "https://github.com/LeonidOz/BGP-Antifilter"
     environment:
       MY_AS: "${MY_AS:-64500}"
       MT_AS: "${MT_AS:-65455}"
@@ -75,17 +82,38 @@ services:
       ADMIN_PORT: "${ADMIN_PORT:-8080}"
       ADMIN_PASSWORD: "${ADMIN_PASSWORD:-}"
       RUNTIME_FILE: /etc/bird/generated/runtime.json
+      UPDATE_RUNTIME_FILE: /etc/bird/generated/update-runtime.json
       CONTAINER_LOG_FILE: /etc/bird/generated/container.log
       SETTINGS_FILE: /etc/bird/generated/settings.json
       SETTINGS_ENV_FILE: /etc/bird/generated/settings.env
+      UPDATER_URL: "http://updater:8091"
     depends_on:
       - bird
+      - updater
     healthcheck:
       test: ["CMD-SHELL", "[ \"${ADMIN_ENABLED:-0}\" != \"1\" ] || curl -fsS \"http://127.0.0.1:${ADMIN_PORT:-8080}/api/session\" >/dev/null"]
       interval: 30s
       timeout: 5s
       start_period: 10s
       retries: 3
+
+  updater:
+    image: "bgp-antifilter-updater-local"
+    build:
+      context: .
+      dockerfile: deploy/updater.Dockerfile
+    restart: unless-stopped
+    volumes:
+      - ./:/workspace
+      - /var/run/docker.sock:/var/run/docker.sock
+    environment:
+      WORKSPACE_DIR: /workspace
+      ENV_FILE: /workspace/.env
+      VERSION_FILE: /workspace/VERSION
+      COMPOSE_FILE: /workspace/docker-compose.yml
+      UPDATE_RUNTIME_FILE: /workspace/generated/update-runtime.json
+      UPDATER_PORT: "8091"
+      UPDATER_COMPOSE_SERVICES: "bird admin"
 
 volumes:
   bird-run:

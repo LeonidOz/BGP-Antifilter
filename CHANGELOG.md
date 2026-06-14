@@ -1,5 +1,12 @@
 # Changelog
 
+## 0.3.0 - 2026-06-14
+
+- Added a staged self-update workflow in the admin UI: GitHub release checks, a dedicated `Инструменты -> Обновления` screen, an updater sidecar service, persisted update progress in `generated/update-runtime.json`, and one-click image pull/restart orchestration for `bird` and `admin`.
+- Added updater runtime/server code plus Docker/Compose wiring for host-level update execution, including repository metadata labels in the image and Compose services.
+- Refined the dashboard UX around updates by keeping only a compact notice there when a new release exists and moving the full release management flow into the tools area with dedicated actions and icons.
+- Refreshed documentation screenshots and moved the authenticated admin screenshot into the web-admin sections of both README files so the intro now keeps the login screen while detailed admin visuals live with the admin documentation.
+
 ## 0.2.6 - 2026-06-14
 
 - Added configurable custom DNS resolvers in the admin settings, including a multiline UI field, DNS timeout control, and runtime diagnostics that distinguish system DNS from user-defined resolvers.
