@@ -12,6 +12,7 @@ import shlex
 import shutil
 import socket
 import subprocess
+import threading
 import time
 import urllib.error
 import urllib.request
@@ -52,7 +53,7 @@ SETTINGS_SECTIONS = [
             {"key": "FETCH_TIMEOUT", "type": "int", "default": "30", "min": 1, "max": 300, "unit": "sec"},
             {"key": "FETCH_ATTEMPTS", "type": "int", "default": "5", "min": 1, "max": 20},
             {"key": "FETCH_RETRY_DELAY", "type": "number", "default": "5", "min": 0, "max": 120, "unit": "sec"},
-            {"key": "INCLUDE_GOOGLE_RANGES", "type": "bool", "default": "1"},
+            {"key": "INCLUDE_GOOGLE_RANGES", "type": "bool", "default": "1", "hidden": True},
             {"key": "REQUIRE_ALL_URL_SOURCES", "type": "bool", "default": "0"},
             {"key": "DNS_RESOLVE_TIMEOUT", "type": "number", "default": "3", "min": 0.1, "max": 30, "unit": "sec"},
             {"key": "DNS_RESOLVERS", "type": "dns_list", "default": "", "allow_empty": True},
@@ -95,6 +96,8 @@ UPDATE_CHECK_CACHE = {
     "checked_at": 0.0,
     "payload": None,
 }
+RELOAD_LOCK = threading.Lock()
+RELOAD_THREAD = None
 
 
 def json_load(path, default):
@@ -239,6 +242,8 @@ def settings_payload():
     for section in SETTINGS_SECTIONS:
         section_items = []
         for item in section["items"]:
+            if item.get("hidden"):
+                continue
             key = item["key"]
             base_value = base_setting_value(key)
             value = validate_setting(key, effective[key])
@@ -318,6 +323,47 @@ def run_command(command, timeout=120):
             "stderr": str(exc),
             "duration_seconds": round(time.time() - started, 3),
         }
+
+
+def reload_runtime_active():
+    runtime = json_load(RUNTIME_FILE, {})
+    return bool(runtime.get("generation_active"))
+
+
+def reload_thread_active():
+    return RELOAD_THREAD is not None and RELOAD_THREAD.is_alive()
+
+
+def apply_reload():
+    run_command(["/reload-routes.sh"], timeout=600)
+
+
+def start_reload():
+    global RELOAD_THREAD
+    with RELOAD_LOCK:
+        if reload_runtime_active() or (RELOAD_THREAD is not None and RELOAD_THREAD.is_alive()):
+            raise RuntimeError("reload already running")
+        RELOAD_THREAD = threading.Thread(target=apply_reload, daemon=True)
+        RELOAD_THREAD.start()
+    return {
+        "ok": True,
+        "accepted": True,
+        "message": "reload started",
+    }
+
+
+def visible_runtime_state(runtime):
+    state = dict(runtime or {})
+    if state.get("generation_active") or not reload_thread_active():
+        return state
+    state.update({
+        "generation_active": True,
+        "generation_kind": state.get("generation_kind") or "manual",
+        "generation_message": state.get("generation_message") or "Starting manual route update",
+        "generation_stage": state.get("generation_stage") or "bootstrap",
+        "generation_stage_message": state.get("generation_stage_message") or "Waiting for route generator to publish progress",
+    })
+    return state
 
 
 def parse_command_status(stdout):
@@ -762,7 +808,7 @@ class AdminHandler(BaseHTTPRequestHandler):
 
         if path == "/api/status":
             status = json_load(STATUS_FILE, {})
-            runtime = json_load(RUNTIME_FILE, {})
+            runtime = visible_runtime_state(json_load(RUNTIME_FILE, {}))
             metrics = parse_metrics(text_load(METRICS_FILE))
             bird = run_command(["birdc", "show", "status"], timeout=5)
             bgp_protocol = effective_settings().get("BGP_PROTOCOL", "mikrotik")
@@ -877,7 +923,12 @@ class AdminHandler(BaseHTTPRequestHandler):
             self.send_json(result)
             return
         if path == "/api/actions/reload":
-            self.send_json(run_command(["/reload-routes.sh"], timeout=600))
+            try:
+                payload = start_reload()
+            except RuntimeError as exc:
+                self.send_json({"error": str(exc)}, HTTPStatus.CONFLICT)
+                return
+            self.send_json(payload, HTTPStatus.ACCEPTED)
             return
         if path == "/api/update/apply":
             data = self.read_json_or_error()

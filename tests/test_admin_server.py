@@ -227,6 +227,56 @@ class AdminServerHelperTests(unittest.TestCase):
             self.assertFalse(items["CACHE_MAX_AGE"]["overridden"])
             self.assertTrue(items["FETCH_TIMEOUT"]["overridden"])
 
+    def test_settings_payload_hides_google_ranges_from_settings_sections(self):
+        payload = admin_server.settings_payload()
+
+        visible_keys = {
+            item["key"]
+            for section in payload["sections"]
+            for item in section["items"]
+        }
+
+        self.assertNotIn("INCLUDE_GOOGLE_RANGES", visible_keys)
+        self.assertEqual(payload["values"]["INCLUDE_GOOGLE_RANGES"], admin_server.effective_settings()["INCLUDE_GOOGLE_RANGES"])
+
+    def test_start_reload_starts_background_thread(self):
+        thread = mock.Mock()
+        thread.is_alive.return_value = False
+
+        with mock.patch.object(admin_server, "reload_runtime_active", return_value=False):
+            with mock.patch.object(admin_server, "RELOAD_THREAD", thread):
+                with mock.patch.object(admin_server.threading, "Thread") as thread_cls:
+                    payload = admin_server.start_reload()
+
+        self.assertTrue(payload["accepted"])
+        thread_cls.return_value.start.assert_called_once_with()
+
+    def test_start_reload_rejects_when_generation_is_already_active(self):
+        with mock.patch.object(admin_server, "reload_runtime_active", return_value=True):
+            with self.assertRaisesRegex(RuntimeError, "reload already running"):
+                admin_server.start_reload()
+
+    def test_visible_runtime_state_marks_pending_reload_as_active(self):
+        thread = mock.Mock()
+        thread.is_alive.return_value = True
+
+        with mock.patch.object(admin_server, "RELOAD_THREAD", thread):
+            payload = admin_server.visible_runtime_state({})
+
+        self.assertTrue(payload["generation_active"])
+        self.assertEqual(payload["generation_kind"], "manual")
+        self.assertEqual(payload["generation_stage"], "bootstrap")
+
+    def test_visible_runtime_state_keeps_existing_active_runtime(self):
+        thread = mock.Mock()
+        thread.is_alive.return_value = True
+        runtime = {"generation_active": True, "generation_kind": "startup"}
+
+        with mock.patch.object(admin_server, "RELOAD_THREAD", thread):
+            payload = admin_server.visible_runtime_state(runtime)
+
+        self.assertEqual(payload["generation_kind"], "startup")
+
     def test_external_ip_summary_parses_success_payload(self):
         body = (
             '{"status":"success","query":"203.0.113.10","country":"Testland",'

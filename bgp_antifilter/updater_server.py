@@ -56,6 +56,27 @@ def version_value():
         return ""
 
 
+def configured_version():
+    try:
+        text = ENV_FILE.read_text(encoding="utf-8")
+    except OSError:
+        return version_value()
+    for line in text.splitlines():
+        current = line.strip()
+        if not current or current.startswith("#"):
+            continue
+        if not current.startswith("BGP_ANTIFILTER_VERSION="):
+            continue
+        value = current.split("=", 1)[1].strip().strip("'\"")
+        if not value:
+            break
+        try:
+            return validate_version(value)
+        except ValueError:
+            break
+    return version_value()
+
+
 def validate_version(value):
     raw = str(value or "").strip()
     if raw.lower().startswith("v"):
@@ -154,7 +175,7 @@ def rollback(previous_version):
 
 
 def apply_update(version):
-    previous_version = version_value()
+    previous_version = configured_version()
     write_runtime(
         active=True,
         stage="preparing",
@@ -235,5 +256,5 @@ def start_update(version):
         "ok": True,
         "accepted": True,
         "target_version": target_version,
-        "current_version": version_value(),
+        "current_version": configured_version(),
     }

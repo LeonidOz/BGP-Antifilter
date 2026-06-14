@@ -58,7 +58,9 @@ const dict = {
     updaterUnavailable: "Automatic update is unavailable", updateStagePreparing: "Preparing update",
     updateStagePulling: "Pulling images", updateStageRestarting: "Restarting services",
     updateStageCompleted: "Update completed", updateStageFailed: "Update failed",
-    updateRollbackOk: "Rollback completed", updateRollbackFailed: "Rollback failed"
+    updateRollbackOk: "Rollback completed", updateRollbackFailed: "Rollback failed",
+    sourceOptions: "Source options", sourceOptionsHint: "These toggles affect which route sources are included in generation.",
+    reloadStarted: "Route reload started in background"
   },
   ru: {
     dashboard: "Панель", lists: "Списки", tools: "Инструменты", settings: "Настройки", loginTitle: "Вход",
@@ -120,7 +122,9 @@ const dict = {
     updaterUnavailable: "Автообновление недоступно", updateStagePreparing: "Подготавливаем обновление",
     updateStagePulling: "Скачиваем образы", updateStageRestarting: "Перезапускаем сервисы",
     updateStageCompleted: "Обновление завершено", updateStageFailed: "Обновление завершилось ошибкой",
-    updateRollbackOk: "Откат выполнен", updateRollbackFailed: "Откат не удался"
+    updateRollbackOk: "Откат выполнен", updateRollbackFailed: "Откат не удался",
+    sourceOptions: "Параметры источников", sourceOptionsHint: "Эти переключатели влияют на то, какие источники попадут в генерацию маршрутов.",
+    reloadStarted: "Перезагрузка маршрутов запущена в фоне"
   }
 };
 
@@ -249,6 +253,33 @@ function refreshSettingsDirtyState(message = "", tone = "") {
   setStatusTone($("settings-save-status"), settingsDirty ? "warn" : "");
 }
 
+function renderListSourceSettings() {
+  if (!settingsPayload) {
+    $("list-source-settings").innerHTML = "";
+    return;
+  }
+  const enabled = String(settingsPayload.values?.INCLUDE_GOOGLE_RANGES || "0") === "1";
+  $("list-source-settings").innerHTML = `
+    <article class="panel settings-section">
+      <h2>${escapeHtml(t("sourceOptions"))}</h2>
+      <p class="muted">${escapeHtml(t("sourceOptionsHint"))}</p>
+      <div class="settings-grid">
+        <label class="setting-card">
+          <span class="setting-head">
+            <strong>${escapeHtml(settingLabel("INCLUDE_GOOGLE_RANGES"))}</strong>
+          </span>
+          <span class="setting-control">
+            <span class="toggle">
+              <input type="checkbox" id="list-include-google-ranges" ${enabled ? "checked" : ""}>
+              <span></span>
+            </span>
+          </span>
+        </label>
+      </div>
+    </article>
+  `;
+}
+
 function markListDirty(dirty) {
   listDirty = dirty;
   refreshListDirtyState();
@@ -276,6 +307,7 @@ function applyLang() {
       markSettingsDirty();
     }
   }
+  renderListSourceSettings();
   refreshListDirtyState();
   renderUpdateStatus(updateStatusPayload);
   renderIcons();
@@ -907,6 +939,19 @@ function renderCommandResult(action, result) {
       ${events.length ? renderEventTimeline(events) : result.stdout ? `<details><summary>${t("stdout")}</summary>${renderTextLines(result.stdout)}</details>` : ""}
       ${result.stderr ? renderErrorBlock(result.stderr) : ""}
       <details><summary>${t("rawDetails")}</summary>${renderDataTree(result)}</details>
+    </div>`;
+}
+
+function renderAcceptedCommandResult(action, result) {
+  return `
+    <div class="result-card">
+      <div class="result-head">
+        <span class="status-pill warn">${escapeHtml(t("applying"))}</span>
+        <span class="chip">${escapeHtml(action)}</span>
+      </div>
+      <div class="kv-grid">
+        <div class="kv"><span>${t("statusWarn")}</span><strong>${escapeHtml(result.message || t("reloadStarted"))}</strong></div>
+      </div>
     </div>`;
 }
 
@@ -1642,6 +1687,11 @@ async function runAction(action) {
   try {
     const result = await api(`/api/actions/${action}`, {method: "POST", body: "{}"});
     $("operation-log-details").open = true;
+    if (action === "reload" && result.accepted) {
+      $("operation-log").innerHTML = renderAcceptedCommandResult(action, result);
+      await loadStatus();
+      return;
+    }
     $("operation-log").innerHTML = renderCommandResult(action, result);
     if (action === "check-sources" && applyActionStatus(result.status)) {
       return;
@@ -1782,6 +1832,7 @@ function renderSettings(data) {
     </article>
   `).join("");
   refreshSettingsDirtyState();
+  renderListSourceSettings();
 }
 
 async function loadSettings() {
@@ -1815,18 +1866,22 @@ async function saveSettings() {
 }
 
 async function applySettingsNow() {
-  const buttons = document.querySelectorAll("button");
-  buttons.forEach(button => button.disabled = true);
+  $("apply-settings-btn").disabled = true;
+  $("save-settings-btn").disabled = true;
   $("settings-save-status").textContent = t("applying");
+  setStatusTone($("settings-save-status"), "warn");
   try {
     if (!await saveSettings()) return;
     const result = await api("/api/actions/reload", {method: "POST", body: "{}"});
     await Promise.all([loadSettings(), loadStatus()]);
-    $("settings-save-status").textContent = result.ok ? t("commandOk") : `${t("commandFailed")}: ${result.stderr || result.returncode}`;
+    $("settings-save-status").textContent = result.accepted ? t("reloadStarted") : t("commandOk");
+    setStatusTone($("settings-save-status"), result.accepted ? "warn" : "ok");
   } catch (err) {
     $("settings-save-status").textContent = `${t("failed")}: ${typeof err === "string" ? err : (err.error || err.message || "request failed")}`;
+    setStatusTone($("settings-save-status"), "fail");
   } finally {
-    buttons.forEach(button => button.disabled = false);
+    $("apply-settings-btn").disabled = false;
+    $("save-settings-btn").disabled = !settingsDirty;
   }
 }
 
@@ -1968,6 +2023,24 @@ async function removeListItem(index) {
   await saveList();
 }
 
+async function saveListSourceSetting(key, value) {
+  try {
+    $("list-save-status").textContent = "...";
+    setStatusTone($("list-save-status"));
+    const result = await api("/api/settings", {
+      method: "PUT",
+      body: JSON.stringify({values: {[key]: value}})
+    });
+    renderSettings(result);
+    renderIcons();
+    await loadStatus();
+    refreshListDirtyState(`${t("saved")}: ${settingLabel(key)}`, "ok");
+  } catch (err) {
+    renderListSourceSettings();
+    refreshListDirtyState(`${t("failed")}: ${typeof err === "string" ? err : (err.error || err.message || "request failed")}`, "fail");
+  }
+}
+
 async function init() {
   applyLang();
   const session = await api("/api/session");
@@ -1976,7 +2049,7 @@ async function init() {
   if (session.authenticated) {
     showAdmin();
     setupLists();
-    await Promise.all([loadStatus(), loadList(currentList), loadUpdateStatus()]);
+    await Promise.all([loadStatus(), loadList(currentList), loadUpdateStatus(), loadSettings()]);
     statusTimer = setInterval(() => { loadStatus().catch(() => {}); }, STATUS_POLL_INTERVAL_MS);
     updateStatusTimer = setInterval(() => { loadUpdateStatus().catch(() => {}); }, UPDATE_STATUS_POLL_INTERVAL_MS);
     setInterval(tickCountdown, 1000);
@@ -2055,6 +2128,11 @@ $("list-tiles").addEventListener("click", event => {
   const button = event.target.closest("[data-remove-index]");
   if (button) {
     removeListItem(Number(button.dataset.removeIndex));
+  }
+});
+$("list-source-settings").addEventListener("change", event => {
+  if (event.target.id === "list-include-google-ranges") {
+    saveListSourceSetting("INCLUDE_GOOGLE_RANGES", event.target.checked ? "1" : "0");
   }
 });
 $("list-editor").addEventListener("keydown", event => {

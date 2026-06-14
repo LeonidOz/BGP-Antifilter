@@ -75,10 +75,19 @@ except (OSError, json.JSONDecodeError):
     data = {}
 
 now = int(time.time())
+finished_at_raw = os.environ.get("LAST_UPDATE_FINISHED_AT_UNIX", "")
+finished_at = int(finished_at_raw) if finished_at_raw else None
+interval_seconds = int(os.environ.get("UPDATE_INTERVAL") or data.get("update_interval_seconds") or 1800)
+if os.environ.get("generation_active", "0") == "1":
+    next_scheduled_update_unix = int(data.get("next_scheduled_update_unix") or 0)
+elif finished_at is not None:
+    next_scheduled_update_unix = finished_at + interval_seconds
+else:
+    next_scheduled_update_unix = int(data.get("next_scheduled_update_unix") or 0)
 data.update({
     "updated_at_unix": now,
-    "update_interval_seconds": int(os.environ.get("UPDATE_INTERVAL") or data.get("update_interval_seconds") or 1800),
-    "next_scheduled_update_unix": int(data.get("next_scheduled_update_unix") or 0),
+    "update_interval_seconds": interval_seconds,
+    "next_scheduled_update_unix": next_scheduled_update_unix,
     "admin_enabled": os.environ.get("ADMIN_ENABLED", "0") == "1",
     "admin_port": int(os.environ.get("ADMIN_PORT") or data.get("admin_port") or 8080),
     "generation_active": os.environ.get("generation_active", "0") == "1",
@@ -97,7 +106,7 @@ data.update({
     "last_update_reason": os.environ.get("LAST_UPDATE_REASON", ""),
     "last_update_message": os.environ.get("LAST_UPDATE_MESSAGE", ""),
     "last_update_success": None if os.environ.get("LAST_UPDATE_SUCCESS", "") == "" else os.environ.get("LAST_UPDATE_SUCCESS") == "1",
-    "last_update_finished_at_unix": int(os.environ["LAST_UPDATE_FINISHED_AT_UNIX"]) if os.environ.get("LAST_UPDATE_FINISHED_AT_UNIX") else None,
+    "last_update_finished_at_unix": finished_at,
     "degraded": os.environ.get("DEGRADED", "0") == "1",
     "degraded_reason": os.environ.get("DEGRADED_REASON", "") if os.environ.get("DEGRADED", "0") == "1" else "",
 })

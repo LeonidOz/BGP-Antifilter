@@ -1,5 +1,11 @@
 # Changelog
 
+## 0.3.3 - 2026-06-14
+
+- Fixed the in-app self-updater rollback logic to use the deployed Docker tag from `.env` instead of the repository `VERSION`, so failed updates now restore the correct previous release.
+- Made manual route reloads non-blocking in the admin UI, added immediate in-progress visibility on the dashboard, and moved the `Include Google ranges` toggle from `Settings` to `Lists`.
+- Fixed runtime scheduling so a successful manual reload resets the next auto-update countdown, and a failed scheduled refresh no longer kills the background scheduler loop.
+
 ## 0.3.2 - 2026-06-14
 
 - Added a `make update` target for source-based deployments so production updates can sync Git, align `BGP_ANTIFILTER_VERSION` with `VERSION`, and rebuild containers in one command.

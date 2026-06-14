@@ -380,7 +380,9 @@ while true; do
     fi
   done
 
-  update_routes apply scheduled
+  if ! update_routes apply scheduled; then
+    echo "Scheduled route update failed; keeping scheduler alive for the next interval" >&2
+  fi
 done &
 
 wait "$BIRD_PID"

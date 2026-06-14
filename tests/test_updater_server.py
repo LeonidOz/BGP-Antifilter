@@ -39,6 +39,28 @@ class UpdaterServerTests(unittest.TestCase):
                 "FOO=bar\n\nBGP_ANTIFILTER_VERSION=0.2.6\n",
             )
 
+    def test_configured_version_prefers_env_value_over_workspace_version(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            env_file = Path(tmp) / ".env"
+            version_file = Path(tmp) / "VERSION"
+            env_file.write_text("BGP_ANTIFILTER_VERSION=v0.2.5\n", encoding="utf-8")
+            version_file.write_text("0.3.2\n", encoding="utf-8")
+
+            with mock.patch.object(updater_server, "ENV_FILE", env_file):
+                with mock.patch.object(updater_server, "VERSION_FILE", version_file):
+                    self.assertEqual(updater_server.configured_version(), "0.2.5")
+
+    def test_configured_version_falls_back_to_workspace_version_for_invalid_env_value(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            env_file = Path(tmp) / ".env"
+            version_file = Path(tmp) / "VERSION"
+            env_file.write_text("BGP_ANTIFILTER_VERSION=latest\n", encoding="utf-8")
+            version_file.write_text("0.3.2\n", encoding="utf-8")
+
+            with mock.patch.object(updater_server, "ENV_FILE", env_file):
+                with mock.patch.object(updater_server, "VERSION_FILE", version_file):
+                    self.assertEqual(updater_server.configured_version(), "0.3.2")
+
     def test_health_status_requires_docker_socket(self):
         with tempfile.TemporaryDirectory() as tmp:
             workspace = Path(tmp)
@@ -102,6 +124,57 @@ class UpdaterServerTests(unittest.TestCase):
         self.assertEqual(payload["stage"], "completed")
         self.assertTrue(payload["success"])
         self.assertEqual(payload["current_version"], "0.3.1")
+
+    def test_apply_update_rolls_back_to_version_from_env_file(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            env_file = Path(tmp) / ".env"
+            version_file = Path(tmp) / "VERSION"
+            runtime_file = Path(tmp) / "update-runtime.json"
+            env_file.write_text("BGP_ANTIFILTER_VERSION=0.2.8\n", encoding="utf-8")
+            version_file.write_text("0.3.2\n", encoding="utf-8")
+
+            compose_calls = []
+
+            def fake_run_compose(*args, timeout=1800):
+                compose_calls.append(args)
+                if args and args[0] == "pull":
+                    return {"ok": False, "stderr": "pull failed", "stdout": "", "returncode": 1}
+                return {"ok": True, "stderr": "", "stdout": "", "returncode": 0}
+
+            with mock.patch.object(updater_server, "ENV_FILE", env_file):
+                with mock.patch.object(updater_server, "VERSION_FILE", version_file):
+                    with mock.patch.object(updater_server, "UPDATE_RUNTIME_FILE", runtime_file):
+                        with mock.patch.object(updater_server, "run_compose", side_effect=fake_run_compose):
+                            updater_server.apply_update("0.3.3")
+
+            self.assertEqual(compose_calls[0], ("pull", *updater_server.COMPOSE_SERVICES))
+            self.assertEqual(compose_calls[1], ("up", "-d", *updater_server.COMPOSE_SERVICES))
+            self.assertIn("BGP_ANTIFILTER_VERSION=0.2.8\n", env_file.read_text(encoding="utf-8"))
+            runtime = updater_server.read_json(runtime_file, {})
+            self.assertFalse(runtime["success"])
+            self.assertTrue(runtime["rollback"]["ok"])
+            self.assertEqual(runtime["rollback"]["version"], "0.2.8")
+
+    def test_start_update_reports_current_version_from_env_file(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            env_file = Path(tmp) / ".env"
+            version_file = Path(tmp) / "VERSION"
+            env_file.write_text("BGP_ANTIFILTER_VERSION=0.2.8\n", encoding="utf-8")
+            version_file.write_text("0.3.2\n", encoding="utf-8")
+
+            thread = mock.Mock()
+            thread.is_alive.return_value = False
+
+            with mock.patch.object(updater_server, "ENV_FILE", env_file):
+                with mock.patch.object(updater_server, "VERSION_FILE", version_file):
+                    with mock.patch.object(updater_server, "health_status", return_value=(True, "")):
+                        with mock.patch.object(updater_server, "UPDATE_THREAD", thread):
+                            with mock.patch.object(updater_server.threading, "Thread") as thread_cls:
+                                payload = updater_server.start_update("0.3.3")
+
+            self.assertEqual(payload["current_version"], "0.2.8")
+            self.assertEqual(payload["target_version"], "0.3.3")
+            thread_cls.return_value.start.assert_called_once_with()
 
 
 if __name__ == "__main__":
