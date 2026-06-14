@@ -5,6 +5,7 @@ from pathlib import Path
 import re
 import shutil
 import subprocess
+import tempfile
 import threading
 import time
 
@@ -21,6 +22,7 @@ COMPOSE_SERVICES = tuple(
 )
 UPDATE_LOCK = threading.Lock()
 UPDATE_THREAD = None
+_TOP_LEVEL_NAME_RE = re.compile(r"^name:\s*(['\"]?)([^#\n]+?)\1\s*(?:#.*)?$", re.MULTILINE)
 
 
 def read_json(path, default):
@@ -90,13 +92,65 @@ def runtime_payload():
     return read_json(UPDATE_RUNTIME_FILE, {})
 
 
+def compose_project_name(compose_file):
+    try:
+        text = compose_file.read_text(encoding="utf-8")
+    except OSError:
+        return ""
+    match = _TOP_LEVEL_NAME_RE.search(text)
+    if not match:
+        return ""
+    return match.group(2).strip()
+
+
+def strip_top_level_name(text):
+    return _TOP_LEVEL_NAME_RE.sub("", text, count=1).lstrip("\ufeff").lstrip("\n")
+
+
+def docker_compose_v2_command():
+    docker = shutil.which("docker")
+    if not docker:
+        return None
+    try:
+        completed = subprocess.run(
+            [docker, "compose", "version"],
+            stdout=subprocess.PIPE,
+            stderr=subprocess.PIPE,
+            text=True,
+            timeout=10,
+            check=False,
+        )
+    except OSError:
+        return None
+    if completed.returncode != 0:
+        return None
+    return docker
+
+
 def compose_base_command():
+    docker = docker_compose_v2_command()
+    if docker:
+        return [docker, "compose", "-f", str(COMPOSE_FILE)], None
+
     docker_compose = shutil.which("docker-compose")
     if docker_compose:
-        return [docker_compose, "-f", str(COMPOSE_FILE)]
-    docker = shutil.which("docker")
-    if docker:
-        return [docker, "compose", "-f", str(COMPOSE_FILE)]
+        project_name = compose_project_name(COMPOSE_FILE)
+        command = [docker_compose]
+        if project_name:
+            command.extend(["-p", project_name])
+        try:
+            compose_text = COMPOSE_FILE.read_text(encoding="utf-8")
+        except OSError:
+            compose_text = ""
+        if project_name and _TOP_LEVEL_NAME_RE.search(compose_text):
+            temp_file = tempfile.NamedTemporaryFile("w", encoding="utf-8", suffix=".yml", delete=False)
+            with temp_file:
+                temp_file.write(strip_top_level_name(compose_text))
+            command.extend(["-f", temp_file.name])
+            return command, Path(temp_file.name)
+        command.extend(["-f", str(COMPOSE_FILE)])
+        return command, None
+
     raise FileNotFoundError("docker compose executable is not available inside admin container")
 
 
@@ -106,9 +160,12 @@ def health_status():
     if not COMPOSE_FILE.exists():
         return False, f"compose file not found: {COMPOSE_FILE}"
     try:
-        compose_base_command()
+        _, cleanup_path = compose_base_command()
     except OSError as exc:
         return False, str(exc)
+    finally:
+        if "cleanup_path" in locals() and cleanup_path is not None:
+            cleanup_path.unlink(missing_ok=True)
     docker_socket = Path("/var/run/docker.sock")
     if not docker_socket.exists():
         return False, "docker socket is not mounted"
@@ -139,24 +196,30 @@ def update_env_version(path, version):
 
 def run_compose(*args, timeout=1800):
     started = time.time()
-    command = [*compose_base_command(), *args]
-    completed = subprocess.run(
-        command,
-        cwd=str(WORKSPACE_DIR),
-        text=True,
-        stdout=subprocess.PIPE,
-        stderr=subprocess.PIPE,
-        timeout=timeout,
-        check=False,
-    )
-    return {
-        "ok": completed.returncode == 0,
-        "returncode": completed.returncode,
-        "stdout": completed.stdout,
-        "stderr": completed.stderr,
-        "duration_seconds": round(time.time() - started, 3),
-        "command": command,
-    }
+    cleanup_path = None
+    try:
+        base_command, cleanup_path = compose_base_command()
+        command = [*base_command, *args]
+        completed = subprocess.run(
+            command,
+            cwd=str(WORKSPACE_DIR),
+            text=True,
+            stdout=subprocess.PIPE,
+            stderr=subprocess.PIPE,
+            timeout=timeout,
+            check=False,
+        )
+        return {
+            "ok": completed.returncode == 0,
+            "returncode": completed.returncode,
+            "stdout": completed.stdout,
+            "stderr": completed.stderr,
+            "duration_seconds": round(time.time() - started, 3),
+            "command": command,
+        }
+    finally:
+        if cleanup_path is not None:
+            cleanup_path.unlink(missing_ok=True)
 
 
 def rollback(previous_version):

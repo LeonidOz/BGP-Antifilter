@@ -60,7 +60,11 @@ const dict = {
     updateStageCompleted: "Update completed", updateStageFailed: "Update failed",
     updateRollbackOk: "Rollback completed", updateRollbackFailed: "Rollback failed",
     sourceOptions: "Source options", sourceOptionsHint: "These toggles affect which route sources are included in generation.",
-    reloadStarted: "Route reload started in background"
+    reloadStarted: "Route reload started in background",
+    listHintAsns: "Add ASNs here to include all announced IPv4 prefixes of those networks.",
+    listHintGoogleRanges: "Uses Google `goog.json`, subtracts Google Cloud prefixes from `cloud.json`, and adds the remaining IPv4 prefixes. In practice this is mainly the YouTube source.",
+    lastGeneratedRoutes: "Routes from last generation",
+    googleRangesSourceTitle: "Google service ranges source"
   },
   ru: {
     dashboard: "Панель", lists: "Списки", tools: "Инструменты", settings: "Настройки", loginTitle: "Вход",
@@ -124,7 +128,11 @@ const dict = {
     updateStageCompleted: "Обновление завершено", updateStageFailed: "Обновление завершилось ошибкой",
     updateRollbackOk: "Откат выполнен", updateRollbackFailed: "Откат не удался",
     sourceOptions: "Параметры источников", sourceOptionsHint: "Эти переключатели влияют на то, какие источники попадут в генерацию маршрутов.",
-    reloadStarted: "Перезагрузка маршрутов запущена в фоне"
+    reloadStarted: "Перезагрузка маршрутов запущена в фоне",
+    listHintAsns: "Добавляйте сюда ASN, чтобы включать все анонсируемые IPv4-префиксы этих сетей.",
+    listHintGoogleRanges: "Берутся Google `goog.json`, из них вычитаются Google Cloud префиксы из `cloud.json`, а оставшиеся IPv4-префиксы добавляются в маршруты. На практике это в основном источник для YouTube.",
+    lastGeneratedRoutes: "Получено с последней генерации",
+    googleRangesSourceTitle: "Источник диапазонов сервисов Google"
   }
 };
 
@@ -149,16 +157,16 @@ const UPDATE_STATUS_POLL_INTERVAL_MS = 15 * 60 * 1000;
 const listLabels = {
   "urls": "URLs",
   "asns": "ASNs",
+  "google-ranges": "Google ranges",
   "include-domains": "Include domains",
-  "exclude-domains": "Exclude domains",
-  "google-ranges": "Google ranges"
+  "exclude-domains": "Exclude domains"
 };
 const listIcons = {
   "urls": "link-2",
   "asns": "hash",
+  "google-ranges": "globe",
   "include-domains": "circle-plus",
-  "exclude-domains": "circle-minus",
-  "google-ranges": "globe"
+  "exclude-domains": "circle-minus"
 };
 const settingLabels = {
   UPDATE_INTERVAL: {ru: "Интервал автообновления", en: "Auto refresh interval"},
@@ -1780,6 +1788,46 @@ function renderSettingInput(item) {
   return `<input ${attrs}>`;
 }
 
+function renderSettingCard(item, sectionItems) {
+  if (item.key === "DNS_RESOLVE_TIMEOUT") {
+    const hasDnsList = (sectionItems || []).some(candidate => candidate.key === "DNS_RESOLVERS");
+    if (hasDnsList) {
+      return "";
+    }
+  }
+  const embeddedDnsTimeout = item.key === "DNS_RESOLVERS"
+    ? (sectionItems || []).find(candidate => candidate.key === "DNS_RESOLVE_TIMEOUT")
+    : null;
+  return `
+    <label class="setting-card">
+      <span class="setting-head">
+        <strong>${escapeHtml(settingLabel(item.key))}</strong>
+        <span class="setting-badges">
+          ${item.overridden ? `<span class="chip">${t("overridden")}</span>` : ""}
+          ${item.requires_restart ? `<span class="chip warn">${t("restartRequired")}</span>` : ""}
+        </span>
+      </span>
+      <span class="setting-control">
+        ${renderSettingInput(item)}
+        ${item.unit ? `<span class="unit">${escapeHtml(item.unit)}</span>` : ""}
+      </span>
+      ${embeddedDnsTimeout ? `
+        <span class="setting-head">
+          <strong>${escapeHtml(settingLabel(embeddedDnsTimeout.key))}</strong>
+          <span class="setting-badges">
+            ${embeddedDnsTimeout.overridden ? `<span class="chip">${t("overridden")}</span>` : ""}
+            ${embeddedDnsTimeout.requires_restart ? `<span class="chip warn">${t("restartRequired")}</span>` : ""}
+          </span>
+        </span>
+        <span class="setting-control">
+          ${renderSettingInput(embeddedDnsTimeout)}
+          ${embeddedDnsTimeout.unit ? `<span class="unit">${escapeHtml(embeddedDnsTimeout.unit)}</span>` : ""}
+        </span>
+      ` : ""}
+    </label>
+  `;
+}
+
 function renderSettings(data) {
   settingsPayload = data;
   settingsSavedValues = Object.fromEntries((data.sections || []).flatMap(section =>
@@ -1790,21 +1838,7 @@ function renderSettings(data) {
     <article class="panel settings-section">
       <h2>${escapeHtml(t(settingsSectionLabels[section.id] || section.title))}</h2>
       <div class="settings-grid">
-        ${(section.items || []).map(item => `
-          <label class="setting-card">
-            <span class="setting-head">
-              <strong>${escapeHtml(settingLabel(item.key))}</strong>
-              <span class="setting-badges">
-                ${item.overridden ? `<span class="chip">${t("overridden")}</span>` : ""}
-                ${item.requires_restart ? `<span class="chip warn">${t("restartRequired")}</span>` : ""}
-              </span>
-            </span>
-            <span class="setting-control">
-              ${renderSettingInput(item)}
-              ${item.unit ? `<span class="unit">${escapeHtml(item.unit)}</span>` : ""}
-            </span>
-          </label>
-        `).join("")}
+        ${(section.items || []).map(item => renderSettingCard(item, section.items || [])).join("")}
       </div>
     </article>
   `).join("");
@@ -1869,8 +1903,9 @@ async function loadList(name) {
   document.querySelectorAll("[data-list]").forEach(button => button.classList.toggle("active", button.dataset.list === name));
   $("list-title").textContent = listLabels[name];
   const special = isSpecialList(name);
+  const showHintPanel = special || name === "asns";
   $("add-list-form").classList.toggle("hidden", special);
-  $("list-source-settings").classList.toggle("hidden", !special);
+  $("list-source-settings").classList.toggle("hidden", !showHintPanel);
   $("list-tiles").classList.toggle("hidden", false);
   $("dry-after-save-btn").closest(".list-actions").classList.toggle("hidden", special);
   $("list-editor").closest(".raw-list-editor").classList.toggle("hidden", special);
@@ -1884,7 +1919,7 @@ async function loadList(name) {
     refreshListDirtyState(listSavedPath);
     return;
   }
-  $("list-source-settings").innerHTML = "";
+  renderListHint(name);
   const data = await api(`/api/lists/${name}`);
   listSavedContent = data.content || "";
   listSavedPath = data.path || "";
@@ -1940,10 +1975,44 @@ function isSpecialList(name) {
   return name === "google-ranges";
 }
 
+function renderListHint(name) {
+  const key = name === "asns" ? "listHintAsns" : name === "google-ranges" ? "listHintGoogleRanges" : "";
+  if (!key) {
+    $("list-source-settings").innerHTML = "";
+    return;
+  }
+  $("list-source-settings").innerHTML = `
+    <article class="panel settings-section">
+      <h2>${escapeHtml(listLabels[name] || name)}</h2>
+      <p class="muted">${escapeHtml(t(key))}</p>
+    </article>
+  `;
+}
+
 function listSourceRecord(listName, value) {
   const sources = lastStatusPayload?.status?.sources || [];
   if (listName === "google-ranges") {
-    return sources.find(source => source.kind === "google-ranges");
+    const googleSources = sources.filter(source => source.kind === "google");
+    if (!googleSources.length) {
+      return null;
+    }
+    const firstFailed = googleSources.find(source => source.status === "failed");
+    const firstCached = googleSources.find(source => source.status === "cache");
+    const firstDisabled = googleSources.find(source => source.status === "disabled");
+    const totalRoutes = googleSources.reduce((sum, source) => sum + (Number(source.routes) || 0), 0);
+    const totalBytes = googleSources.reduce((sum, source) => sum + (Number(source.bytes) || 0), 0);
+    const cacheAges = googleSources
+      .map(source => Number(source.cache_age_seconds))
+      .filter(value => Number.isFinite(value));
+    return {
+      kind: "google",
+      name: "google-ranges",
+      status: firstFailed ? "failed" : firstCached ? "cache" : firstDisabled ? "disabled" : "fresh",
+      error: firstFailed?.error || null,
+      routes: totalRoutes || null,
+      bytes: totalBytes || null,
+      cache_age_seconds: cacheAges.length ? Math.min(...cacheAges) : null,
+    };
   }
   if (listName === "urls") {
     return sources.find(source => source.kind === "url" && (source.url === value || source.name === value));
@@ -1965,27 +2034,32 @@ function renderGoogleRangesTab() {
   const enabled = String(settingsPayload?.values?.INCLUDE_GOOGLE_RANGES || "0") === "1";
   const record = listSourceRecord("google-ranges", "");
   const level = record ? eventLevel(record) : (enabled ? "warn" : "");
+  const statusCard = record ? `<div class="list-card ${level} google-ranges-status-card">${renderListSourceStats(record)}</div>` : "";
   $("list-source-settings").innerHTML = `
     <article class="panel settings-section">
-      <h2>${escapeHtml(settingLabel("INCLUDE_GOOGLE_RANGES"))}</h2>
-      <p class="muted">${escapeHtml(t("sourceOptionsHint"))}</p>
-      <div class="settings-grid">
-        <label class="setting-card">
-          <span class="setting-head">
-            <strong>${escapeHtml(t("sourceOptions"))}</strong>
-            <span class="setting-badges">
-              <span class="chip ${enabled ? "ok" : "warn"}">${enabled ? t("yes") : t("no")}</span>
+      <h2>${escapeHtml(t("googleRangesSourceTitle"))}</h2>
+      <p class="muted">${escapeHtml(t("listHintGoogleRanges"))}</p>
+      <div class="google-ranges-layout">
+        <div class="google-ranges-left">
+          <label class="setting-card google-ranges-toggle-card">
+            <span class="setting-head">
+              <strong>${escapeHtml(settingLabel("INCLUDE_GOOGLE_RANGES"))}</strong>
+              <span class="setting-badges">
+                <span class="chip ${enabled ? "ok" : "warn"}">${enabled ? t("yes") : t("no")}</span>
+              </span>
             </span>
-          </span>
-          <span class="setting-control">
-            <span class="toggle">
-              <input type="checkbox" id="list-include-google-ranges" ${enabled ? "checked" : ""}>
-              <span></span>
+            <span class="setting-control">
+              <span class="toggle">
+                <input type="checkbox" id="list-include-google-ranges" ${enabled ? "checked" : ""}>
+                <span></span>
+              </span>
             </span>
-          </span>
-        </label>
+          </label>
+        </div>
+        <div class="google-ranges-right">
+          ${statusCard}
+        </div>
       </div>
-      ${record ? `<div class="list-card ${level}">${renderListSourceStats(record)}</div>` : ""}
     </article>
   `;
 }

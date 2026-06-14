@@ -1,5 +1,10 @@
 # Changelog
 
+## 0.3.4 - 2026-06-14
+
+- Fixed updater version detection so rollback and reported current version use `BGP_ANTIFILTER_VERSION` from `.env` instead of the repository `VERSION` file.
+- Refined the Lists UI around Google ranges: moved it into its own tab, added contextual explanations, improved source status visibility, and aligned the layout with the rest of the admin interface.
+
 ## 0.3.3 - 2026-06-14
 
 - Fixed the in-app self-updater rollback logic to use the deployed Docker tag from `.env` instead of the repository `VERSION`, so failed updates now restore the correct previous release.

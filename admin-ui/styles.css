@@ -688,6 +688,23 @@ button .lucide { color: var(--cyan); }
 .kv-grid.compact {
   grid-template-columns: repeat(4, minmax(0, 1fr));
 }
+.google-ranges-layout {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) minmax(300px, 0.9fr);
+  gap: 14px;
+  align-items: start;
+  margin-top: 14px;
+}
+.google-ranges-left {
+  display: grid;
+  gap: 14px;
+}
+.google-ranges-right {
+  min-width: 0;
+}
+.google-ranges-status-card {
+  min-height: 100%;
+}
 .kv {
   border: 1px solid var(--line);
   border-radius: 8px;
@@ -1077,6 +1094,12 @@ details pre { margin-top: 12px; max-height: 360px; overflow: auto; }
   display: grid;
   grid-template-columns: repeat(2, minmax(0, 1fr));
   gap: 10px;
+}
+.google-ranges-grid {
+  margin-top: 14px;
+}
+.google-ranges-toggle-card {
+  margin-top: 0;
 }
 .setting-card {
   display: grid;

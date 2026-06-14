@@ -1,3 +1,4 @@
+import subprocess
 import tempfile
 import unittest
 from pathlib import Path
@@ -61,6 +62,21 @@ class UpdaterServerTests(unittest.TestCase):
                 with mock.patch.object(updater_server, "VERSION_FILE", version_file):
                     self.assertEqual(updater_server.configured_version(), "0.3.2")
 
+    def test_compose_project_name_reads_top_level_name(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            compose_file = Path(tmp) / "docker-compose.yml"
+            compose_file.write_text('name: "bgp-antifilter"\nservices: {}\n', encoding="utf-8")
+
+            self.assertEqual(updater_server.compose_project_name(compose_file), "bgp-antifilter")
+
+    def test_strip_top_level_name_removes_only_project_name(self):
+        source = "name: bgp-antifilter\n\nservices:\n  app:\n    environment:\n      APP_NAME: demo\n"
+        stripped = updater_server.strip_top_level_name(source)
+
+        self.assertTrue(stripped.startswith("services:\n"))
+        self.assertIn("APP_NAME: demo", stripped)
+        self.assertNotIn("name: bgp-antifilter", stripped)
+
     def test_health_status_requires_docker_socket(self):
         with tempfile.TemporaryDirectory() as tmp:
             workspace = Path(tmp)
@@ -82,6 +98,41 @@ class UpdaterServerTests(unittest.TestCase):
 
         self.assertFalse(ok)
         self.assertIn("docker socket", error)
+
+    def test_compose_base_command_uses_docker_compose_v2_when_available(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            compose_file = Path(tmp) / "docker-compose.yml"
+            compose_file.write_text("name: bgp-antifilter\nservices: {}\n", encoding="utf-8")
+
+            completed = subprocess.CompletedProcess(args=["docker", "compose", "version"], returncode=0, stdout="", stderr="")
+
+            with mock.patch.object(updater_server, "COMPOSE_FILE", compose_file):
+                with mock.patch.object(updater_server.shutil, "which", side_effect=lambda cmd: {"docker": "docker", "docker-compose": "docker-compose"}.get(cmd)):
+                    with mock.patch.object(updater_server.subprocess, "run", return_value=completed):
+                        command, cleanup_path = updater_server.compose_base_command()
+
+        self.assertEqual(command, ["docker", "compose", "-f", str(compose_file)])
+        self.assertIsNone(cleanup_path)
+
+    def test_compose_base_command_falls_back_to_legacy_compose_with_project_name(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            compose_file = Path(tmp) / "docker-compose.yml"
+            compose_file.write_text("name: bgp-antifilter\nservices: {}\n", encoding="utf-8")
+
+            completed = subprocess.CompletedProcess(args=["docker", "compose", "version"], returncode=1, stdout="", stderr="missing")
+
+            with mock.patch.object(updater_server, "COMPOSE_FILE", compose_file):
+                with mock.patch.object(updater_server.shutil, "which", side_effect=lambda cmd: {"docker": "docker", "docker-compose": "docker-compose"}.get(cmd)):
+                    with mock.patch.object(updater_server.subprocess, "run", return_value=completed):
+                        command, cleanup_path = updater_server.compose_base_command()
+
+                        self.assertEqual(command[:3], ["docker-compose", "-p", "bgp-antifilter"])
+                        self.assertEqual(command[3], "-f")
+                        self.assertIsNotNone(cleanup_path)
+                        self.assertTrue(cleanup_path.exists())
+                        self.assertEqual(cleanup_path.read_text(encoding="utf-8"), "services: {}\n")
+
+                        cleanup_path.unlink(missing_ok=True)
 
     def test_reconcile_runtime_marks_restart_as_completed_after_version_switch(self):
         with tempfile.TemporaryDirectory() as tmp:
