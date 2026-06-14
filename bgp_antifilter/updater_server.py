@@ -204,8 +204,9 @@ def reconcile_runtime(current_version):
     if not runtime:
         return runtime
     stage = str(runtime.get("stage") or "")
+    active = bool(runtime.get("active"))
     target_version = str(runtime.get("target_version") or "")
-    if stage == "restarting" and target_version == str(current_version or ""):
+    if active and target_version == str(current_version or ""):
         write_runtime(
             active=False,
             stage="completed",

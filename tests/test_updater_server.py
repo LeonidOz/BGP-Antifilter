@@ -82,6 +82,27 @@ class UpdaterServerTests(unittest.TestCase):
         self.assertTrue(payload["success"])
         self.assertEqual(payload["current_version"], "0.3.0")
 
+    def test_reconcile_runtime_marks_any_active_stage_completed_when_target_matches(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            runtime_file = Path(tmp) / "update-runtime.json"
+            runtime_file.write_text(
+                '{'
+                '"active": true,'
+                '"stage": "pulling",'
+                '"target_version": "0.3.1",'
+                '"current_version": "0.3.0"'
+                '}',
+                encoding="utf-8",
+            )
+
+            with mock.patch.object(updater_server, "UPDATE_RUNTIME_FILE", runtime_file):
+                payload = updater_server.reconcile_runtime("0.3.1")
+
+        self.assertFalse(payload["active"])
+        self.assertEqual(payload["stage"], "completed")
+        self.assertTrue(payload["success"])
+        self.assertEqual(payload["current_version"], "0.3.1")
+
 
 if __name__ == "__main__":
     unittest.main()

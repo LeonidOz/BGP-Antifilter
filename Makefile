@@ -1,4 +1,4 @@
-.PHONY: test smoke-test shellcheck compose-config build up down logs ps reload dry-run check-sources check-ip version release-version
+.PHONY: test smoke-test shellcheck compose-config build up down logs ps reload dry-run check-sources check-ip version release-version update
 
 IP ?= 1.2.3.4
 VERSION ?= $(shell cat VERSION)
@@ -27,6 +27,15 @@ release-version:
 
 up:
 	$(COMPOSE) up -d --build
+
+update:
+	@test -f .env || { echo ".env not found"; exit 1; }
+	@git pull --ff-only
+	@current="$$(cat VERSION)"; \
+	tmp="$$(mktemp)"; \
+	awk -v version="$$current" 'BEGIN { found = 0 } /^BGP_ANTIFILTER_VERSION=/ { print "BGP_ANTIFILTER_VERSION=" version; found = 1; next } { print } END { if (!found) print "BGP_ANTIFILTER_VERSION=" version }' .env > "$$tmp" && mv "$$tmp" .env; \
+	echo "BGP_ANTIFILTER_VERSION=$$current"
+	$(COMPOSE) up -d --build --remove-orphans
 
 down:
 	$(COMPOSE) down

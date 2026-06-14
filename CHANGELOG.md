@@ -1,5 +1,10 @@
 # Changelog
 
+## 0.3.2 - 2026-06-14
+
+- Added a `make update` target for source-based deployments so production updates can sync Git, align `BGP_ANTIFILTER_VERSION` with `VERSION`, and rebuild containers in one command.
+- Fixed stale update banners after manual upgrades by automatically completing `update-runtime.json` when the running app version already matches the target release.
+
 ## 0.3.1 - 2026-06-14
 
 - Removed the dedicated updater sidecar and moved self-update execution into the `admin` container while keeping the same admin UI flow and persisted update runtime state.
