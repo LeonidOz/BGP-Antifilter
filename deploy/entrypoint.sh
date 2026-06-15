@@ -253,6 +253,28 @@ tmp.replace(path)
 PY
 }
 
+runtime_next_update_unix() {
+  export RUNTIME_FILE
+  python3 - <<'PY'
+import json
+import os
+from pathlib import Path
+
+path = Path(os.environ["RUNTIME_FILE"])
+try:
+    data = json.loads(path.read_text(encoding="utf-8"))
+except (OSError, json.JSONDecodeError):
+    print("")
+    raise SystemExit(0)
+
+value = data.get("next_scheduled_update_unix")
+if value in (None, ""):
+    print("")
+else:
+    print(int(value))
+PY
+}
+
 load_settings_env
 validate_env
 
@@ -377,6 +399,11 @@ while true; do
       current_interval="$UPDATE_INTERVAL"
       next_update=$((now + current_interval))
       write_runtime "$next_update"
+    fi
+    runtime_next_update="$(runtime_next_update_unix)"
+    if [ -n "$runtime_next_update" ] && [ "$runtime_next_update" -gt "$next_update" ]; then
+      # A manual reload finished and reset the countdown in runtime.json.
+      next_update="$runtime_next_update"
     fi
     remaining=$((next_update - now))
     if [ "$remaining" -le 0 ]; then

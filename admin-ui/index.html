@@ -11,31 +11,33 @@
 <body>
   <div class="app-shell login-mode" id="app-shell">
     <aside class="sidebar hidden" id="sidebar">
-      <div class="brand">
-        <div class="brand-mark" aria-hidden="true">
-          <img src="/assets/logo-mark.svg" alt="">
+      <div class="sidebar-inner">
+        <div class="brand">
+          <div class="brand-mark" aria-hidden="true">
+            <img src="/assets/logo-mark.svg" alt="">
+          </div>
+          <div>
+            <strong>BGP Antifilter</strong>
+            <a
+              id="version-link"
+              class="repo-link version-link"
+              href="https://github.com/LeonidOz/BGP-Antifilter"
+              target="_blank"
+              rel="noreferrer noopener"
+            ><span id="version">v-</span></a>
+          </div>
         </div>
-        <div>
-          <strong>BGP Antifilter</strong>
-          <a
-            id="version-link"
-            class="repo-link version-link"
-            href="https://github.com/LeonidOz/BGP-Antifilter"
-            target="_blank"
-            rel="noreferrer noopener"
-          ><span id="version">v-</span></a>
+        <div class="language">
+          <button id="lang-ru">RU</button>
+          <button id="lang-en">EN</button>
         </div>
+        <nav>
+          <button class="nav-item active" data-view="dashboard"><i data-lucide="gauge"></i><span data-i18n="dashboard">Dashboard</span></button>
+          <button class="nav-item" data-view="lists"><i data-lucide="list-tree"></i><span data-i18n="lists">Lists</span></button>
+          <button class="nav-item" data-view="tools"><i data-lucide="wrench"></i><span data-i18n="tools">Tools</span></button>
+          <button class="nav-item" data-view="settings"><i data-lucide="sliders-horizontal"></i><span data-i18n="settings">Settings</span></button>
+        </nav>
       </div>
-      <div class="language">
-        <button id="lang-ru">RU</button>
-        <button id="lang-en">EN</button>
-      </div>
-      <nav>
-        <button class="nav-item active" data-view="dashboard"><i data-lucide="gauge"></i><span data-i18n="dashboard">Dashboard</span></button>
-        <button class="nav-item" data-view="lists"><i data-lucide="list-tree"></i><span data-i18n="lists">Lists</span></button>
-        <button class="nav-item" data-view="tools"><i data-lucide="wrench"></i><span data-i18n="tools">Tools</span></button>
-        <button class="nav-item" data-view="settings"><i data-lucide="sliders-horizontal"></i><span data-i18n="settings">Settings</span></button>
-      </nav>
     </aside>
 
     <main>

@@ -1,5 +1,12 @@
 # Changelog
 
+## 0.3.6 - 2026-06-15
+
+- Fixed the auto-update countdown after a manual route reload so the scheduler now respects the refreshed `next_scheduled_update_unix` from `runtime.json` instead of reverting to an older in-memory deadline.
+- Restored live operation-log updates during active route reloads by wiring the dashboard log panel to the same runtime/status payload that drives the progress banner.
+- Fixed the authenticated mobile navigation so the sidebar no longer expands beyond the viewport and menu items stay reachable on narrow screens.
+- Fixed the left sidebar background on tall pages by separating the full-height column background from the sticky inner navigation container.
+
 ## 0.3.5 - 2026-06-15
 
 - Fixed self-update Compose compatibility by preferring `docker compose` v2 when available and falling back to a legacy `docker-compose` v1 command line that strips top-level `name:` while preserving the project name.

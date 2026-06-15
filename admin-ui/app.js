@@ -940,6 +940,44 @@ function renderAcceptedCommandResult(action, result) {
     </div>`;
 }
 
+function renderActiveOperationLog(payload) {
+  const runtime = payload?.runtime || {};
+  const status = payload?.status || {};
+  const runtimeState = runtimeGenerationState(payload);
+  if (!runtimeState) return "";
+  const stageTitle = runtimeStageLabel(runtime.generation_stage || "");
+  const stageMessage = runtime.generation_stage_message || runtimeState.message || "";
+  const currentKind = runtime.generation_current_kind || "";
+  const currentName = runtime.generation_current_name || "";
+  const currentIndex = Number(runtime.generation_current_index || 0) || null;
+  const currentAttempt = Number(runtime.generation_current_attempt || 0) || null;
+  const currentAttemptTotal = Number(runtime.generation_current_attempt_total || 0) || null;
+  const itemsLabel = runtimeState.itemsDone != null && runtimeState.itemsTotal != null && runtimeState.itemsTotal > 0
+    ? `${runtimeState.itemsDone} / ${runtimeState.itemsTotal}`
+    : "";
+  const sourceLabel = currentName
+    ? `${runtimeSourceKindLabel(currentKind)}${currentIndex ? ` ${currentIndex}/${runtimeState.itemsTotal || "?"}` : ""}: ${currentName}${currentAttempt && currentAttemptTotal ? ` · ${t("attempt")} ${currentAttempt}/${currentAttemptTotal}` : ""}`
+    : "";
+  const sources = Array.isArray(status.sources) ? status.sources : [];
+  const errors = Array.isArray(status.errors) ? status.errors : [];
+  return `
+    <div class="result-card">
+      <div class="result-head">
+        <span class="status-pill warn">${escapeHtml(t("applying"))}</span>
+        <span class="chip">${escapeHtml(runtime.generation_kind || "reload")}</span>
+      </div>
+      <div class="kv-grid">
+        <div class="kv"><span>${escapeHtml(t("stageRunning"))}</span><strong>${escapeHtml(stageTitle)}</strong></div>
+        ${runtimeState.elapsedSeconds != null ? `<div class="kv"><span>${escapeHtml(t("elapsed"))}</span><strong>${escapeHtml(formatSecondsShort(runtimeState.elapsedSeconds))}</strong></div>` : ""}
+        ${itemsLabel ? `<div class="kv"><span>${escapeHtml(t("sources"))}</span><strong>${escapeHtml(itemsLabel)}</strong></div>` : ""}
+      </div>
+      ${stageMessage ? `<div class="text-lines"><div class="text-line">${escapeHtml(stageMessage)}</div></div>` : ""}
+      ${sourceLabel ? `<div class="timeline-summary"><span class="chip warn">${escapeHtml(t("currentSource"))}: ${escapeHtml(sourceLabel)}</span></div>` : ""}
+      ${sources.length ? `<details open><summary>${t("sourceDetails")}</summary>${renderSourceDetails(sources)}</details>` : ""}
+      ${errors.length ? `<details open><summary>${t("errors")}</summary>${renderDataTree(errors)}</details>` : ""}
+    </div>`;
+}
+
 function parseJsonLines(stdout) {
   const events = [];
   for (const line of stdout.split(/\r?\n/)) {
@@ -1627,6 +1665,10 @@ async function loadStatus() {
   tickCountdown();
   renderRuntimeBanner(data);
   renderPipeline(data);
+  if (runtimeState) {
+    $("operation-log-details").open = true;
+    $("operation-log").innerHTML = renderActiveOperationLog(data);
+  }
   if (updateStatusPayload?.runtime?.active) {
     loadUpdateStatus().catch(() => {});
   }
