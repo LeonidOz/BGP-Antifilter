@@ -1,5 +1,9 @@
 # Changelog
 
+## 0.3.7 - 2026-06-15
+
+- Fixed the default Compose network definition again by explicitly pinning `enable_ipv4: true` alongside `enable_ipv6: false`, so self-updates no longer trip over hosts where Docker compares both network flags during stack recreation.
+
 ## 0.3.6 - 2026-06-15
 
 - Fixed the auto-update countdown after a manual route reload so the scheduler now respects the refreshed `next_scheduled_update_unix` from `runtime.json` instead of reverting to an older in-memory deadline.
