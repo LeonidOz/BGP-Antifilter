@@ -1,5 +1,11 @@
 # Changelog
 
+## 0.4.0 - 2026-06-19
+
+- Added country-based route sources with a dedicated `include-countries.txt` list, runtime wiring, and admin UI support for enabling countries from a prepared toggle list instead of editing raw text manually.
+- Added resilient country-prefix fetching: the updater now tries RIPE Stat first and automatically falls back to delegated RIR statistics when RIPE Stat is unavailable, while preserving cache/degraded behavior and source diagnostics.
+- Updated the Russian and English documentation to cover the new country list workflow, generated files, and release defaults.
+
 ## 0.3.7 - 2026-06-15
 
 - Fixed the default Compose network definition again by explicitly pinning `enable_ipv4: true` alongside `enable_ipv6: false`, so self-updates no longer trip over hosts where Docker compares both network flags during stack recreation.

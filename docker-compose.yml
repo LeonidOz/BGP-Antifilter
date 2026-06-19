@@ -2,7 +2,7 @@ name: bgp-antifilter
 
 services:
   bird:
-    image: "bgp-antifilter-bird:${BGP_ANTIFILTER_VERSION:-0.3.4}"
+    image: "bgp-antifilter-bird:${BGP_ANTIFILTER_VERSION:-0.4.0}"
     build:
       context: .
       dockerfile: deploy/Dockerfile
@@ -24,6 +24,7 @@ services:
       BGP_COMMUNITY: "${BGP_COMMUNITY:-65432,500}"
       LISTS_FILE: /etc/bird/generated/config/lists.txt
       INCLUDE_ASNS_FILE: /etc/bird/generated/config/include-asns.txt
+      INCLUDE_COUNTRIES_FILE: /etc/bird/generated/config/include-countries.txt
       INCLUDE_DOMAINS_FILE: /etc/bird/generated/config/include-domains.txt
       EXCLUDE_DOMAINS_FILE: /etc/bird/generated/config/exclude-domains.txt
       INCLUDE_GOOGLE_RANGES: "${INCLUDE_GOOGLE_RANGES:-1}"
@@ -45,7 +46,7 @@ services:
       SETTINGS_ENV_FILE: /etc/bird/generated/settings.env
 
   admin:
-    image: "bgp-antifilter-bird:${BGP_ANTIFILTER_VERSION:-0.3.4}"
+    image: "bgp-antifilter-bird:${BGP_ANTIFILTER_VERSION:-0.4.0}"
     build:
       context: .
       dockerfile: deploy/Dockerfile
@@ -70,6 +71,7 @@ services:
       BGP_COMMUNITY: "${BGP_COMMUNITY:-65432,500}"
       LISTS_FILE: /etc/bird/generated/config/lists.txt
       INCLUDE_ASNS_FILE: /etc/bird/generated/config/include-asns.txt
+      INCLUDE_COUNTRIES_FILE: /etc/bird/generated/config/include-countries.txt
       INCLUDE_DOMAINS_FILE: /etc/bird/generated/config/include-domains.txt
       EXCLUDE_DOMAINS_FILE: /etc/bird/generated/config/exclude-domains.txt
       INCLUDE_GOOGLE_RANGES: "${INCLUDE_GOOGLE_RANGES:-1}"

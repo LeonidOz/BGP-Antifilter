@@ -62,6 +62,7 @@ const dict = {
     sourceOptions: "Source options", sourceOptionsHint: "These toggles affect which route sources are included in generation.",
     reloadStarted: "Route reload started in background",
     listHintAsns: "Add ASNs here to include all announced IPv4 prefixes of those networks.",
+    listHintCountries: "Add 2-letter country codes here to load IPv4 prefixes assigned to those countries from RIPE Stat RIR data.",
     listHintGoogleRanges: "Uses Google `goog.json`, subtracts Google Cloud prefixes from `cloud.json`, and adds the remaining IPv4 prefixes. In practice this is mainly the YouTube source.",
     lastGeneratedRoutes: "Routes from last generation",
     googleRangesSourceTitle: "Google service ranges source"
@@ -130,6 +131,7 @@ const dict = {
     sourceOptions: "Параметры источников", sourceOptionsHint: "Эти переключатели влияют на то, какие источники попадут в генерацию маршрутов.",
     reloadStarted: "Перезагрузка маршрутов запущена в фоне",
     listHintAsns: "Добавляйте сюда ASN, чтобы включать все анонсируемые IPv4-префиксы этих сетей.",
+    listHintCountries: "Добавляйте сюда двухбуквенные коды стран, чтобы загружать IPv4-префиксы этих стран из RIR-данных через RIPE Stat.",
     listHintGoogleRanges: "Берутся Google `goog.json`, из них вычитаются Google Cloud префиксы из `cloud.json`, а оставшиеся IPv4-префиксы добавляются в маршруты. На практике это в основном источник для YouTube.",
     lastGeneratedRoutes: "Получено с последней генерации",
     googleRangesSourceTitle: "Источник диапазонов сервисов Google"
@@ -154,9 +156,36 @@ let updateStatusPayload = null;
 let updateStatusTimer = null;
 const STATUS_POLL_INTERVAL_MS = 2000;
 const UPDATE_STATUS_POLL_INTERVAL_MS = 15 * 60 * 1000;
+const countryOptions = [
+  {code: "RU", ru: "Россия", en: "Russia"},
+  {code: "BY", ru: "Беларусь", en: "Belarus"},
+  {code: "KZ", ru: "Казахстан", en: "Kazakhstan"},
+  {code: "KG", ru: "Кыргызстан", en: "Kyrgyzstan"},
+  {code: "UZ", ru: "Узбекистан", en: "Uzbekistan"},
+  {code: "TJ", ru: "Таджикистан", en: "Tajikistan"},
+  {code: "AM", ru: "Армения", en: "Armenia"},
+  {code: "AZ", ru: "Азербайджан", en: "Azerbaijan"},
+  {code: "GE", ru: "Грузия", en: "Georgia"},
+  {code: "MD", ru: "Молдова", en: "Moldova"},
+  {code: "UA", ru: "Украина", en: "Ukraine"},
+  {code: "PL", ru: "Польша", en: "Poland"},
+  {code: "DE", ru: "Германия", en: "Germany"},
+  {code: "NL", ru: "Нидерланды", en: "Netherlands"},
+  {code: "FI", ru: "Финляндия", en: "Finland"},
+  {code: "EE", ru: "Эстония", en: "Estonia"},
+  {code: "LV", ru: "Латвия", en: "Latvia"},
+  {code: "LT", ru: "Литва", en: "Lithuania"},
+  {code: "GB", ru: "Великобритания", en: "United Kingdom"},
+  {code: "FR", ru: "Франция", en: "France"},
+  {code: "CH", ru: "Швейцария", en: "Switzerland"},
+  {code: "TR", ru: "Турция", en: "Turkey"},
+  {code: "IL", ru: "Израиль", en: "Israel"},
+  {code: "US", ru: "США", en: "United States"},
+];
 const listLabels = {
   "urls": "URLs",
   "asns": "ASNs",
+  "countries": "Countries",
   "google-ranges": "Google ranges",
   "include-domains": "Include domains",
   "exclude-domains": "Exclude domains"
@@ -164,6 +193,7 @@ const listLabels = {
 const listIcons = {
   "urls": "link-2",
   "asns": "hash",
+  "countries": "flag",
   "google-ranges": "globe",
   "include-domains": "circle-plus",
   "exclude-domains": "circle-minus"
@@ -1949,9 +1979,9 @@ async function loadList(name) {
   $("add-list-form").classList.toggle("hidden", special);
   $("list-source-settings").classList.toggle("hidden", !showHintPanel);
   $("list-tiles").classList.toggle("hidden", false);
-  $("dry-after-save-btn").closest(".list-actions").classList.toggle("hidden", special);
+  $("dry-after-save-btn").closest(".list-actions").classList.toggle("hidden", name === "google-ranges");
   $("list-editor").closest(".raw-list-editor").classList.toggle("hidden", special);
-  if (special) {
+  if (name === "google-ranges") {
     listSavedContent = "";
     listSavedPath = settingsPayload?.settings_env_file || "";
     $("list-editor").value = "";
@@ -1961,7 +1991,6 @@ async function loadList(name) {
     refreshListDirtyState(listSavedPath);
     return;
   }
-  renderListHint(name);
   const data = await api(`/api/lists/${name}`);
   listSavedContent = data.content || "";
   listSavedPath = data.path || "";
@@ -1969,6 +1998,7 @@ async function loadList(name) {
   $("add-list-input").value = "";
   $("add-list-input").placeholder = `${t("itemPlaceholder")}: ${listLabels[name]}`;
   markListDirty(false);
+  renderListHint(name);
   renderListTiles();
 }
 
@@ -2013,12 +2043,34 @@ function normalizeAsn(value) {
   return trimmed.startsWith("AS") ? trimmed : `AS${trimmed}`;
 }
 
+function normalizeCountryCode(value) {
+  return String(value || "").trim().toUpperCase();
+}
+
+function selectedCountriesFromEditor() {
+  return new Set(
+    parseListLines($("list-editor").value)
+      .filter(line => line.active)
+      .map(line => normalizeCountryCode(line.value))
+  );
+}
+
+function countryLabel(option) {
+  return lang === "ru" ? option.ru : option.en;
+}
+
 function isSpecialList(name) {
-  return name === "google-ranges";
+  return name === "google-ranges" || name === "countries";
 }
 
 function renderListHint(name) {
-  const key = name === "asns" ? "listHintAsns" : name === "google-ranges" ? "listHintGoogleRanges" : "";
+  const key = name === "asns"
+    ? "listHintAsns"
+    : name === "countries"
+      ? "listHintCountries"
+      : name === "google-ranges"
+        ? "listHintGoogleRanges"
+        : "";
   if (!key) {
     $("list-source-settings").innerHTML = "";
     return;
@@ -2063,6 +2115,10 @@ function listSourceRecord(listName, value) {
     const asn = normalizeAsn(value);
     return sources.find(source => source.kind === "asn" && String(source.name || "").toUpperCase() === asn);
   }
+  if (listName === "countries") {
+    const country = String(value || "").trim().toUpperCase();
+    return sources.find(source => source.kind === "country" && String(source.name || "").toUpperCase() === country);
+  }
   if (listName === "include-domains") {
     return sources.find(source => source.kind === "include-domain" && source.name === value);
   }
@@ -2106,6 +2162,40 @@ function renderGoogleRangesTab() {
   `;
 }
 
+function renderCountriesTab() {
+  const selected = selectedCountriesFromEditor();
+  const cards = countryOptions.map(option => {
+    const record = listSourceRecord("countries", option.code);
+    const level = record ? eventLevel(record) : (selected.has(option.code) ? "warn" : "");
+    return `
+      <label class="country-card ${level}">
+        <span class="country-card-head">
+          <span class="country-card-copy">
+            <strong>${escapeHtml(countryLabel(option))}</strong>
+            <small>${escapeHtml(option.code)}</small>
+          </span>
+          <span class="toggle">
+            <input type="checkbox" data-country-code="${option.code}" ${selected.has(option.code) ? "checked" : ""}>
+            <span></span>
+          </span>
+        </span>
+        <span class="country-card-body">
+          ${record || selected.has(option.code) ? renderListSourceStats(record) : ""}
+        </span>
+      </label>`;
+  }).join("");
+
+  $("list-source-settings").innerHTML = `
+    <article class="panel settings-section">
+      <h2>${escapeHtml(listLabels.countries)}</h2>
+      <p class="muted">${escapeHtml(t("listHintCountries"))}</p>
+      <div class="country-grid">
+        ${cards}
+      </div>
+    </article>
+  `;
+}
+
 function renderListSourceStats(record) {
   if (!record) {
     return `<span class="chip warn">${t("notSeen")}</span>`;
@@ -2127,6 +2217,12 @@ function renderListTiles() {
   if (currentList === "google-ranges") {
     $("list-tiles").innerHTML = "";
     renderGoogleRangesTab();
+    renderIcons();
+    return;
+  }
+  if (currentList === "countries") {
+    $("list-tiles").innerHTML = "";
+    renderCountriesTab();
     renderIcons();
     return;
   }
@@ -2171,6 +2267,22 @@ async function removeListItem(index) {
   const lines = $("list-editor").value.split(/\r?\n/);
   lines.splice(index, 1);
   $("list-editor").value = lines.join("\n");
+  await saveList();
+}
+
+async function toggleCountry(code, enabled) {
+  const normalized = normalizeCountryCode(code);
+  const selected = selectedCountriesFromEditor();
+  if (enabled) {
+    selected.add(normalized);
+  } else {
+    selected.delete(normalized);
+  }
+  const next = countryOptions
+    .map(option => option.code)
+    .filter(optionCode => selected.has(optionCode));
+  $("list-editor").value = next.length ? `${next.join("\n")}\n` : "";
+  renderListTiles();
   await saveList();
 }
 
@@ -2287,6 +2399,11 @@ $("list-tiles").addEventListener("click", event => {
   }
 });
 $("list-source-settings").addEventListener("change", event => {
+  const countryCheckbox = event.target.closest("[data-country-code]");
+  if (countryCheckbox && currentList === "countries") {
+    toggleCountry(countryCheckbox.dataset.countryCode, countryCheckbox.checked);
+    return;
+  }
   if (event.target.id === "list-include-google-ranges") {
     saveListSourceSetting("INCLUDE_GOOGLE_RANGES", event.target.checked ? "1" : "0");
   }

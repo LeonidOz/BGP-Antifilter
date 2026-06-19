@@ -5,6 +5,7 @@ from pathlib import Path
 LIST_FILE_SPECS = {
     "urls": ("LISTS_FILE", "/etc/bird/lists.txt"),
     "asns": ("INCLUDE_ASNS_FILE", "/etc/bird/include-asns.txt"),
+    "countries": ("INCLUDE_COUNTRIES_FILE", "/etc/bird/include-countries.txt"),
     "include-domains": ("INCLUDE_DOMAINS_FILE", "/etc/bird/include-domains.txt"),
     "exclude-domains": ("EXCLUDE_DOMAINS_FILE", "/etc/bird/exclude-domains.txt"),
 }

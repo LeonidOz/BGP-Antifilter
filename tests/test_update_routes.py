@@ -8,6 +8,7 @@ import tempfile
 import time
 import unittest
 from pathlib import Path
+from unittest import mock
 
 from bgp_antifilter import update_routes
 
@@ -82,17 +83,46 @@ class SourceRouteCountTests(unittest.TestCase):
         self.assertEqual(count, 3)
 
 
+class CountrySourceTests(unittest.TestCase):
+    def test_read_ipv4_prefixes_from_country_json_extracts_networks(self):
+        networks = update_routes.read_ipv4_prefixes_from_country_json(
+            json.dumps({
+                "data": {
+                    "resources": {
+                        "ipv4": ["192.0.2.0/24", "198.51.100.0/24"],
+                    }
+                }
+            }),
+            "RU",
+        )
+
+        self.assertEqual(networks, [net("192.0.2.0/24"), net("198.51.100.0/24")])
+
+    def test_read_ipv4_prefixes_from_delegated_stats_extracts_networks(self):
+        networks = update_routes.read_ipv4_prefixes_from_delegated_stats(
+            "\n".join([
+                "2|ripencc|20260619|0|0|20260619|+0000",
+                "ripencc|*|ipv4|*|1|summary",
+                "ripencc|UA|ipv4|198.51.100.0|256|20200101|allocated",
+                "arin|UA|ipv4|203.0.113.0|512|20200101|assigned",
+            ]),
+            "UA",
+        )
+
+        self.assertEqual(networks, [net("198.51.100.0/24"), net("203.0.113.0/24"), net("203.0.114.0/24")])
+
+
 class CustomDnsFetchTests(unittest.TestCase):
     def test_fetch_url_uses_custom_dns_for_http_sources(self):
-        response = unittest.mock.Mock()
+        response = mock.Mock()
         response.status = 200
         response.read.return_value = b"192.0.2.0/24\r\n"
 
-        connection = unittest.mock.Mock()
+        connection = mock.Mock()
         connection.getresponse.return_value = response
 
-        with unittest.mock.patch.object(update_routes.dns_resolver, "resolve_ipv4_addresses", return_value=["203.0.113.5"]) as resolve_mock:
-            with unittest.mock.patch("bgp_antifilter.update_routes.http.client.HTTPConnection", return_value=connection) as http_mock:
+        with mock.patch.object(update_routes.dns_resolver, "resolve_ipv4_addresses", return_value=["203.0.113.5"]) as resolve_mock:
+            with mock.patch("bgp_antifilter.update_routes.http.client.HTTPConnection", return_value=connection) as http_mock:
                 text = update_routes.fetch_url(
                     "http://example.com/routes.txt",
                     timeout=4,
@@ -308,7 +338,7 @@ class MainTests(unittest.TestCase):
                 }
             )
 
-            with unittest.mock.patch.object(
+            with mock.patch.object(
                 update_routes.dns_resolver,
                 "resolve_ipv4_addresses",
                 return_value=["203.0.113.10"],
@@ -326,6 +356,175 @@ class MainTests(unittest.TestCase):
                 nameservers=["1.1.1.1", "8.8.8.8"],
                 timeout=1.5,
             )
+
+    def test_country_source_adds_prefixes_from_ripe_stat(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            lists = root / "lists.txt"
+            include_asns = root / "include-asns.txt"
+            include_countries = root / "include-countries.txt"
+            include_domains = root / "include-domains.txt"
+            exclude_domains = root / "exclude-domains.txt"
+            output = root / "routes.conf"
+            status = root / "status.json"
+            metrics = root / "metrics.prom"
+
+            lists.write_text("", encoding="utf-8")
+            include_asns.write_text("", encoding="utf-8")
+            include_countries.write_text("RU\n", encoding="utf-8")
+            include_domains.write_text("", encoding="utf-8")
+            exclude_domains.write_text("", encoding="utf-8")
+
+            old_env = os.environ.copy()
+            os.environ.update(
+                {
+                    "LISTS_FILE": str(lists),
+                    "INCLUDE_ASNS_FILE": str(include_asns),
+                    "INCLUDE_COUNTRIES_FILE": str(include_countries),
+                    "INCLUDE_DOMAINS_FILE": str(include_domains),
+                    "EXCLUDE_DOMAINS_FILE": str(exclude_domains),
+                    "INCLUDE_GOOGLE_RANGES": "0",
+                    "CACHE_DIR": str(root / "cache"),
+                    "CACHE_MAX_AGE": "604800",
+                }
+            )
+
+            country_payload = json.dumps({
+                "data": {
+                    "resources": {
+                        "ipv4": ["192.0.2.0/24", "198.51.100.0/24"],
+                    }
+                }
+            })
+
+            with mock.patch.object(update_routes, "fetch_url", return_value=country_payload) as fetch_mock:
+                try:
+                    exit_code, _ = run_main_quiet(["--output", str(output), "--status", str(status), "--metrics", str(metrics)])
+                finally:
+                    os.environ.clear()
+                    os.environ.update(old_env)
+
+            self.assertEqual(exit_code, 0)
+            routes_text = output.read_text(encoding="utf-8")
+            self.assertIn("route 192.0.2.0/24 blackhole;", routes_text)
+            self.assertIn("route 198.51.100.0/24 blackhole;", routes_text)
+            self.assertIn('"kind": "country"', status.read_text(encoding="utf-8"))
+            self.assertIn('"name": "RU"', status.read_text(encoding="utf-8"))
+            fetch_mock.assert_called_once()
+
+    def test_country_source_uses_cache_when_fetch_fails(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            lists = root / "lists.txt"
+            include_asns = root / "include-asns.txt"
+            include_countries = root / "include-countries.txt"
+            include_domains = root / "include-domains.txt"
+            exclude_domains = root / "exclude-domains.txt"
+            output = root / "routes.conf"
+            status = root / "status.json"
+            metrics = root / "metrics.prom"
+            cache = root / "cache"
+
+            lists.write_text("", encoding="utf-8")
+            include_asns.write_text("", encoding="utf-8")
+            include_countries.write_text("RU\n", encoding="utf-8")
+            include_domains.write_text("", encoding="utf-8")
+            exclude_domains.write_text("", encoding="utf-8")
+            cache.mkdir()
+            update_routes.cache_path(cache, "country", "RU").write_text(
+                json.dumps({
+                    "data": {
+                        "resources": {
+                            "ipv4": ["192.0.2.0/24"],
+                        }
+                    }
+                }),
+                encoding="utf-8",
+            )
+
+            old_env = os.environ.copy()
+            os.environ.update(
+                {
+                    "LISTS_FILE": str(lists),
+                    "INCLUDE_ASNS_FILE": str(include_asns),
+                    "INCLUDE_COUNTRIES_FILE": str(include_countries),
+                    "INCLUDE_DOMAINS_FILE": str(include_domains),
+                    "EXCLUDE_DOMAINS_FILE": str(exclude_domains),
+                    "INCLUDE_GOOGLE_RANGES": "0",
+                    "CACHE_DIR": str(cache),
+                    "CACHE_MAX_AGE": "604800",
+                }
+            )
+
+            with mock.patch.object(update_routes, "fetch_url", side_effect=RuntimeError("offline")):
+                try:
+                    exit_code, _ = run_main_quiet(["--output", str(output), "--status", str(status), "--metrics", str(metrics)])
+                finally:
+                    os.environ.clear()
+                    os.environ.update(old_env)
+
+            self.assertEqual(exit_code, 0)
+            self.assertIn("route 192.0.2.0/24 blackhole;", output.read_text(encoding="utf-8"))
+            self.assertIn('"status": "cache"', status.read_text(encoding="utf-8"))
+
+    def test_country_source_falls_back_to_delegated_stats_when_ripe_stat_fails(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            lists = root / "lists.txt"
+            include_asns = root / "include-asns.txt"
+            include_countries = root / "include-countries.txt"
+            include_domains = root / "include-domains.txt"
+            exclude_domains = root / "exclude-domains.txt"
+            output = root / "routes.conf"
+            status = root / "status.json"
+            metrics = root / "metrics.prom"
+
+            lists.write_text("", encoding="utf-8")
+            include_asns.write_text("", encoding="utf-8")
+            include_countries.write_text("UA\n", encoding="utf-8")
+            include_domains.write_text("", encoding="utf-8")
+            exclude_domains.write_text("", encoding="utf-8")
+
+            old_env = os.environ.copy()
+            os.environ.update(
+                {
+                    "LISTS_FILE": str(lists),
+                    "INCLUDE_ASNS_FILE": str(include_asns),
+                    "INCLUDE_COUNTRIES_FILE": str(include_countries),
+                    "INCLUDE_DOMAINS_FILE": str(include_domains),
+                    "EXCLUDE_DOMAINS_FILE": str(exclude_domains),
+                    "INCLUDE_GOOGLE_RANGES": "0",
+                    "CACHE_DIR": str(root / "cache"),
+                    "CACHE_MAX_AGE": "604800",
+                }
+            )
+
+            delegated_payload = "\n".join([
+                "2|ripencc|20260619|0|0|20260619|+0000",
+                "ripencc|*|ipv4|*|1|summary",
+                "ripencc|UA|ipv4|203.0.113.0|256|20200101|allocated",
+            ])
+
+            def fake_fetch(url, **kwargs):
+                if "country-resource-list" in url:
+                    raise RuntimeError("connection refused")
+                if "delegated-ripencc-latest" in url:
+                    return delegated_payload
+                return "2|apnic|20260619|0|0|20260619|+0000\n"
+
+            with mock.patch.object(update_routes, "fetch_url", side_effect=fake_fetch):
+                try:
+                    exit_code, _ = run_main_quiet(["--output", str(output), "--status", str(status), "--metrics", str(metrics)])
+                finally:
+                    os.environ.clear()
+                    os.environ.update(old_env)
+
+            self.assertEqual(exit_code, 0)
+            self.assertIn("route 203.0.113.0/24 blackhole;", output.read_text(encoding="utf-8"))
+            status_text = status.read_text(encoding="utf-8")
+            self.assertIn('"kind": "country"', status_text)
+            self.assertIn('"name": "UA"', status_text)
+            self.assertIn('"source": "delegated-stats"', status_text)
 
     def test_required_url_without_cache_fails_and_does_not_write_routes(self):
         with tempfile.TemporaryDirectory() as tmp:

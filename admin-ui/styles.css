@@ -1084,6 +1084,52 @@ details pre { margin-top: 12px; max-height: 360px; overflow: auto; }
   justify-content: flex-end;
   margin-top: 12px;
 }
+.country-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
+  gap: 12px;
+  margin-top: 14px;
+}
+.country-card {
+  display: grid;
+  gap: 12px;
+  border: 1px solid var(--line);
+  border-radius: 10px;
+  padding: 12px;
+  background: rgba(20,36,49,.52);
+  min-width: 0;
+}
+.country-card.ok {
+  border-color: rgba(85,217,135,.28);
+}
+.country-card.warn {
+  border-color: rgba(243,189,77,.36);
+}
+.country-card.fail {
+  border-color: rgba(255,107,122,.42);
+}
+.country-card-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+}
+.country-card-copy {
+  display: grid;
+  gap: 4px;
+  min-width: 0;
+}
+.country-card-copy strong {
+  line-height: 1.2;
+}
+.country-card-copy small {
+  color: var(--muted);
+  font-size: 12px;
+  letter-spacing: .08em;
+}
+.country-card-body .list-card-stats {
+  margin-top: 0;
+}
 .raw-list-editor {
   margin-top: 14px;
 }
@@ -1297,6 +1343,9 @@ details pre { margin-top: 12px; max-height: 360px; overflow: auto; }
     scroll-snap-align: start;
   }
   .list-add-form {
+    grid-template-columns: 1fr;
+  }
+  .country-grid {
     grid-template-columns: 1fr;
   }
   .settings-grid {
