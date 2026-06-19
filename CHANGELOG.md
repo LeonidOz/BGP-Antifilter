@@ -1,5 +1,9 @@
 # Changelog
 
+## 0.4.1 - 2026-06-19
+
+- Fixed self-update on hosts that still fall back to legacy `docker-compose`: the updater now strips unsupported `enable_ipv4` from the temporary Compose file while preserving the project name and the remaining network settings.
+
 ## 0.4.0 - 2026-06-19
 
 - Added country-based route sources with a dedicated `include-countries.txt` list, runtime wiring, and admin UI support for enabling countries from a prepared toggle list instead of editing raw text manually.

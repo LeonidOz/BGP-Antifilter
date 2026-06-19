@@ -23,6 +23,7 @@ COMPOSE_SERVICES = tuple(
 UPDATE_LOCK = threading.Lock()
 UPDATE_THREAD = None
 _TOP_LEVEL_NAME_RE = re.compile(r"^name:\s*(['\"]?)([^#\n]+?)\1\s*(?:#.*)?$", re.MULTILINE)
+_LEGACY_UNSUPPORTED_NETWORK_FIELDS_RE = re.compile(r"(?m)^[ \t]+enable_ipv4:\s*.+\n?")
 
 
 def read_json(path, default):
@@ -107,6 +108,11 @@ def strip_top_level_name(text):
     return _TOP_LEVEL_NAME_RE.sub("", text, count=1).lstrip("\ufeff").lstrip("\n")
 
 
+def sanitize_legacy_compose_text(text):
+    stripped = strip_top_level_name(text)
+    return _LEGACY_UNSUPPORTED_NETWORK_FIELDS_RE.sub("", stripped)
+
+
 def docker_compose_v2_command():
     docker = shutil.which("docker")
     if not docker:
@@ -145,7 +151,7 @@ def compose_base_command():
         if project_name and _TOP_LEVEL_NAME_RE.search(compose_text):
             temp_file = tempfile.NamedTemporaryFile("w", encoding="utf-8", suffix=".yml", delete=False)
             with temp_file:
-                temp_file.write(strip_top_level_name(compose_text))
+                temp_file.write(sanitize_legacy_compose_text(compose_text))
             command.extend(["-f", temp_file.name])
             return command, Path(temp_file.name)
         command.extend(["-f", str(COMPOSE_FILE)])

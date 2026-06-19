@@ -77,6 +77,23 @@ class UpdaterServerTests(unittest.TestCase):
         self.assertIn("APP_NAME: demo", stripped)
         self.assertNotIn("name: bgp-antifilter", stripped)
 
+    def test_sanitize_legacy_compose_text_removes_enable_ipv4(self):
+        source = (
+            "name: bgp-antifilter\n\n"
+            "services: {}\n"
+            "networks:\n"
+            "  default:\n"
+            "    enable_ipv4: true\n"
+            "    enable_ipv6: false\n"
+        )
+
+        sanitized = updater_server.sanitize_legacy_compose_text(source)
+
+        self.assertTrue(sanitized.startswith("services: {}\n"))
+        self.assertNotIn("name: bgp-antifilter", sanitized)
+        self.assertNotIn("enable_ipv4", sanitized)
+        self.assertIn("enable_ipv6: false", sanitized)
+
     def test_health_status_requires_docker_socket(self):
         with tempfile.TemporaryDirectory() as tmp:
             workspace = Path(tmp)
@@ -117,7 +134,15 @@ class UpdaterServerTests(unittest.TestCase):
     def test_compose_base_command_falls_back_to_legacy_compose_with_project_name(self):
         with tempfile.TemporaryDirectory() as tmp:
             compose_file = Path(tmp) / "docker-compose.yml"
-            compose_file.write_text("name: bgp-antifilter\nservices: {}\n", encoding="utf-8")
+            compose_file.write_text(
+                "name: bgp-antifilter\n"
+                "services: {}\n"
+                "networks:\n"
+                "  default:\n"
+                "    enable_ipv4: true\n"
+                "    enable_ipv6: false\n",
+                encoding="utf-8",
+            )
 
             completed = subprocess.CompletedProcess(args=["docker", "compose", "version"], returncode=1, stdout="", stderr="missing")
 
@@ -130,7 +155,10 @@ class UpdaterServerTests(unittest.TestCase):
                         self.assertEqual(command[3], "-f")
                         self.assertIsNotNone(cleanup_path)
                         self.assertTrue(cleanup_path.exists())
-                        self.assertEqual(cleanup_path.read_text(encoding="utf-8"), "services: {}\n")
+                        self.assertEqual(
+                            cleanup_path.read_text(encoding="utf-8"),
+                            "services: {}\nnetworks:\n  default:\n    enable_ipv6: false\n",
+                        )
 
                         cleanup_path.unlink(missing_ok=True)
 
