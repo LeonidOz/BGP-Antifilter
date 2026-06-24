@@ -972,6 +972,13 @@ function renderAcceptedCommandResult(action, result) {
     </div>`;
 }
 
+function renderStoredReloadResult(payload) {
+  const result = payload?.reload_result;
+  if (!result || result.active || !result.started_at_unix) return "";
+  if (pendingReloadStartedAtUnix && result.started_at_unix < pendingReloadStartedAtUnix) return "";
+  return renderCommandResult("reload", result);
+}
+
 function renderCompletedReloadOperation(payload) {
   const runtime = payload?.runtime || {};
   const status = payload?.status || {};
@@ -1738,11 +1745,12 @@ async function loadStatus() {
     $("operation-log").innerHTML = renderActiveOperationLog(data);
   } else if (pendingReloadOperation) {
     const completedReload = renderCompletedReloadOperation(data);
-    if (completedReload) {
+    const storedReload = completedReload || renderStoredReloadResult(data);
+    if (storedReload) {
       pendingReloadOperation = false;
       pendingReloadStartedAtUnix = 0;
       $("operation-log-details").open = true;
-      $("operation-log").innerHTML = completedReload;
+      $("operation-log").innerHTML = storedReload;
     }
   }
   if (updateStatusPayload?.runtime?.active) {

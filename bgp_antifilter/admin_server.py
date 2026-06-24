@@ -38,6 +38,7 @@ CONTAINER_LOG_FILE = PATHS["container_log_file"]
 SETTINGS_FILE = PATHS["settings_file"]
 SETTINGS_ENV_FILE = PATHS["settings_env_file"]
 UPDATE_LOCK_DIR = env_path("UPDATE_LOCK_DIR", "/etc/bird/generated/update.lock")
+RELOAD_RESULT_FILE = GENERATED_DIR / "reload-result.json"
 
 LIST_FILES = env_paths(LIST_FILE_SPECS)
 
@@ -278,6 +279,21 @@ def write_text_atomic(path, text):
             file.write(text)
 
 
+def append_text(path, text):
+    path.parent.mkdir(parents=True, exist_ok=True)
+    with path.open("a", encoding="utf-8") as file:
+        file.write(text)
+
+
+def write_reload_result(payload):
+    write_text_atomic(RELOAD_RESULT_FILE, json.dumps(payload, ensure_ascii=False, indent=2) + "\n")
+
+
+def read_reload_result():
+    data = json_load(RELOAD_RESULT_FILE, {})
+    return data if isinstance(data, dict) else {}
+
+
 def backup_file(path):
     if not path.exists():
         return None
@@ -366,7 +382,36 @@ def reconcile_runtime_state(runtime):
 
 
 def apply_reload():
-    run_command(["/reload-routes.sh"], timeout=600)
+    started_at = int(time.time())
+    result = run_command(["/reload-routes.sh"], timeout=600)
+    finished_at = int(time.time())
+    payload = {
+        "active": False,
+        "started_at_unix": started_at,
+        "finished_at_unix": finished_at,
+        **result,
+    }
+    try:
+        write_reload_result(payload)
+    except OSError:
+        pass
+    try:
+        lines = [
+            f"[manual-reload] started={started_at} finished={finished_at} ok={result.get('ok')} returncode={result.get('returncode')}\n",
+        ]
+        if result.get("stdout"):
+            lines.append("[manual-reload][stdout]\n")
+            lines.append(result["stdout"])
+            if not result["stdout"].endswith("\n"):
+                lines.append("\n")
+        if result.get("stderr"):
+            lines.append("[manual-reload][stderr]\n")
+            lines.append(result["stderr"])
+            if not result["stderr"].endswith("\n"):
+                lines.append("\n")
+        append_text(CONTAINER_LOG_FILE, "".join(lines))
+    except OSError:
+        pass
 
 
 def start_reload():
@@ -374,6 +419,17 @@ def start_reload():
     with RELOAD_LOCK:
         if reload_runtime_active() or (RELOAD_THREAD is not None and RELOAD_THREAD.is_alive()):
             raise RuntimeError("reload already running")
+        write_reload_result({
+            "active": True,
+            "accepted": True,
+            "ok": None,
+            "returncode": None,
+            "stdout": "",
+            "stderr": "",
+            "duration_seconds": 0,
+            "started_at_unix": int(time.time()),
+            "finished_at_unix": None,
+        })
         RELOAD_THREAD = threading.Thread(target=apply_reload, daemon=True)
         RELOAD_THREAD.start()
     return {
@@ -840,6 +896,7 @@ class AdminHandler(BaseHTTPRequestHandler):
         if path == "/api/status":
             status = json_load(STATUS_FILE, {})
             runtime = visible_runtime_state(json_load(RUNTIME_FILE, {}))
+            reload_result = read_reload_result()
             metrics = parse_metrics(text_load(METRICS_FILE))
             bird = run_command(["birdc", "show", "status"], timeout=5)
             bgp_protocol = effective_settings().get("BGP_PROTOCOL", "mikrotik")
@@ -852,6 +909,7 @@ class AdminHandler(BaseHTTPRequestHandler):
                 "routes_file_count": route_count_from_file(),
                 "bird": bird,
                 "bgp": bgp,
+                "reload_result": reload_result,
             })
             return
 
