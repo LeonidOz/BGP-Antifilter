@@ -134,6 +134,13 @@ def read_list(path):
     return result
 
 
+def parse_ipv4_literal(value):
+    try:
+        return str(ipaddress.IPv4Address(str(value).strip()))
+    except ipaddress.AddressValueError:
+        return None
+
+
 def cache_path(cache_dir, namespace, value, suffix=".cache"):
     digest = hashlib.sha256(value.encode("utf-8")).hexdigest()[:16]
     return cache_dir / f"{namespace}-{digest}{suffix}"
@@ -305,11 +312,15 @@ def resolve_domain(kind, domain, cache_file, now, max_age, dns_nameservers=None,
     }
 
     try:
-        addresses = dns_resolver.resolve_ipv4_addresses(
-            domain,
-            nameservers=dns_nameservers,
-            timeout=dns_timeout,
-        )
+        literal_ipv4 = parse_ipv4_literal(domain)
+        if literal_ipv4 is not None:
+            addresses = [literal_ipv4]
+        else:
+            addresses = dns_resolver.resolve_ipv4_addresses(
+                domain,
+                nameservers=dns_nameservers,
+                timeout=dns_timeout,
+            )
         if not addresses:
             raise RuntimeError("no IPv4 addresses returned")
 

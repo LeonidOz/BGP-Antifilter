@@ -357,6 +357,94 @@ class MainTests(unittest.TestCase):
                 timeout=1.5,
             )
 
+    def test_include_domains_allows_literal_ipv4_without_dns_lookup(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            source = root / "source.txt"
+            lists = root / "lists.txt"
+            include_asns = root / "include-asns.txt"
+            include_domains = root / "include-domains.txt"
+            exclude_domains = root / "exclude-domains.txt"
+            output = root / "routes.conf"
+            status = root / "status.json"
+            metrics = root / "metrics.prom"
+
+            source.write_text("192.0.2.0/24\n", encoding="utf-8")
+            lists.write_text(f"{source.as_uri()}\n", encoding="utf-8")
+            include_asns.write_text("", encoding="utf-8")
+            include_domains.write_text("203.0.113.10\n", encoding="utf-8")
+            exclude_domains.write_text("", encoding="utf-8")
+
+            old_env = os.environ.copy()
+            os.environ.update(
+                {
+                    "LISTS_FILE": str(lists),
+                    "INCLUDE_ASNS_FILE": str(include_asns),
+                    "INCLUDE_DOMAINS_FILE": str(include_domains),
+                    "EXCLUDE_DOMAINS_FILE": str(exclude_domains),
+                    "INCLUDE_GOOGLE_RANGES": "0",
+                    "CACHE_DIR": str(root / "cache"),
+                    "CACHE_MAX_AGE": "604800",
+                }
+            )
+
+            with mock.patch.object(update_routes.dns_resolver, "resolve_ipv4_addresses") as resolve_mock:
+                try:
+                    exit_code, _ = run_main_quiet(["--output", str(output), "--status", str(status), "--metrics", str(metrics)])
+                finally:
+                    os.environ.clear()
+                    os.environ.update(old_env)
+
+            self.assertEqual(exit_code, 0)
+            routes_text = output.read_text(encoding="utf-8")
+            self.assertIn("route 192.0.2.0/24 blackhole;", routes_text)
+            self.assertIn("route 203.0.113.10/32 blackhole;", routes_text)
+            resolve_mock.assert_not_called()
+
+    def test_exclude_domains_allows_literal_ipv4_without_dns_lookup(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            source = root / "source.txt"
+            lists = root / "lists.txt"
+            include_asns = root / "include-asns.txt"
+            include_domains = root / "include-domains.txt"
+            exclude_domains = root / "exclude-domains.txt"
+            output = root / "routes.conf"
+            status = root / "status.json"
+            metrics = root / "metrics.prom"
+
+            source.write_text("192.0.2.0/24\n203.0.113.10/32\n", encoding="utf-8")
+            lists.write_text(f"{source.as_uri()}\n", encoding="utf-8")
+            include_asns.write_text("", encoding="utf-8")
+            include_domains.write_text("", encoding="utf-8")
+            exclude_domains.write_text("203.0.113.10\n", encoding="utf-8")
+
+            old_env = os.environ.copy()
+            os.environ.update(
+                {
+                    "LISTS_FILE": str(lists),
+                    "INCLUDE_ASNS_FILE": str(include_asns),
+                    "INCLUDE_DOMAINS_FILE": str(include_domains),
+                    "EXCLUDE_DOMAINS_FILE": str(exclude_domains),
+                    "INCLUDE_GOOGLE_RANGES": "0",
+                    "CACHE_DIR": str(root / "cache"),
+                    "CACHE_MAX_AGE": "604800",
+                }
+            )
+
+            with mock.patch.object(update_routes.dns_resolver, "resolve_ipv4_addresses") as resolve_mock:
+                try:
+                    exit_code, _ = run_main_quiet(["--output", str(output), "--status", str(status), "--metrics", str(metrics)])
+                finally:
+                    os.environ.clear()
+                    os.environ.update(old_env)
+
+            self.assertEqual(exit_code, 0)
+            routes_text = output.read_text(encoding="utf-8")
+            self.assertIn("route 192.0.2.0/24 blackhole;", routes_text)
+            self.assertNotIn("route 203.0.113.10/32 blackhole;", routes_text)
+            resolve_mock.assert_not_called()
+
     def test_country_source_adds_prefixes_from_ripe_stat(self):
         with tempfile.TemporaryDirectory() as tmp:
             root = Path(tmp)
