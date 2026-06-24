@@ -1581,6 +1581,49 @@ function stageState(level, title, subtitle, rows, raw) {
   return {level, title, subtitle, rows, raw};
 }
 
+function captureContainerState(container) {
+  if (!container) return {detailsOpen: [], scrollables: []};
+  const scrollSelectors = [
+    ".source-detail-list",
+    ".timeline",
+    ".data-table",
+    ".route-lines",
+    ".route-table",
+    ".text-lines",
+  ];
+  return {
+    detailsOpen: Array.from(container.querySelectorAll("details")).map(item => item.open),
+    scrollables: scrollSelectors.flatMap(selector =>
+      Array.from(container.querySelectorAll(selector)).map((item, index) => ({
+        selector,
+        index,
+        top: item.scrollTop,
+        left: item.scrollLeft,
+      }))
+    ),
+  };
+}
+
+function restoreContainerState(container, state) {
+  if (!container || !state) return;
+  Array.from(container.querySelectorAll("details")).forEach((item, index) => {
+    if (index < state.detailsOpen.length) item.open = state.detailsOpen[index];
+  });
+  state.scrollables.forEach(({selector, index, top, left}) => {
+    const items = container.querySelectorAll(selector);
+    const target = items[index];
+    if (!target) return;
+    target.scrollTop = top;
+    target.scrollLeft = left;
+  });
+}
+
+function replaceHtmlPreservingState(container, html) {
+  const state = captureContainerState(container);
+  container.innerHTML = html;
+  restoreContainerState(container, state);
+}
+
 function rowLevel(key) {
   const normalized = String(key).toLowerCase();
   if (["fresh", "свежие", "ok"].includes(normalized)) return "ok";
@@ -1674,7 +1717,7 @@ function renderPipeline(payload) {
 }
 
 function renderStageDetails(stage) {
-  const detailsWasOpen = $("stage-details").querySelector("details")?.open || false;
+  const stageDetails = $("stage-details");
   $("stage-title").textContent = stage.title;
   $("stage-pill").textContent = stage.level === "ok" ? t("statusOk") : stage.level === "warn" ? t("statusWarn") : t("statusFail");
   $("stage-pill").className = `status-pill ${stage.level}`;
@@ -1685,16 +1728,14 @@ function renderStageDetails(stage) {
     : Array.isArray(stage.raw)
     ? `<details class="source-details-collapsed"><summary>${t("sourceDetails")}</summary>${renderSourceDetails(stage.raw)}</details>`
     : `<details><summary>${t("rawDetails")}</summary>${renderDataTree(stage.raw)}</details>`;
-  $("stage-details").innerHTML = `
+  replaceHtmlPreservingState(stageDetails, `
     <p>${escapeHtml(stage.subtitle)}</p>
     ${stage.rows.length ? `<div class="${rowsClass}">${stage.rows.map(([key, value]) => `
       <div class="kv ${rowLevel(key)}"><span>${escapeHtml(key)}</span><strong>${escapeHtml(value)}</strong></div>
     `).join("")}</div>` : ""}
     ${renderStageOutput(stage)}
     ${details}
-  `;
-  const rawDetails = $("stage-details").querySelector("details");
-  if (rawDetails) rawDetails.open = detailsWasOpen;
+  `);
 }
 
 async function loadStatus() {
@@ -1742,7 +1783,7 @@ async function loadStatus() {
   renderPipeline(data);
   if (runtimeState) {
     $("operation-log-details").open = true;
-    $("operation-log").innerHTML = renderActiveOperationLog(data);
+    replaceHtmlPreservingState($("operation-log"), renderActiveOperationLog(data));
   } else if (pendingReloadOperation) {
     const completedReload = renderCompletedReloadOperation(data);
     const storedReload = completedReload || renderStoredReloadResult(data);
@@ -1750,7 +1791,7 @@ async function loadStatus() {
       pendingReloadOperation = false;
       pendingReloadStartedAtUnix = 0;
       $("operation-log-details").open = true;
-      $("operation-log").innerHTML = storedReload;
+      replaceHtmlPreservingState($("operation-log"), storedReload);
     }
   }
   if (updateStatusPayload?.runtime?.active) {
