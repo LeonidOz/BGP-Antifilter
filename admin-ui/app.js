@@ -154,6 +154,8 @@ let checkIpPending = false;
 let loginNetworkLabels = [];
 let updateStatusPayload = null;
 let updateStatusTimer = null;
+let pendingReloadOperation = false;
+let pendingReloadStartedAtUnix = 0;
 const STATUS_POLL_INTERVAL_MS = 2000;
 const UPDATE_STATUS_POLL_INTERVAL_MS = 15 * 60 * 1000;
 const countryOptions = [
@@ -970,6 +972,42 @@ function renderAcceptedCommandResult(action, result) {
     </div>`;
 }
 
+function renderCompletedReloadOperation(payload) {
+  const runtime = payload?.runtime || {};
+  const status = payload?.status || {};
+  const finishedAt = Number(runtime.last_update_finished_at_unix || 0) || 0;
+  const updatedAt = Number(status.updated_at_unix || 0) || 0;
+  const completedAt = Math.max(finishedAt, updatedAt);
+  if (!completedAt || completedAt < pendingReloadStartedAtUnix) return "";
+
+  const success = runtime.last_update_success === true && !runtime.degraded && status.success !== false;
+  const degraded = runtime.degraded || status.degraded;
+  const pillClass = success ? "ok" : degraded ? "warn" : "fail";
+  const title = success ? t("commandOk") : t("commandFailed");
+  const runReason = runtime.last_update_reason || status.run_reason || "manual";
+  const runMessage = status.run_message || runtime.last_update_message || "";
+  const degradedReason = status.degraded_reason || runtime.degraded_reason || "";
+  const sources = Array.isArray(status.sources) ? status.sources : [];
+  const errors = Array.isArray(status.errors) ? status.errors : [];
+
+  return `
+    <div class="result-card">
+      <div class="result-head">
+        <span class="status-pill ${pillClass}">${escapeHtml(title)}</span>
+        <span class="chip">${escapeHtml(runReason)}</span>
+      </div>
+      <div class="kv-grid">
+        <div class="kv"><span>${t("lastUpdateFinished")}</span><strong>${escapeHtml(formatDateTime(finishedAt || updatedAt) || t("unknownTime"))}</strong></div>
+        <div class="kv"><span>${t("duration")}</span><strong>${escapeHtml(formatSecondsShort(status.duration_seconds))}</strong></div>
+        <div class="kv"><span>${t("sources")}</span><strong>${escapeHtml(`${sources.length}`)}</strong></div>
+      </div>
+      ${runMessage ? `<div class="text-lines"><div class="text-line">${escapeHtml(runMessage)}</div></div>` : ""}
+      ${degradedReason ? `<div class="error-inline">${escapeHtml(degradedReason)}</div>` : ""}
+      ${sources.length ? `<details open><summary>${t("sourceDetails")}</summary>${renderSourceDetails(sources)}</details>` : ""}
+      ${errors.length ? `<details open><summary>${t("errors")}</summary>${renderDataTree(errors)}</details>` : ""}
+    </div>`;
+}
+
 function renderActiveOperationLog(payload) {
   const runtime = payload?.runtime || {};
   const status = payload?.status || {};
@@ -1698,6 +1736,14 @@ async function loadStatus() {
   if (runtimeState) {
     $("operation-log-details").open = true;
     $("operation-log").innerHTML = renderActiveOperationLog(data);
+  } else if (pendingReloadOperation) {
+    const completedReload = renderCompletedReloadOperation(data);
+    if (completedReload) {
+      pendingReloadOperation = false;
+      pendingReloadStartedAtUnix = 0;
+      $("operation-log-details").open = true;
+      $("operation-log").innerHTML = completedReload;
+    }
   }
   if (updateStatusPayload?.runtime?.active) {
     loadUpdateStatus().catch(() => {});
@@ -1745,6 +1791,8 @@ async function runAction(action) {
     const result = await api(`/api/actions/${action}`, {method: "POST", body: "{}"});
     $("operation-log-details").open = true;
     if (action === "reload" && result.accepted) {
+      pendingReloadOperation = true;
+      pendingReloadStartedAtUnix = Math.floor(Date.now() / 1000);
       $("operation-log").innerHTML = renderAcceptedCommandResult(action, result);
       await loadStatus();
       return;
