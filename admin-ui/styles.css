@@ -1058,13 +1058,13 @@ details pre { margin-top: 12px; max-height: 360px; overflow: auto; }
 }
 .list-tiles {
   display: grid;
-  grid-template-columns: 1fr;
-  gap: 10px;
+  grid-template-columns: repeat(auto-fit, minmax(420px, 1fr));
+  gap: 8px;
 }
 .list-card {
   border: 1px solid var(--line);
   border-radius: 8px;
-  padding: 12px;
+  padding: 10px 12px;
   background: rgba(20,36,49,.52);
   min-width: 0;
 }
@@ -1079,27 +1079,37 @@ details pre { margin-top: 12px; max-height: 360px; overflow: auto; }
 }
 .list-card-head {
   display: grid;
-  grid-template-columns: minmax(0, 1fr) 36px;
-  gap: 10px;
+  grid-template-columns: minmax(0, 1fr) 32px;
+  gap: 8px;
   align-items: start;
 }
 .list-card-head strong {
   overflow-wrap: anywhere;
   word-break: break-word;
-  line-height: 1.3;
+  line-height: 1.25;
+  font-size: 12px;
 }
 .list-remove-btn {
-  width: 36px;
-  height: 36px;
+  width: 32px;
+  height: 32px;
 }
 .list-card-stats {
   display: flex;
   flex-wrap: wrap;
-  gap: 8px;
+  gap: 6px;
   align-items: center;
-  margin-top: 10px;
+  margin-top: 8px;
   color: var(--muted);
-  font-size: 12px;
+  font-size: 11px;
+}
+.list-card-stats .chip {
+  padding: 3px 8px;
+  font-size: 11px;
+}
+.list-card .error-inline {
+  margin-top: 4px;
+  padding: 5px 7px;
+  font-size: 11px;
 }
 .list-comments {
   grid-column: 1 / -1;
@@ -1375,6 +1385,9 @@ details pre { margin-top: 12px; max-height: 360px; overflow: auto; }
     grid-template-columns: 1fr;
   }
   .settings-grid {
+    grid-template-columns: 1fr;
+  }
+  .list-tiles {
     grid-template-columns: 1fr;
   }
   .login-panel {
