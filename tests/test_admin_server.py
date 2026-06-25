@@ -251,6 +251,19 @@ class AdminServerHelperTests(unittest.TestCase):
         self.assertTrue(payload["accepted"])
         thread_cls.return_value.start.assert_called_once_with()
 
+    def test_start_reload_ignores_reload_result_write_errors(self):
+        thread = mock.Mock()
+        thread.is_alive.return_value = False
+
+        with mock.patch.object(admin_server, "reload_runtime_active", return_value=False):
+            with mock.patch.object(admin_server, "RELOAD_THREAD", thread):
+                with mock.patch.object(admin_server, "write_reload_result", side_effect=OSError("permission denied")):
+                    with mock.patch.object(admin_server.threading, "Thread") as thread_cls:
+                        payload = admin_server.start_reload()
+
+        self.assertTrue(payload["accepted"])
+        thread_cls.return_value.start.assert_called_once_with()
+
     def test_start_reload_rejects_when_generation_is_already_active(self):
         with mock.patch.object(admin_server, "reload_runtime_active", return_value=True):
             with self.assertRaisesRegex(RuntimeError, "reload already running"):

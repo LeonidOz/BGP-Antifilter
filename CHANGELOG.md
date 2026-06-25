@@ -1,5 +1,9 @@
 # Changelog
 
+## 0.4.3 - 2026-06-25
+
+- Fixed manual reload startup in environments without writable `/etc/bird/generated` during tests: the admin server now treats `reload-result.json` persistence as best-effort, so background reload threads still start and CI passes on GitHub Actions.
+
 ## 0.4.2 - 2026-06-25
 
 - Allowed literal IPv4 entries in `include-domains.txt` and `exclude-domains.txt`, so fixed addresses now work in the same lists as hostnames without going through DNS resolution.

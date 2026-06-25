@@ -419,17 +419,20 @@ def start_reload():
     with RELOAD_LOCK:
         if reload_runtime_active() or (RELOAD_THREAD is not None and RELOAD_THREAD.is_alive()):
             raise RuntimeError("reload already running")
-        write_reload_result({
-            "active": True,
-            "accepted": True,
-            "ok": None,
-            "returncode": None,
-            "stdout": "",
-            "stderr": "",
-            "duration_seconds": 0,
-            "started_at_unix": int(time.time()),
-            "finished_at_unix": None,
-        })
+        try:
+            write_reload_result({
+                "active": True,
+                "accepted": True,
+                "ok": None,
+                "returncode": None,
+                "stdout": "",
+                "stderr": "",
+                "duration_seconds": 0,
+                "started_at_unix": int(time.time()),
+                "finished_at_unix": None,
+            })
+        except OSError:
+            pass
         RELOAD_THREAD = threading.Thread(target=apply_reload, daemon=True)
         RELOAD_THREAD.start()
     return {
