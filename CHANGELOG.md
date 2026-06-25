@@ -1,5 +1,11 @@
 # Changelog
 
+## 0.4.2 - 2026-06-25
+
+- Allowed literal IPv4 entries in `include-domains.txt` and `exclude-domains.txt`, so fixed addresses now work in the same lists as hostnames without going through DNS resolution.
+- Improved the admin UI around route reload visibility: completed reloads now stay visible after polling updates, and source/detail panels preserve their open state and scroll position instead of jumping back to the top every 2 seconds.
+- Compacted source and list cards in the admin UI and switched list entries to an adaptive two-column layout on wider screens so large domain/source sets fit on screen more cleanly.
+
 ## 0.4.1 - 2026-06-19
 
 - Fixed self-update on hosts that still fall back to legacy `docker-compose`: the updater now strips unsupported `enable_ipv4` from the temporary Compose file while preserving the project name and the remaining network settings.

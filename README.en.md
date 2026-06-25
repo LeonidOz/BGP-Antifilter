@@ -87,7 +87,7 @@ If you are upgrading from the previous repository layout, move your custom list 
 Main settings:
 
 ```dotenv
-BGP_ANTIFILTER_VERSION=0.4.1
+BGP_ANTIFILTER_VERSION=0.4.2
 MY_AS=64500
 MT_AS=65455
 MT_IP=192.168.55.1
@@ -109,7 +109,7 @@ ADMIN_PORT=8080
 ADMIN_PASSWORD=
 ```
 
-- `BGP_ANTIFILTER_VERSION` - local Docker image tag; defaults to `0.4.1`.
+- `BGP_ANTIFILTER_VERSION` - local Docker image tag; defaults to `0.4.2`.
 - `MY_AS` - AS number used by the BIRD container.
 - `MT_AS` - MikroTik AS number.
 - `MT_IP` - MikroTik IP address.
