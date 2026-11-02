@@ -1,5 +1,13 @@
 # Changelog
 
+## Unreleased
+
+- Download named domain lists from URLs and resolve them during route updates.
+- Add source editing and per-list diagnostics to the admin UI and check-IP tool.
+- Add a Portainer stack with persistent data and HTTP proxy settings.
+- Serve admin icons locally and show BIRD output in Docker logs.
+- Suppress successful admin polling logs while keeping errors and writes.
+
 ## 0.4.4 - 2026-07-07
 
 - Added a public `/status.json` endpoint without authentication that exposes only compact operational counters: generated route count, time since the last generation, generation duration, and admin-server uptime.

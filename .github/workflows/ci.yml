@@ -23,7 +23,9 @@ jobs:
         run: python -m unittest discover -s tests
 
       - name: Validate canonical Compose file
-        run: docker compose --env-file .env.example config
+        run: |
+          docker compose --env-file .env.example config
+          BGP_ANTIFILTER_IMAGE=bgp-antifilter-bird:smoke ADMIN_PASSWORD=ci-test docker compose -f deploy/portainer-stack.yml config --quiet
 
       - name: Build canonical Docker image
         run: docker compose --env-file .env.example build

@@ -54,13 +54,16 @@ def describe_source(source):
 
 def source_matches(address, source):
     kind = source.get("kind")
-    cache_file = source.get("cache_file")
+    if kind == "domain-list-url":
+        cache_file = source.get("resolved_cache_file")
+    else:
+        cache_file = source.get("cache_file")
 
     if not cache_file or source.get("status") in {"failed", "skipped", "disabled"}:
         return []
 
     path = Path(cache_file)
-    extract = kind in {"url", "asn", "google"}
+    extract = kind in {"url", "asn", "google", "domain-list-url"}
     networks = read_networks(path, extract=extract)
     return matching_networks(address, networks)
 

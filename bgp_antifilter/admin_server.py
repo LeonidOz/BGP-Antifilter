@@ -808,6 +808,11 @@ def public_compare(left, right):
 class AdminHandler(BaseHTTPRequestHandler):
     server_version = "BGPAntifilterAdmin/0.1"
 
+    def log_request(self, code="-", size="-"):
+        if self.command in {"GET", "HEAD"} and str(code).isdigit() and 200 <= int(code) < 400:
+            return
+        super().log_request(code, size)
+
     def log_message(self, fmt, *args):
         print(f"admin {self.address_string()} - {fmt % args}", flush=True)
 

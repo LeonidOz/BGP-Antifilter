@@ -178,6 +178,8 @@ def restart_services_for_update():
 
 
 def health_status():
+    if os.environ.get("PORTAINER_MANAGED", "0") == "1":
+        return False, "Image updates are managed by Portainer; update the stack image there"
     if not WORKSPACE_DIR.exists():
         return False, f"workspace directory not found: {WORKSPACE_DIR}"
     if not COMPOSE_FILE.exists():

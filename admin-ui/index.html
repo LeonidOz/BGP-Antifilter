@@ -167,8 +167,10 @@
               <h2 id="list-title">-</h2>
             </div>
             <form id="add-list-form" class="inline-form list-add-form">
+              <input id="add-list-name-input" class="hidden" autocomplete="off">
               <input id="add-list-input" autocomplete="off">
-              <button type="submit"><i data-lucide="plus"></i><span data-i18n="addItem">Add</span></button>
+              <button type="submit" id="add-list-submit-btn"><i id="add-list-submit-icon" data-lucide="plus"></i><span id="add-list-submit-text" data-i18n="addItem">Add</span></button>
+              <button type="button" id="cancel-list-edit-btn" class="hidden" title="Cancel" aria-label="Cancel"><i data-lucide="x"></i></button>
             </form>
             <div id="list-tiles" class="list-tiles"></div>
             <div class="list-actions">
@@ -276,7 +278,7 @@
       </section>
     </main>
   </div>
-  <script src="https://unpkg.com/lucide@latest/dist/umd/lucide.min.js"></script>
-  <script src="/app.js"></script>
+  <script defer src="/assets/vendor/lucide.min.js"></script>
+  <script defer src="/app.js"></script>
 </body>
 </html>

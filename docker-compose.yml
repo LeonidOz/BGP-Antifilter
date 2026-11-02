@@ -23,6 +23,7 @@ services:
       ROUTER_ID: "${ROUTER_ID:-192.168.55.5}"
       BGP_COMMUNITY: "${BGP_COMMUNITY:-65432,500}"
       LISTS_FILE: /etc/bird/generated/config/lists.txt
+      DOMAIN_LIST_URLS_FILE: /etc/bird/generated/config/domain-list-urls.txt
       INCLUDE_ASNS_FILE: /etc/bird/generated/config/include-asns.txt
       INCLUDE_COUNTRIES_FILE: /etc/bird/generated/config/include-countries.txt
       INCLUDE_DOMAINS_FILE: /etc/bird/generated/config/include-domains.txt
@@ -70,6 +71,7 @@ services:
       ROUTER_ID: "${ROUTER_ID:-192.168.55.5}"
       BGP_COMMUNITY: "${BGP_COMMUNITY:-65432,500}"
       LISTS_FILE: /etc/bird/generated/config/lists.txt
+      DOMAIN_LIST_URLS_FILE: /etc/bird/generated/config/domain-list-urls.txt
       INCLUDE_ASNS_FILE: /etc/bird/generated/config/include-asns.txt
       INCLUDE_COUNTRIES_FILE: /etc/bird/generated/config/include-countries.txt
       INCLUDE_DOMAINS_FILE: /etc/bird/generated/config/include-domains.txt

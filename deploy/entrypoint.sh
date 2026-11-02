@@ -2,6 +2,7 @@
 set -eu
 
 LISTS_FILE="${LISTS_FILE:-/etc/bird/lists.txt}"
+DOMAIN_LIST_URLS_FILE="${DOMAIN_LIST_URLS_FILE:-/etc/bird/domain-list-urls.txt}"
 INCLUDE_ASNS_FILE="${INCLUDE_ASNS_FILE:-/etc/bird/include-asns.txt}"
 INCLUDE_COUNTRIES_FILE="${INCLUDE_COUNTRIES_FILE:-/etc/bird/include-countries.txt}"
 INCLUDE_DOMAINS_FILE="${INCLUDE_DOMAINS_FILE:-/etc/bird/include-domains.txt}"
@@ -283,6 +284,7 @@ mkdir -p /etc/bird/generated
 mkdir -p "$CACHE_DIR"
 mkdir -p /run/bird
 ensure_runtime_config_file "$LISTS_FILE" "lists.txt"
+ensure_runtime_config_file "$DOMAIN_LIST_URLS_FILE" "domain-list-urls.txt"
 ensure_runtime_config_file "$INCLUDE_ASNS_FILE" "include-asns.txt"
 ensure_runtime_config_file "$INCLUDE_COUNTRIES_FILE" "include-countries.txt"
 ensure_runtime_config_file "$INCLUDE_DOMAINS_FILE" "include-domains.txt"
@@ -290,10 +292,15 @@ ensure_runtime_config_file "$EXCLUDE_DOMAINS_FILE" "exclude-domains.txt"
 touch "$ROUTES"
 touch "$LAST_GOOD_ROUTES"
 touch "$CONTAINER_LOG_FILE"
-exec >>"$CONTAINER_LOG_FILE" 2>&1
+log_dir="$(mktemp -d)"
+mkfifo "$log_dir/output"
+tee -a "$CONTAINER_LOG_FILE" <"$log_dir/output" &
+exec >"$log_dir/output" 2>&1
+rm "$log_dir/output"
+rmdir "$log_dir"
 echo "container log started at $(date -u '+%Y-%m-%dT%H:%M:%SZ')"
 
-export LISTS_FILE INCLUDE_ASNS_FILE INCLUDE_COUNTRIES_FILE INCLUDE_DOMAINS_FILE EXCLUDE_DOMAINS_FILE
+export LISTS_FILE DOMAIN_LIST_URLS_FILE INCLUDE_ASNS_FILE INCLUDE_COUNTRIES_FILE INCLUDE_DOMAINS_FILE EXCLUDE_DOMAINS_FILE
 export INCLUDE_GOOGLE_RANGES CACHE_DIR CACHE_MAX_AGE STATUS_FILE METRICS_FILE RUNTIME_FILE SETTINGS_ENV_FILE
 export ROUTES_FILE="$ROUTES"
 export LAST_GOOD_ROUTES_FILE="$LAST_GOOD_ROUTES"

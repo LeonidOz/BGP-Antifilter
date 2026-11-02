@@ -1,3 +1,4 @@
+import os
 import subprocess
 import tempfile
 import unittest
@@ -8,6 +9,12 @@ from bgp_antifilter import updater_server
 
 
 class UpdaterServerTests(unittest.TestCase):
+    def test_portainer_keeps_image_updates_in_portainer(self):
+        with mock.patch.dict(os.environ, {"PORTAINER_MANAGED": "1"}):
+            enabled, reason = updater_server.health_status()
+        self.assertFalse(enabled)
+        self.assertIn("Portainer", reason)
+
     def test_validate_version_accepts_plain_and_v_prefixed_values(self):
         self.assertEqual(updater_server.validate_version("0.2.6"), "0.2.6")
         self.assertEqual(updater_server.validate_version("v0.2.7"), "0.2.7")
@@ -249,7 +256,8 @@ class UpdaterServerTests(unittest.TestCase):
         self.assertEqual(payload["error"], "")
         self.assertEqual(payload["rollback"], {})
 
-    def test_apply_update_rolls_back_to_version_from_env_file(self):
+    @mock.patch.object(updater_server, "uses_legacy_docker_compose", return_value=False)
+    def test_apply_update_rolls_back_to_version_from_env_file(self, _legacy):
         with tempfile.TemporaryDirectory() as tmp:
             env_file = Path(tmp) / ".env"
             version_file = Path(tmp) / "VERSION"

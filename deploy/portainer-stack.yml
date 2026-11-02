@@ -1,0 +1,83 @@
+name: bgp-antifilter
+
+x-service: &service
+  image: "${BGP_ANTIFILTER_IMAGE:?Set BGP_ANTIFILTER_IMAGE to the image to deploy}"
+  network_mode: host
+  restart: unless-stopped
+  cap_drop: [NET_ADMIN]
+  logging:
+    driver: json-file
+    options:
+      max-size: "10m"
+      max-file: "3"
+
+x-environment: &environment
+  MY_AS: "${MY_AS:-64500}"
+  MT_AS: "${MT_AS:-65455}"
+  MT_IP: "${MT_IP:-192.168.55.1}"
+  BIRD_IP: "${BIRD_IP:-192.168.55.5}"
+  ROUTER_ID: "${ROUTER_ID:-192.168.55.5}"
+  BGP_COMMUNITY: "${BGP_COMMUNITY:-65432,500}"
+  BGP_PROTOCOL: "${BGP_PROTOCOL:-mikrotik}"
+  HEALTHCHECK_REQUIRE_BGP: "${HEALTHCHECK_REQUIRE_BGP:-1}"
+  HEALTHCHECK_FAIL_ON_DEGRADED: "${HEALTHCHECK_FAIL_ON_DEGRADED:-0}"
+  LISTS_FILE: /etc/bird/generated/config/lists.txt
+  DOMAIN_LIST_URLS_FILE: /etc/bird/generated/config/domain-list-urls.txt
+  INCLUDE_ASNS_FILE: /etc/bird/generated/config/include-asns.txt
+  INCLUDE_COUNTRIES_FILE: /etc/bird/generated/config/include-countries.txt
+  INCLUDE_DOMAINS_FILE: /etc/bird/generated/config/include-domains.txt
+  EXCLUDE_DOMAINS_FILE: /etc/bird/generated/config/exclude-domains.txt
+  INCLUDE_GOOGLE_RANGES: "${INCLUDE_GOOGLE_RANGES:-1}"
+  REQUIRE_ALL_URL_SOURCES: "${REQUIRE_ALL_URL_SOURCES:-0}"
+  UPDATE_INTERVAL: "${UPDATE_INTERVAL:-1800}"
+  CACHE_MAX_AGE: "${CACHE_MAX_AGE:-604800}"
+  MIN_PREFIX_LENGTH: "${MIN_PREFIX_LENGTH:-8}"
+  ALLOW_BROAD_ROUTES: "${ALLOW_BROAD_ROUTES:-0}"
+  UPDATE_LOCK_DIR: /etc/bird/generated/update.lock
+  SETTINGS_FILE: /etc/bird/generated/settings.json
+  SETTINGS_ENV_FILE: /etc/bird/generated/settings.env
+  CONTAINER_LOG_FILE: /etc/bird/generated/container.log
+  RUNTIME_FILE: /etc/bird/generated/runtime.json
+  UPDATE_RUNTIME_FILE: /etc/bird/generated/update-runtime.json
+  ADMIN_PORT: "${ADMIN_PORT:-8080}"
+  PORTAINER_MANAGED: "1"
+  http_proxy: "${HTTP_PROXY:-}"
+  https_proxy: "${HTTPS_PROXY:-}"
+  HTTP_PROXY: "${HTTP_PROXY:-}"
+  HTTPS_PROXY: "${HTTPS_PROXY:-}"
+  no_proxy: "${NO_PROXY:-localhost,127.0.0.1,::1}"
+  NO_PROXY: "${NO_PROXY:-localhost,127.0.0.1,::1}"
+
+services:
+  bird:
+    <<: *service
+    environment:
+      <<: *environment
+      ADMIN_ENABLED: "0"
+    volumes:
+      - generated:/etc/bird/generated
+      - bird-run:/run/bird
+
+  admin:
+    <<: *service
+    entrypoint: ["/usr/bin/tini", "--", "/admin-server.py"]
+    environment:
+      <<: *environment
+      ADMIN_ENABLED: "1"
+      ADMIN_PASSWORD: "${ADMIN_PASSWORD:?Set ADMIN_PASSWORD in the stack environment}"
+    volumes:
+      - generated:/etc/bird/generated
+      - bird-run:/run/bird
+    depends_on: [bird]
+    healthcheck:
+      test: ["CMD-SHELL", "curl -fsS http://127.0.0.1:$${ADMIN_PORT}/api/session >/dev/null"]
+      interval: 30s
+      timeout: 5s
+      start_period: 10s
+      retries: 3
+
+volumes:
+  generated:
+    name: "${BGP_DATA_VOLUME:-bgp-antifilter-data}"
+    external: ${BGP_DATA_EXTERNAL:-false}
+  bird-run:

@@ -20,7 +20,7 @@ const dict = {
     sourceDetails: "Source details", downloaded: "Downloaded", resolvedRoutes: "Resolved routes",
     routeMath: "Route math", routeCandidates: "Before filtering", afterExclusions: "After exclusion rules",
     collapsedRemoved: "Merged duplicates and overlaps", finalRoutes: "Final active routes",
-    addItem: "Add", rawEditor: "Raw editor", remove: "Remove", notSeen: "No status yet",
+    addItem: "Add", editItem: "Edit", cancel: "Cancel", rawEditor: "Raw editor", remove: "Remove", notSeen: "No status yet",
     comments: "Comments", emptyList: "No entries yet", itemPlaceholder: "New entry",
     logs: "Logs", containerLogs: "Container logs", checkedAddresses: "Checked addresses",
     downloadRoutes: "Download routes.conf", restartRequired: "restart", overridden: "changed",
@@ -42,8 +42,9 @@ const dict = {
     mikrotikWaitingInitial: "BGP session will appear after BIRD startup", progress: "Progress",
     stageBootstrap: "Preparing update", stageCollectingSources: "Collecting sources", stageBuildingRoutes: "Building routes",
     stageWritingRoutes: "Writing routes.conf", stageWritingStatus: "Writing status and metrics", stageCompleted: "Completed"
-    ,currentSource: "Current source", sourceUrl: "URL", sourceAsn: "ASN", sourceGoogle: "Google ranges",
+    ,currentSource: "Current source", sourceUrl: "URL", sourceDomainListUrl: "Domain list URL", sourceAsn: "ASN", sourceGoogle: "Google ranges",
     sourceIncludeDomain: "Include domain", sourceExcludeDomain: "Exclude domain", attempt: "Attempt",
+    domains: "Domains", resolvedDomains: "Resolved domains", skippedDomains: "Skipped domains",
     startupSnapshot: "Startup snapshot", snapshotAge: "Snapshot age", snapshotActive: "Started with previous routes",
     startupRefreshOk: "Startup refresh completed", startupRefreshFailed: "Startup refresh failed",
     lastUpdateFinished: "Finished", unknownTime: "unknown time",
@@ -61,6 +62,9 @@ const dict = {
     updateRollbackOk: "Rollback completed", updateRollbackFailed: "Rollback failed",
     sourceOptions: "Source options", sourceOptionsHint: "These toggles affect which route sources are included in generation.",
     reloadStarted: "Route reload started in background",
+    domainListSources: "Domain list sources", domainListName: "Name", optional: "optional", domainListUrl: "Domain list URL", addSource: "Add source",
+    domainListRawEditor: "Domain list source URLs", domainListEmpty: "No domain list sources yet",
+    listHintDomainListUrls: "Add URLs of plain-text domain lists here. Each non-empty, non-comment line is treated as a domain, resolved to IPv4, and added as /32 routes.",
     listHintAsns: "Add ASNs here to include all announced IPv4 prefixes of those networks.",
     listHintCountries: "Add 2-letter country codes here to load IPv4 prefixes assigned to those countries from RIPE Stat RIR data.",
     listHintGoogleRanges: "Uses Google `goog.json`, subtracts Google Cloud prefixes from `cloud.json`, and adds the remaining IPv4 prefixes. In practice this is mainly the YouTube source.",
@@ -88,7 +92,7 @@ const dict = {
     sourceDetails: "Детали источников", downloaded: "Загружено", resolvedRoutes: "Найдено маршрутов",
     routeMath: "Математика маршрутов", routeCandidates: "До фильтрации", afterExclusions: "После правил исключения",
     collapsedRemoved: "Склеено дублей и пересечений", finalRoutes: "Итоговые активные маршруты",
-    addItem: "Добавить", rawEditor: "Текстовый редактор", remove: "Удалить", notSeen: "Статуса пока нет",
+    addItem: "Добавить", editItem: "Редактировать", cancel: "Отмена", rawEditor: "Текстовый редактор", remove: "Удалить", notSeen: "Статуса пока нет",
     comments: "Комментарии", emptyList: "Записей пока нет", itemPlaceholder: "Новая запись",
     logs: "Логи", containerLogs: "Логи контейнера", checkedAddresses: "Проверенные адреса",
     downloadRoutes: "Скачать routes.conf", restartRequired: "перезапуск", overridden: "изменено",
@@ -110,8 +114,9 @@ const dict = {
     mikrotikWaitingInitial: "BGP-сессия появится после запуска BIRD", progress: "Прогресс",
     stageBootstrap: "Подготовка обновления", stageCollectingSources: "Сбор источников", stageBuildingRoutes: "Сборка маршрутов",
     stageWritingRoutes: "Запись routes.conf", stageWritingStatus: "Запись status и metrics", stageCompleted: "Завершено"
-    ,currentSource: "Текущий источник", sourceUrl: "URL", sourceAsn: "ASN", sourceGoogle: "Google ranges",
+    ,currentSource: "Текущий источник", sourceUrl: "URL", sourceDomainListUrl: "URL списка доменов", sourceAsn: "ASN", sourceGoogle: "Google ranges",
     sourceIncludeDomain: "Include domain", sourceExcludeDomain: "Exclude domain", attempt: "Попытка",
+    domains: "Доменов", resolvedDomains: "Разрешено доменов", skippedDomains: "Пропущено доменов",
     startupSnapshot: "Стартовый snapshot", snapshotAge: "Возраст snapshot", snapshotActive: "Запуск со старыми маршрутами",
     startupRefreshOk: "Стартовый refresh завершен", startupRefreshFailed: "Стартовый refresh завершился ошибкой",
     lastUpdateFinished: "Завершено", unknownTime: "время неизвестно",
@@ -130,6 +135,9 @@ const dict = {
     updateRollbackOk: "Откат выполнен", updateRollbackFailed: "Откат не удался",
     sourceOptions: "Параметры источников", sourceOptionsHint: "Эти переключатели влияют на то, какие источники попадут в генерацию маршрутов.",
     reloadStarted: "Перезагрузка маршрутов запущена в фоне",
+    domainListSources: "URL-списки доменов", domainListName: "Имя", optional: "необязательно", domainListUrl: "URL списка доменов", addSource: "Добавить источник",
+    domainListRawEditor: "URL источников списков доменов", domainListEmpty: "Источников списков доменов пока нет",
+    listHintDomainListUrls: "Добавляйте сюда URL текстовых списков доменов. Каждая непустая строка без # считается доменом, резолвится в IPv4 и добавляется как маршрут /32.",
     listHintAsns: "Добавляйте сюда ASN, чтобы включать все анонсируемые IPv4-префиксы этих сетей.",
     listHintCountries: "Добавляйте сюда двухбуквенные коды стран, чтобы загружать IPv4-префиксы этих стран из RIR-данных через RIPE Stat.",
     listHintGoogleRanges: "Берутся Google `goog.json`, из них вычитаются Google Cloud префиксы из `cloud.json`, а оставшиеся IPv4-префиксы добавляются в маршруты. На практике это в основном источник для YouTube.",
@@ -148,6 +156,12 @@ let settingsPayload = null;
 let listSavedContent = "";
 let listSavedPath = "";
 let listDirty = false;
+let domainListUrlSavedContent = "";
+let domainListUrlDraftContent = "";
+let domainListUrlSavedPath = "";
+let domainListUrlDirty = false;
+let listEditIndex = null;
+let domainListEditIndex = null;
 let settingsSavedValues = {};
 let settingsDirty = false;
 let checkIpPending = false;
@@ -306,7 +320,7 @@ function markSettingsDirty() {
 }
 
 function hasUnsavedChanges() {
-  return listDirty || settingsDirty;
+  return listDirty || domainListUrlDirty || settingsDirty;
 }
 
 function applyLang() {
@@ -323,6 +337,9 @@ function applyLang() {
     }
   }
   if (!$("lists").classList.contains("hidden")) {
+    if (currentList === "include-domains") {
+      renderDomainListSourcesPanel();
+    }
     renderListTiles();
   }
   refreshListDirtyState();
@@ -633,6 +650,7 @@ function runtimeStageLabel(stage) {
 function runtimeSourceKindLabel(kind) {
   const labels = {
     "url": t("sourceUrl"),
+    "domain-list-url": t("sourceDomainListUrl"),
     "asn": t("sourceAsn"),
     "google": t("sourceGoogle"),
     "include-domain": t("sourceIncludeDomain"),
@@ -1860,7 +1878,7 @@ async function runAction(action) {
 }
 
 function switchView(view) {
-  if (view !== "lists" && !$("lists").classList.contains("hidden") && listDirty && !window.confirm(t("discardListChanges"))) {
+  if (view !== "lists" && !$("lists").classList.contains("hidden") && (listDirty || domainListUrlDirty) && !window.confirm(t("discardListChanges"))) {
     return;
   }
   if (view !== "settings" && !$("settings").classList.contains("hidden") && settingsDirty && !window.confirm(t("discardSettingsChanges"))) {
@@ -2065,14 +2083,16 @@ async function applySettingsNow() {
 }
 
 async function loadList(name) {
-  if (name !== currentList && listDirty && !window.confirm(t("discardListChanges"))) {
+  if (name !== currentList && (listDirty || domainListUrlDirty) && !window.confirm(t("discardListChanges"))) {
     return;
   }
   currentList = name;
+  listEditIndex = null;
+  domainListEditIndex = null;
   document.querySelectorAll("[data-list]").forEach(button => button.classList.toggle("active", button.dataset.list === name));
   $("list-title").textContent = listLabels[name];
   const special = isSpecialList(name);
-  const showHintPanel = special || name === "asns";
+  const showHintPanel = special || name === "asns" || name === "include-domains";
   $("add-list-form").classList.toggle("hidden", special);
   $("list-source-settings").classList.toggle("hidden", !showHintPanel);
   $("list-tiles").classList.toggle("hidden", false);
@@ -2094,7 +2114,20 @@ async function loadList(name) {
   $("list-editor").value = listSavedContent;
   $("add-list-input").value = "";
   $("add-list-input").placeholder = `${t("itemPlaceholder")}: ${listLabels[name]}`;
+  $("add-list-name-input").value = "";
+  $("add-list-name-input").placeholder = `${t("domainListName")} (${t("optional")})`;
+  $("add-list-name-input").classList.toggle("hidden", name !== "urls");
+  $("add-list-form").classList.toggle("named-url-form", name === "urls");
+  setListEditForm();
   markListDirty(false);
+  if (name === "include-domains") {
+    await loadDomainListUrls();
+  } else {
+    domainListUrlSavedContent = "";
+    domainListUrlDraftContent = "";
+    domainListUrlSavedPath = "";
+    domainListUrlDirty = false;
+  }
   renderListHint(name);
   renderListTiles();
 }
@@ -2161,6 +2194,10 @@ function isSpecialList(name) {
 }
 
 function renderListHint(name) {
+  if (name === "include-domains") {
+    renderDomainListSourcesPanel();
+    return;
+  }
   const key = name === "asns"
     ? "listHintAsns"
     : name === "countries"
@@ -2206,7 +2243,14 @@ function listSourceRecord(listName, value) {
     };
   }
   if (listName === "urls") {
-    return sources.find(source => source.kind === "url" && (source.url === value || source.name === value));
+    const entry = parseNamedUrlSourceLine(value);
+    if (!entry) return null;
+    return sources.find(source => source.kind === "url" && source.url === entry.url);
+  }
+  if (listName === "domain-list-urls") {
+    const entry = parseNamedUrlSourceLine(value);
+    if (!entry) return null;
+    return sources.find(source => source.kind === "domain-list-url" && source.url === entry.url);
   }
   if (listName === "asns") {
     const asn = normalizeAsn(value);
@@ -2293,12 +2337,224 @@ function renderCountriesTab() {
   `;
 }
 
+function deriveUrlSourceName(url) {
+  try {
+    const parsed = new URL(url);
+    const fileName = parsed.pathname.split("/").filter(Boolean).pop() || "";
+    return fileName ? `${parsed.hostname} · ${fileName}` : parsed.hostname;
+  } catch {
+    return String(url || "").trim();
+  }
+}
+
+function parseNamedUrlSourceLine(value) {
+  const raw = String(value || "").trim();
+  if (!raw || raw.startsWith("#")) return null;
+  const separator = raw.indexOf("|");
+  if (separator >= 0 && !/^[a-z][a-z0-9+.-]*:\/\//i.test(raw)) {
+    const name = raw.slice(0, separator).trim();
+    const url = raw.slice(separator + 1).trim();
+    if (!url) return null;
+    return {name: name || deriveUrlSourceName(url), url, explicitName: Boolean(name)};
+  }
+  return {name: deriveUrlSourceName(raw), url: raw, explicitName: false};
+}
+
+function serializeNamedUrlSource(name, url) {
+  const cleanName = String(name || "").replaceAll("|", "-").trim();
+  const cleanUrl = String(url || "").trim();
+  return cleanName ? `${cleanName} | ${cleanUrl}` : cleanUrl;
+}
+
+function currentDomainListUrlContent() {
+  return domainListUrlDraftContent;
+}
+
+function domainListUrlLines(content = currentDomainListUrlContent()) {
+  return parseListLines(content).filter(line => line.active);
+}
+
+async function loadDomainListUrls() {
+  const data = await api("/api/lists/domain-list-urls");
+  domainListUrlSavedContent = data.content || "";
+  domainListUrlDraftContent = domainListUrlSavedContent;
+  domainListUrlSavedPath = data.path || "";
+  domainListUrlDirty = false;
+}
+
+function domainListSourceCardsHtml(content = currentDomainListUrlContent()) {
+  const lines = domainListUrlLines(content);
+  return lines.length ? lines.map(line => {
+    const entry = parseNamedUrlSourceLine(line.value);
+    if (!entry) return "";
+    const record = listSourceRecord("domain-list-urls", line.value);
+    const level = record ? eventLevel(record) : "warn";
+    return `
+      <article class="list-card ${level}">
+        <div class="list-card-head domain-list-card-head">
+          <div class="named-url-card-copy">
+            <strong>${escapeHtml(entry.name)}</strong>
+            <small title="${escapeHtml(entry.url)}">${escapeHtml(entry.url)}</small>
+          </div>
+          <div class="list-card-actions">
+            <button type="button" class="icon-button list-edit-btn" data-domain-list-edit-index="${line.index}" title="${t("editItem")}" aria-label="${t("editItem")}">
+              <i data-lucide="square-pen"></i>
+            </button>
+            <button type="button" class="icon-button list-remove-btn" data-domain-list-remove-index="${line.index}" title="${t("remove")}" aria-label="${t("remove")}">
+              <i data-lucide="trash-2"></i>
+            </button>
+          </div>
+        </div>
+        ${renderListSourceStats(record)}
+      </article>`;
+  }).join("") : `<div class="muted-box">${t("domainListEmpty")}</div>`;
+}
+
+function refreshDomainListSourceCards() {
+  const container = document.querySelector(".domain-list-url-cards");
+  if (!container) return;
+  container.innerHTML = domainListSourceCardsHtml();
+  renderIcons();
+}
+
+function renderDomainListSourcesPanel() {
+  const content = currentDomainListUrlContent();
+  const wasOpen = Boolean(document.querySelector(".domain-list-url-raw")?.open);
+  domainListUrlDraftContent = content;
+
+  $("list-source-settings").innerHTML = `
+    <article class="panel settings-section domain-list-source-panel">
+      <div class="domain-list-source-head">
+        <div>
+          <h2>${escapeHtml(t("domainListSources"))}</h2>
+          <p class="muted">${escapeHtml(t("listHintDomainListUrls"))}</p>
+        </div>
+        <span class="chip">URL → domains → DNS → /32</span>
+      </div>
+      <form id="domain-list-url-form" class="inline-form domain-list-url-form">
+        <input id="domain-list-name-input" type="text" autocomplete="off" placeholder="${escapeHtml(t("domainListName"))} (${escapeHtml(t("optional"))})">
+        <input id="domain-list-url-input" type="url" autocomplete="off" placeholder="${escapeHtml(t("domainListUrl"))}: https://example.com/list.txt">
+        <button type="submit">
+          <i data-lucide="${domainListEditIndex === null ? "plus" : "save"}"></i>
+          <span>${escapeHtml(domainListEditIndex === null ? t("addSource") : t("save"))}</span>
+        </button>
+        <button type="button" id="cancel-domain-list-edit-btn" class="${domainListEditIndex === null ? "hidden" : ""}" title="${escapeHtml(t("cancel"))}" aria-label="${escapeHtml(t("cancel"))}">
+          <i data-lucide="x"></i>
+        </button>
+      </form>
+      <div class="list-tiles domain-list-url-cards">${domainListSourceCardsHtml(content)}</div>
+      <details class="raw-list-editor domain-list-url-raw">
+        <summary>${escapeHtml(t("domainListRawEditor"))}</summary>
+        <textarea id="domain-list-url-editor" spellcheck="false">${escapeHtml(content)}</textarea>
+        <div class="editor-actions">
+          <button type="button" id="save-domain-list-urls-btn" ${domainListUrlDirty ? "" : "disabled"}>
+            <i data-lucide="save"></i><span>${escapeHtml(t("save"))}</span>
+          </button>
+        </div>
+      </details>
+      <p id="domain-list-url-status" class="${domainListUrlDirty ? "status-warn" : ""}">${escapeHtml(domainListUrlDirty ? t("unsavedChanges") : domainListUrlSavedPath)}</p>
+    </article>`;
+  const rawEditor = document.querySelector(".domain-list-url-raw");
+  if (rawEditor && wasOpen) rawEditor.open = true;
+  renderIcons();
+}
+
+async function saveDomainListUrls() {
+  const editor = $("domain-list-url-editor");
+  let content = editor ? editor.value : domainListUrlDraftContent;
+  if (content && !content.endsWith("\n")) content += "\n";
+  domainListUrlDraftContent = content;
+  try {
+    const result = await api("/api/lists/domain-list-urls", {
+      method: "PUT",
+      body: JSON.stringify({content})
+    });
+    domainListUrlSavedContent = content;
+    domainListUrlDraftContent = content;
+    domainListUrlDirty = false;
+    renderDomainListSourcesPanel();
+    const status = $("domain-list-url-status");
+    if (status) {
+      status.textContent = `${t("saved")}: ${result.bytes} bytes${result.backup ? ` · ${t("backupSaved")}: ${result.backup}` : ""}`;
+      setStatusTone(status, "ok");
+    }
+    return true;
+  } catch (err) {
+    const status = $("domain-list-url-status");
+    if (status) {
+      status.textContent = `${t("failed")}: ${typeof err === "string" ? err : (err.error || err.message || "request failed")}`;
+      setStatusTone(status, "fail");
+    }
+    return false;
+  }
+}
+
+function startDomainListEdit(index) {
+  const line = parseListLines(currentDomainListUrlContent()).find(item => item.index === index && item.active);
+  const entry = line ? parseNamedUrlSourceLine(line.value) : null;
+  if (!entry) return;
+  domainListEditIndex = index;
+  renderDomainListSourcesPanel();
+  $("domain-list-name-input").value = entry.explicitName ? entry.name : "";
+  $("domain-list-url-input").value = entry.url;
+  $("domain-list-url-input").focus();
+}
+
+function cancelDomainListEdit() {
+  domainListEditIndex = null;
+  renderDomainListSourcesPanel();
+}
+
+async function addDomainListUrl(value, name = "") {
+  const url = String(value || "").trim();
+  if (!url) return;
+  const item = serializeNamedUrlSource(name, url);
+  const content = currentDomainListUrlContent();
+  const lines = String(content).split(/\r?\n/).filter((line, index, all) => index < all.length - 1 || line.trim());
+  const duplicate = lines.some((line, index) =>
+    index !== domainListEditIndex && parseNamedUrlSourceLine(line)?.url === url
+  );
+  if (duplicate) {
+    const status = $("domain-list-url-status");
+    if (status) {
+      status.textContent = t("noChanges");
+      setStatusTone(status, "warn");
+    }
+    return;
+  }
+  if (domainListEditIndex === null) {
+    lines.push(item);
+  } else {
+    lines[domainListEditIndex] = item;
+  }
+  domainListEditIndex = null;
+  domainListUrlDraftContent = `${lines.join("\n")}\n`;
+  domainListUrlDirty = domainListUrlDraftContent !== domainListUrlSavedContent;
+  renderDomainListSourcesPanel();
+  await saveDomainListUrls();
+}
+
+async function removeDomainListUrl(index) {
+  const lines = String(currentDomainListUrlContent()).split(/\r?\n/);
+  lines.splice(index, 1);
+  domainListUrlDraftContent = lines.join("\n");
+  domainListUrlDirty = domainListUrlDraftContent !== domainListUrlSavedContent;
+  renderDomainListSourcesPanel();
+  await saveDomainListUrls();
+}
+
 function renderListSourceStats(record) {
   if (!record) {
-    return `<span class="chip warn">${t("notSeen")}</span>`;
+    return `
+      <div class="list-card-stats">
+        <span class="chip warn">${t("notSeen")}</span>
+      </div>`;
   }
   const stats = [
     record.bytes != null ? `${t("downloaded")}: ${formatBytes(record.bytes)}` : "",
+    record.domains != null ? `${t("domains")}: ${record.domains}` : "",
+    record.resolved_domains != null ? `${t("resolvedDomains")}: ${record.resolved_domains}` : "",
+    record.skipped_domains ? `${t("skippedDomains")}: ${record.skipped_domains}` : "",
     record.routes != null ? `${t("resolvedRoutes")}: ${record.routes}` : "",
     sourceCacheFact(record),
   ].filter(Boolean);
@@ -2311,31 +2567,49 @@ function renderListSourceStats(record) {
 }
 
 function renderListTiles() {
+  if (currentList === "include-domains") {
+    refreshDomainListSourceCards();
+  }
   if (currentList === "google-ranges") {
+    $("list-tiles").classList.remove("url-source-tiles");
     $("list-tiles").innerHTML = "";
     renderGoogleRangesTab();
     renderIcons();
     return;
   }
   if (currentList === "countries") {
+    $("list-tiles").classList.remove("url-source-tiles");
     $("list-tiles").innerHTML = "";
     renderCountriesTab();
     renderIcons();
     return;
   }
+  $("list-tiles").classList.toggle("url-source-tiles", currentList === "urls");
   const lines = parseListLines($("list-editor").value);
   const active = lines.filter(line => line.active);
   const comments = lines.filter(line => line.comment);
   $("list-tiles").innerHTML = active.length ? active.map(line => {
     const record = listSourceRecord(currentList, line.value);
     const level = record ? eventLevel(record) : "warn";
+    const namedUrl = currentList === "urls" ? parseNamedUrlSourceLine(line.value) : null;
+    const title = namedUrl ? namedUrl.name : line.value;
+    const subtitle = namedUrl ? namedUrl.url : "";
     return `
       <article class="list-card ${level}">
         <div class="list-card-head">
-          <strong>${escapeHtml(line.value)}</strong>
-          <button class="icon-button list-remove-btn" data-remove-index="${line.index}" title="${t("remove")}" aria-label="${t("remove")}">
-            <i data-lucide="trash-2"></i>
-          </button>
+          <div class="${namedUrl ? "named-url-card-copy" : ""}">
+            <strong>${escapeHtml(title)}</strong>
+            ${subtitle ? `<small title="${escapeHtml(subtitle)}">${escapeHtml(subtitle)}</small>` : ""}
+          </div>
+          <div class="list-card-actions">
+            ${namedUrl ? `
+              <button type="button" class="icon-button list-edit-btn" data-edit-index="${line.index}" title="${t("editItem")}" aria-label="${t("editItem")}">
+                <i data-lucide="square-pen"></i>
+              </button>` : ""}
+            <button class="icon-button list-remove-btn" data-remove-index="${line.index}" title="${t("remove")}" aria-label="${t("remove")}">
+              <i data-lucide="trash-2"></i>
+            </button>
+          </div>
         </div>
         ${renderListSourceStats(record)}
       </article>`;
@@ -2346,18 +2620,46 @@ function renderListTiles() {
   renderIcons();
 }
 
-async function addListItem(value) {
-  const item = String(value || "").trim();
-  if (!item) return;
+function setListEditForm(entry = null, index = null) {
+  listEditIndex = index;
+  $("add-list-name-input").value = entry?.explicitName ? entry.name : "";
+  $("add-list-input").value = entry?.url || "";
+  $("add-list-submit-icon").setAttribute("data-lucide", index === null ? "plus" : "save");
+  $("add-list-submit-text").textContent = index === null ? t("addItem") : t("save");
+  $("cancel-list-edit-btn").classList.toggle("hidden", index === null);
+  renderIcons();
+}
+
+function startListEdit(index) {
+  if (currentList !== "urls") return;
+  const line = parseListLines($("list-editor").value).find(item => item.index === index && item.active);
+  const entry = line ? parseNamedUrlSourceLine(line.value) : null;
+  if (!entry) return;
+  setListEditForm(entry, index);
+  $("add-list-input").focus();
+}
+
+async function addListItem(value, name = "") {
+  const rawValue = String(value || "").trim();
+  if (!rawValue) return;
+  const item = currentList === "urls" ? serializeNamedUrlSource(name, rawValue) : rawValue;
   const lines = $("list-editor").value.split(/\r?\n/).filter((line, index, all) => index < all.length - 1 || line.trim());
-  if (lines.some(line => line.trim() === item)) {
-    $("list-save-status").textContent = `${t("saved")}: ${item}`;
+  const duplicate = currentList === "urls"
+    ? lines.some((line, index) => index !== listEditIndex && parseNamedUrlSourceLine(line)?.url === rawValue)
+    : lines.some(line => line.trim() === item);
+  if (duplicate) {
+    $("list-save-status").textContent = t("noChanges");
+    setStatusTone($("list-save-status"), "warn");
     return;
   }
-  lines.push(item);
+  if (currentList === "urls" && listEditIndex !== null) {
+    lines[listEditIndex] = item;
+  } else {
+    lines.push(item);
+  }
   $("list-editor").value = `${lines.join("\n")}\n`;
   await saveList();
-  $("add-list-input").value = "";
+  setListEditForm();
 }
 
 async function removeListItem(index) {
@@ -2487,12 +2789,56 @@ $("save-settings-btn").addEventListener("click", saveSettings);
 $("apply-settings-btn").addEventListener("click", applySettingsNow);
 $("add-list-form").addEventListener("submit", event => {
   event.preventDefault();
-  addListItem($("add-list-input").value);
+  addListItem($("add-list-input").value, $("add-list-name-input").value);
 });
 $("list-tiles").addEventListener("click", event => {
-  const button = event.target.closest("[data-remove-index]");
-  if (button) {
-    removeListItem(Number(button.dataset.removeIndex));
+  const editButton = event.target.closest("[data-edit-index]");
+  if (editButton) {
+    startListEdit(Number(editButton.dataset.editIndex));
+    return;
+  }
+  const removeButton = event.target.closest("[data-remove-index]");
+  if (removeButton) {
+    removeListItem(Number(removeButton.dataset.removeIndex));
+  }
+});
+$("cancel-list-edit-btn").addEventListener("click", () => setListEditForm());
+$("list-source-settings").addEventListener("submit", event => {
+  if (event.target.id === "domain-list-url-form") {
+    event.preventDefault();
+    addDomainListUrl($("domain-list-url-input")?.value || "", $("domain-list-name-input")?.value || "");
+  }
+});
+$("list-source-settings").addEventListener("click", event => {
+  const editButton = event.target.closest("[data-domain-list-edit-index]");
+  if (editButton) {
+    startDomainListEdit(Number(editButton.dataset.domainListEditIndex));
+    return;
+  }
+  const removeButton = event.target.closest("[data-domain-list-remove-index]");
+  if (removeButton) {
+    removeDomainListUrl(Number(removeButton.dataset.domainListRemoveIndex));
+    return;
+  }
+  if (event.target.closest("#cancel-domain-list-edit-btn")) {
+    cancelDomainListEdit();
+    return;
+  }
+  if (event.target.closest("#save-domain-list-urls-btn")) {
+    saveDomainListUrls();
+  }
+});
+$("list-source-settings").addEventListener("input", event => {
+  if (event.target.id === "domain-list-url-editor") {
+    domainListUrlDraftContent = event.target.value;
+    domainListUrlDirty = domainListUrlDraftContent !== domainListUrlSavedContent;
+    const button = $("save-domain-list-urls-btn");
+    if (button) button.disabled = !domainListUrlDirty;
+    const status = $("domain-list-url-status");
+    if (status) {
+      status.textContent = domainListUrlDirty ? t("unsavedChanges") : domainListUrlSavedPath;
+      setStatusTone(status, domainListUrlDirty ? "warn" : "");
+    }
   }
 });
 $("list-source-settings").addEventListener("change", event => {
