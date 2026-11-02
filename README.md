@@ -7,9 +7,7 @@ Publish Docker image. При ручном запуске из другой ве�
 Релизные теги `v*` обрабатывает существующий Release workflow: он проверяет
 `VERSION` и публикует теги версии и `latest`.
 
-Для публикации используется встроенный `GITHUB_TOKEN`; отдельный токен или
-Docker Hub не нужны. Чтобы образ скачивался без входа, владелец репозитория
-должен разрешить публичный доступ к пакету GHCR.
+Для публикации используется `GITHUB_TOKEN` с правом `packages: write`.
 ![Python](https://img.shields.io/badge/python-3.x-blue)
 ![Debian](https://img.shields.io/badge/debian-bookworm-a81d33)
 ![BIRD](https://img.shields.io/badge/BIRD-2.x-green)

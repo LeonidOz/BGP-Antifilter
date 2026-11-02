@@ -7,9 +7,7 @@ manual builds from other branches publish only the SHA tag. The existing
 Release workflow handles `v*` tags, checks `VERSION`, and publishes version
 tags and `latest`.
 
-Publishing uses the built-in `GITHUB_TOKEN`; no separate token or Docker Hub
-account is needed. The repository owner must make the GHCR package public
-to allow pulls without authentication.
+Publishing uses `GITHUB_TOKEN` with `packages: write` permission.
 ![Python](https://img.shields.io/badge/python-3.x-blue)
 ![Debian](https://img.shields.io/badge/debian-bookworm-a81d33)
 ![BIRD](https://img.shields.io/badge/BIRD-2.x-green)
