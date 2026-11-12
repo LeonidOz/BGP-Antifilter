@@ -23,7 +23,7 @@ const dict = {
     addItem: "Add", editItem: "Edit", cancel: "Cancel", rawEditor: "Raw editor", remove: "Remove", notSeen: "No status yet",
     comments: "Comments", emptyList: "No entries yet", itemPlaceholder: "New entry",
     logs: "Logs", containerLogs: "Container logs", checkedAddresses: "Checked addresses",
-    downloadRoutes: "Download routes.conf", restartRequired: "restart", overridden: "changed",
+    downloadRoutes: "Download routes.conf", downloadAddressList: "Download Address List .rsc", addressListName: "Address List name", restartRequired: "restart", overridden: "changed",
     updateSettings: "Update", securitySettings: "Generation safety", birdSettings: "BIRD / BGP",
     applySettings: "Apply now", applying: "Applying...", unsavedChanges: "Unsaved changes",
     noChanges: "No changes", backupSaved: "Backup", discardListChanges: "Discard unsaved list changes?",
@@ -95,7 +95,7 @@ const dict = {
     addItem: "Добавить", editItem: "Редактировать", cancel: "Отмена", rawEditor: "Текстовый редактор", remove: "Удалить", notSeen: "Статуса пока нет",
     comments: "Комментарии", emptyList: "Записей пока нет", itemPlaceholder: "Новая запись",
     logs: "Логи", containerLogs: "Логи контейнера", checkedAddresses: "Проверенные адреса",
-    downloadRoutes: "Скачать routes.conf", restartRequired: "перезапуск", overridden: "изменено",
+    downloadRoutes: "Скачать routes.conf", downloadAddressList: "Скачать Address List .rsc", addressListName: "Имя Address List", restartRequired: "перезапуск", overridden: "изменено",
     updateSettings: "Обновление", securitySettings: "Безопасность генерации", birdSettings: "BIRD / BGP",
     applySettings: "Применить сейчас", applying: "Применяем...", unsavedChanges: "Есть несохраненные изменения",
     noChanges: "Изменений нет", backupSaved: "Бэкап", discardListChanges: "Отбросить несохраненные изменения списка?",
@@ -1573,6 +1573,11 @@ function renderRoutesView(text) {
           <i data-lucide="download"></i><span>${t("downloadRoutes")}</span>
         </a>
       </div>
+      <form action="/api/routes/address-list.rsc" method="get" class="inline-form">
+        <label for="address-list-name">${t("addressListName")}</label>
+        <input id="address-list-name" name="list" value="bgp-antifilter" required pattern="[A-Za-z0-9_.\\-]{1,64}" maxlength="64">
+        <button type="submit"><i data-lucide="download"></i><span>${t("downloadAddressList")}</span></button>
+      </form>
       <div class="route-lines">
         ${routes.map(route => `<code>${escapeHtml(route)}</code>`).join("") || "—"}
       </div>

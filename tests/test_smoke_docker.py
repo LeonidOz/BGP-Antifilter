@@ -224,6 +224,11 @@ class DockerSmokeTests(unittest.TestCase):
                                 60, "Domain-list address did not reach BIRD")
                 self.wait_until(login, 30, "Portainer admin did not start")
                 self.assertIn("Test domains", api("/api/lists/domain-list-urls")["content"])
+                with opener.open(f"http://127.0.0.1:{admin_port}/api/routes/address-list.rsc?list=smoke-vpn", timeout=5) as export:
+                    self.assertIn('filename="smoke-vpn.rsc"', export.headers["Content-Disposition"])
+                    script = export.read().decode("utf-8")
+                    self.assertIn('list="smoke-vpn" address=198.51.100.10', script)
+                    self.assertIn("bgp-antifilter:managed:", script)
                 api("/api/lists/domain-list-urls", "PUT", {"content": "# saved from panel\n"})
                 saved = self.compose("exec", "-T", "bgp-antifilter", "cat", "/etc/bird/generated/config/domain-list-urls.txt").stdout
                 self.assertEqual(saved, "# saved from panel\n")

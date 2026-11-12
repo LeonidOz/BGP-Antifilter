@@ -23,6 +23,7 @@ from urllib.parse import parse_qs, urlparse
 from . import __version__
 from . import dns_resolver
 from . import network_diagnostics
+from .export_address_list import DEFAULT_LIST_NAME, export_rsc, read_snapshot, validate_list_name
 from .runtime_paths import GENERATED_PATH_SPECS, LIST_FILE_SPECS, env_path, env_paths
 from . import updater_server
 
@@ -31,6 +32,7 @@ ROOT = env_path("ADMIN_STATIC_DIR", "/admin-ui")
 PATHS = env_paths(GENERATED_PATH_SPECS)
 GENERATED_DIR = PATHS["generated_dir"]
 ROUTES_FILE = PATHS["routes_file"]
+LAST_GOOD_ROUTES_FILE = env_path("LAST_GOOD_ROUTES_FILE", "/etc/bird/generated/routes.last-good.conf")
 STATUS_FILE = PATHS["status_file"]
 METRICS_FILE = PATHS["metrics_file"]
 RUNTIME_FILE = PATHS["runtime_file"]
@@ -964,6 +966,22 @@ class AdminHandler(BaseHTTPRequestHandler):
 
         if path == "/api/routes/download":
             self.send_file_text(text_load(ROUTES_FILE), "routes.conf")
+            return
+
+        if path == "/api/routes/address-list.rsc":
+            query = parse_qs(parsed.query, keep_blank_values=True)
+            name = query.get("list", [DEFAULT_LIST_NAME])[0]
+            try:
+                validate_list_name(name)
+            except ValueError as exc:
+                self.send_json({"error": str(exc)}, HTTPStatus.BAD_REQUEST)
+                return
+            try:
+                script = export_rsc(read_snapshot(LAST_GOOD_ROUTES_FILE, UPDATE_LOCK_DIR), name)
+            except (OSError, ValueError) as exc:
+                self.send_json({"error": f"confirmed route snapshot unavailable: {exc}"}, HTTPStatus.SERVICE_UNAVAILABLE)
+                return
+            self.send_file_text(script, f"{name}.rsc")
             return
 
         if path == "/api/logs":

@@ -1,14 +1,5 @@
 # BGP Antifilter
 
-Prebuilt images are published to GHCR: `ghcr.io/leonidoz/bgp-antifilter`, for
-`linux/amd64` and `linux/arm64`. Updates to `main` publish `edge` and
-`sha-<commit>`. `edge` tracks development; only releases update `latest`.
-Builds can also be started from Actions → Publish Docker image;
-manual builds from other branches publish only the SHA tag. The existing
-Release workflow handles `v*` tags, checks `VERSION`, and publishes version
-tags and `latest`.
-
-Publishing uses `GITHUB_TOKEN` with `packages: write` permission.
 ![Python](https://img.shields.io/badge/python-3.x-blue)
 ![Debian](https://img.shields.io/badge/debian-bookworm-a81d33)
 ![BIRD](https://img.shields.io/badge/BIRD-2.x-green)
@@ -33,7 +24,9 @@ The project downloads route lists from public sources, enriches them with IPv4 a
 - [Configuration](#configuration)
 - [Web Admin](#web-admin)
 - [Running](#running)
+- [Docker Images](#docker-images)
 - [Managing Lists](#managing-lists)
+- [MikroTik Address Lists](#mikrotik-address-lists)
 - [Startup And Rollback Model](#startup-and-rollback-model)
 - [Verification And Rollback](#verification-and-rollback)
 - [Troubleshooting](#troubleshooting)
@@ -56,7 +49,7 @@ If the container already has a confirmed snapshot from a previous successful run
 
 The single-container BGP mode is supported primarily for Linux host deployment. On Docker Desktop for Windows/macOS, treat the container as a dev mode for route generation and the admin UI: `network_mode: host` there usually does not expose the host LAN address to the container for a real BGP bind.
 
-For release/pull mode, you can explicitly pin an image tag in `.env`, for example `BGP_ANTIFILTER_VERSION=0.5.0`. When the variable is not set, compose uses the local dev image tag `bgp-antifilter:dev`.
+For release/pull mode, you can explicitly pin an image tag in `.env`, for example `BGP_ANTIFILTER_VERSION=0.5.1`. When the variable is not set, compose uses the local dev image tag `bgp-antifilter:dev`.
 
 For Docker Desktop dev mode, use the override file:
 
@@ -233,6 +226,26 @@ Stop:
 docker compose down
 ```
 
+## Docker Images
+
+Prebuilt images: `ghcr.io/leonidoz/bgp-antifilter`. Supported platforms: `linux/amd64` and `linux/arm64`.
+
+- `latest` - the latest stable release.
+- A version tag, such as `0.5.0` - a specific release.
+- `edge` - current development from `main`.
+- `sha-<commit>` - a build of a specific commit.
+
+<details>
+<summary>Image publishing for contributors</summary>
+
+Updates to `main` trigger `Publish Docker image`, which publishes `edge` and a SHA tag.
+The workflow can also be started manually from Actions; other branches publish only a SHA tag.
+The `Release` workflow handles `v*` tags, validates `VERSION`, publishes version tags
+and `latest`, then creates a GitHub Release. Publishing uses `GITHUB_TOKEN`
+with `packages: write` permission.
+
+</details>
+
 ## Managing Lists
 
 Add new IP/CIDR sources to `generated/config/lists.txt`, one URL per line.
@@ -293,6 +306,42 @@ Before writing the final file, the generator removes exact duplicates, drops rou
 If a URL source from `generated/config/lists.txt` is temporarily unavailable, the default behavior is to mark it as `failed` but continue building from other sources and apply the result if the final route set is still non-empty. Enable `REQUIRE_ALL_URL_SOURCES=1` for strict mode; then any URL without fresh cache stops the update.
 
 Blank lines and lines starting with `#` are ignored.
+
+## MikroTik Address Lists
+
+In **Tools → Load routes**, choose a list name (default: `bgp-antifilter`) and click
+**Download Address List .rsc**. The export uses IPv4 prefixes from the confirmed
+`routes.last-good.conf`, after exclusions and route merging. The endpoint
+`/api/routes/address-list.rsc?list=bgp-antifilter` requires an authenticated admin session.
+Exports are rejected during updates or when the snapshot is missing, malformed or empty.
+List names allow 1-64 ASCII letters, digits and `_.-`.
+
+Alternatively, generate a file from the command line:
+
+```bash
+docker compose exec bgp-antifilter python3 -m bgp_antifilter.export_address_list --list-name bgp-antifilter --output /etc/bird/generated/bgp-antifilter.rsc
+```
+
+Upload the file to MikroTik Files and run:
+
+```routeros
+/import file-name=bgp-antifilter.rsc
+```
+
+On RouterOS versions supporting dry-run, validate first with
+`/import file-name=bgp-antifilter.rsc verbose=yes dry-run=yes`.
+The project's automated tests do not execute imports on real RouterOS.
+
+The script adds/refreshes entries first, then removes stale entries only from the selected
+list with the reserved comment prefix `bgp-antifilter:managed:`. Do not use this prefix
+for manual entries. Unmanaged entries, including matching addresses, are preserved.
+Repeated imports do not add duplicates. Import the complete file and do not run concurrent
+imports for the same list. This is not transactional: an error before final cleanup may
+leave both old and new prefixes. Existence checks can make large imports slow.
+
+The export does not change BGP, firewall, NAT or mangle. Configure connection/routing marks,
+VPN/WAN tables and FastTrack exceptions separately on MikroTik. For generation without an
+established BGP session, set `HEALTHCHECK_REQUIRE_BGP=0`; the single-container runtime remains unchanged.
 
 ## Startup And Rollback Model
 

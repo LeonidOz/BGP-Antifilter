@@ -1,12 +1,17 @@
 # Changelog
 
-## Unreleased
+## 0.5.1 - 2026-11-12
+
+- Add authenticated MikroTik Address List `.rsc` downloads and a CLI exporter using confirmed route snapshots, configurable list names, managed-entry cleanup, and safeguards against empty, invalid or changing snapshots.
+- Restore the README introduction and move image tags and contributor publishing details into a dedicated Docker images section in both languages.
+- Publish AMD64/ARM64 images, with `edge` and SHA tags for main builds and `latest` reserved for releases.
 
 - Download named domain lists from URLs and resolve them during route updates.
 - Add source editing and per-list diagnostics to the admin UI and check-IP tool.
 - Add a single-container Portainer stack with persistent data and HTTP proxy settings.
 - Serve admin icons locally and mirror process output to Docker logs.
 - Suppress successful admin polling logs while keeping errors and writes.
+- Cover Address List export safety, authentication, downloads, and custom list names with unit and Docker smoke tests.
 
 ## 0.5.0 - 2026-11-12
 
