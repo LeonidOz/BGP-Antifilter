@@ -1,4 +1,14 @@
 # BGP Antifilter
+
+Prebuilt images are published to GHCR: `ghcr.io/leonidoz/bgp-antifilter`, for
+`linux/amd64` and `linux/arm64`. Updates to `main` publish `edge` and
+`sha-<commit>`. `edge` tracks development; only releases update `latest`.
+Builds can also be started from Actions → Publish Docker image;
+manual builds from other branches publish only the SHA tag. The existing
+Release workflow handles `v*` tags, checks `VERSION`, and publishes version
+tags and `latest`.
+
+Publishing uses `GITHUB_TOKEN` with `packages: write` permission.
 ![Python](https://img.shields.io/badge/python-3.x-blue)
 ![Debian](https://img.shields.io/badge/debian-bookworm-a81d33)
 ![BIRD](https://img.shields.io/badge/BIRD-2.x-green)

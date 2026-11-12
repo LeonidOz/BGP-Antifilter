@@ -1,4 +1,14 @@
 # BGP Antifilter
+
+Готовые образы публикуются в GHCR: `ghcr.io/leonidoz/bgp-antifilter`.
+Поддерживаются `linux/amd64` и `linux/arm64`. После обновления `main` создаются
+теги `edge` и `sha-<коммит>`. `edge` содержит текущую разработку, а `latest`
+обновляется только при выпуске релиза. Сборку можно запустить вручную через Actions →
+Publish Docker image. При ручном запуске из другой ветки обновляется только SHA-тег.
+Релизные теги `v*` обрабатывает существующий Release workflow: он проверяет
+`VERSION` и публикует теги версии и `latest`.
+
+Для публикации используется `GITHUB_TOKEN` с правом `packages: write`.
 ![Python](https://img.shields.io/badge/python-3.x-blue)
 ![Debian](https://img.shields.io/badge/debian-bookworm-a81d33)
 ![BIRD](https://img.shields.io/badge/BIRD-2.x-green)
