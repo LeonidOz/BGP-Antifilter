@@ -1,6 +1,7 @@
 #!/bin/sh
 
 LISTS_FILE="${LISTS_FILE:-/etc/bird/lists.txt}"
+DOMAIN_LIST_URLS_FILE="${DOMAIN_LIST_URLS_FILE:-/etc/bird/domain-list-urls.txt}"
 INCLUDE_ASNS_FILE="${INCLUDE_ASNS_FILE:-/etc/bird/include-asns.txt}"
 INCLUDE_COUNTRIES_FILE="${INCLUDE_COUNTRIES_FILE:-/etc/bird/include-countries.txt}"
 INCLUDE_DOMAINS_FILE="${INCLUDE_DOMAINS_FILE:-/etc/bird/include-domains.txt}"
@@ -31,6 +32,7 @@ ADMIN_PASSWORD="${ADMIN_PASSWORD:-}"
 DEFAULT_CONFIG_DIR="${DEFAULT_CONFIG_DIR:-/defaults-config}"
 STATE_DIR="${STATE_DIR:-/run/bgp-antifilter}"
 STARTUP_REFRESH_FLAG="${STATE_DIR}/startup-refresh-needed"
+export STARTUP_REFRESH_FLAG
 
 ensure_runtime_config_file() {
   target="$1"
@@ -298,6 +300,7 @@ setup_runtime_dirs() {
 
 prepare_runtime_files() {
   ensure_runtime_config_file "$LISTS_FILE" "lists.txt"
+  ensure_runtime_config_file "$DOMAIN_LIST_URLS_FILE" "domain-list-urls.txt"
   ensure_runtime_config_file "$INCLUDE_ASNS_FILE" "include-asns.txt"
   ensure_runtime_config_file "$INCLUDE_COUNTRIES_FILE" "include-countries.txt"
   ensure_runtime_config_file "$INCLUDE_DOMAINS_FILE" "include-domains.txt"
@@ -306,7 +309,7 @@ prepare_runtime_files() {
 }
 
 export_runtime_env() {
-  export LISTS_FILE INCLUDE_ASNS_FILE INCLUDE_COUNTRIES_FILE INCLUDE_DOMAINS_FILE EXCLUDE_DOMAINS_FILE
+  export LISTS_FILE DOMAIN_LIST_URLS_FILE INCLUDE_ASNS_FILE INCLUDE_COUNTRIES_FILE INCLUDE_DOMAINS_FILE EXCLUDE_DOMAINS_FILE
   export INCLUDE_GOOGLE_RANGES CACHE_DIR CACHE_MAX_AGE STATUS_FILE METRICS_FILE RUNTIME_FILE NETWORK_STATUS_FILE SETTINGS_ENV_FILE
   export ROUTES_FILE="$ROUTES"
   export LAST_GOOD_ROUTES_FILE="$LAST_GOOD_ROUTES"
@@ -339,6 +342,11 @@ start_log_stream() {
   name="${1:-service}"
   mkdir -p "$(dirname "$CONTAINER_LOG_FILE")"
   touch "$CONTAINER_LOG_FILE"
-  exec >>"$CONTAINER_LOG_FILE" 2>&1
+  log_dir="$(mktemp -d)"
+  mkfifo "$log_dir/output"
+  tee -a "$CONTAINER_LOG_FILE" <"$log_dir/output" &
+  exec >"$log_dir/output" 2>&1
+  rm "$log_dir/output"
+  rmdir "$log_dir"
   echo "[$name] started at $(date -u '+%Y-%m-%dT%H:%M:%SZ')"
 }

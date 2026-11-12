@@ -1,5 +1,13 @@
 # Changelog
 
+## Unreleased
+
+- Download named domain lists from URLs and resolve them during route updates.
+- Add source editing and per-list diagnostics to the admin UI and check-IP tool.
+- Add a single-container Portainer stack with persistent data and HTTP proxy settings.
+- Serve admin icons locally and mirror process output to Docker logs.
+- Suppress successful admin polling logs while keeping errors and writes.
+
 ## 0.5.0 - 2026-11-12
 
 - Consolidated BIRD, the route scheduler, and the admin UI into one `bgp-antifilter` container managed by supervisord.

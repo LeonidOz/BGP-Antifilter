@@ -1,6 +1,7 @@
 #!/bin/sh
 set -eu
 
+# shellcheck source=deploy/lib.sh
 . /lib.sh
 start_log_stream "admin"
 

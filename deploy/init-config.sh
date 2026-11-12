@@ -1,6 +1,7 @@
 #!/bin/sh
 set -eu
 
+# shellcheck source=deploy/lib.sh
 . /lib.sh
 
 load_settings_env

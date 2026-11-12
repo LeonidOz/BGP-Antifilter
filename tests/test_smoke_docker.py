@@ -1,6 +1,8 @@
+import http.cookiejar
 import json
 import os
 import shutil
+import socket
 import subprocess
 import sys
 import tempfile
@@ -8,6 +10,8 @@ import textwrap
 import threading
 import time
 import unittest
+from unittest import mock
+import urllib.request
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
 
@@ -20,12 +24,12 @@ class RouteSourceServer(ThreadingHTTPServer):
 
 class RouteSourceHandler(BaseHTTPRequestHandler):
     def do_GET(self):
-        if self.path != "/routes.txt":
+        if self.path not in {"/routes.txt", "/domains.txt"}:
             self.send_error(404)
             return
 
         time.sleep(self.server.state["delay"])
-        body = self.server.state["body"].encode("utf-8")
+        body = ("domains.example.test\n" if self.path == "/domains.txt" else self.server.state["body"]).encode("utf-8")
         self.send_response(200)
         self.send_header("Content-Type", "text/plain; charset=utf-8")
         self.send_header("Content-Length", str(len(body)))
@@ -49,7 +53,7 @@ class DockerSmokeTests(unittest.TestCase):
         self.generated_dir = self.root / "generated"
         self.config_dir = self.generated_dir / "config"
         self.config_dir.mkdir(parents=True, exist_ok=True)
-        for name in ("include-asns.txt", "include-domains.txt", "exclude-domains.txt"):
+        for name in ("domain-list-urls.txt", "include-asns.txt", "include-domains.txt", "exclude-domains.txt"):
             (self.config_dir / name).write_text("", encoding="utf-8")
 
         self.repo_root = Path(__file__).resolve().parents[1]
@@ -103,6 +107,7 @@ class DockerSmokeTests(unittest.TestCase):
                   ROUTER_ID: "192.168.55.5"
                   BGP_COMMUNITY: "65432,500"
                   LISTS_FILE: /etc/bird/generated/config/lists.txt
+                  DOMAIN_LIST_URLS_FILE: /etc/bird/generated/config/domain-list-urls.txt
                   INCLUDE_ASNS_FILE: /etc/bird/generated/config/include-asns.txt
                   INCLUDE_DOMAINS_FILE: /etc/bird/generated/config/include-domains.txt
                   EXCLUDE_DOMAINS_FILE: /etc/bird/generated/config/exclude-domains.txt
@@ -176,6 +181,72 @@ class DockerSmokeTests(unittest.TestCase):
     def read_json(self, path):
         return json.loads(path.read_text(encoding="utf-8"))
 
+    def test_portainer_stack_loads_domains_and_shares_persistent_data(self):
+        with socket.socket() as reservation:
+            reservation.bind(("127.0.0.1", 0))
+            admin_port = reservation.getsockname()[1]
+        volume = self.project_name + "-data"
+        settings = {"BGP_ANTIFILTER_IMAGE": "bgp-antifilter:smoke", "ADMIN_PASSWORD": "smoke-test",
+                    "BGP_DATA_VOLUME": volume, "BGP_DATA_EXTERNAL": "false", "ADMIN_PORT": str(admin_port),
+                    "HEALTHCHECK_REQUIRE_BGP": "0", "INCLUDE_GOOGLE_RANGES": "0",
+                    "HTTP_PROXY": "", "HTTPS_PROXY": "", "NO_PROXY": "localhost,127.0.0.1"}
+        stack = (self.repo_root / "deploy/portainer-stack.yml").read_text()
+        stack = stack.replace("    container_name: bgp-antifilter", f"    container_name: {self.project_name}", 1)
+        stack = stack.replace("  bgp-antifilter:\n", "  bgp-antifilter:\n    extra_hosts: ['domains.example.test:198.51.100.10']\n", 1)
+        self.compose_file.write_text(stack, encoding="utf-8")
+        opener = urllib.request.build_opener(urllib.request.ProxyHandler({}),
+                                             urllib.request.HTTPCookieProcessor(http.cookiejar.CookieJar()))
+
+        def api(path, method="GET", data=None):
+            body = json.dumps(data).encode() if data is not None else None
+            request = urllib.request.Request(f"http://127.0.0.1:{admin_port}{path}", body,
+                                             {"Content-Type": "application/json"}, method=method)
+            with opener.open(request, timeout=5) as response:
+                return json.load(response)
+
+        def login():
+            try:
+                return api("/api/login", "POST", {"password": "smoke-test"}).get("ok")
+            except urllib.error.URLError:
+                return False
+
+        with mock.patch.dict(os.environ, settings):
+            try:
+                subprocess.run(["docker", "build", "-q", "-t", "bgp-antifilter:smoke", "-f", "deploy/Dockerfile", "."],
+                               cwd=self.repo_root, check=True, capture_output=True, text=True)
+                seed = ("from pathlib import Path; p=Path('/etc/bird/generated/config'); p.mkdir(parents=True, exist_ok=True); "
+                        "[(p/n).write_text('') for n in ('include-asns.txt','include-countries.txt','include-domains.txt','exclude-domains.txt')]; "
+                        f"(p/'lists.txt').write_text('http://127.0.0.1:{self.port}/routes.txt\\n'); "
+                        f"(p/'domain-list-urls.txt').write_text('Test domains | http://127.0.0.1:{self.port}/domains.txt\\n')")
+                self.compose("run", "--rm", "--no-deps", "--entrypoint", "python3", "bgp-antifilter", "-c", seed)
+                self.compose("up", "-d")
+                self.wait_until(lambda: "198.51.100.10/32" in self.compose("exec", "-T", "bgp-antifilter", "birdc", "show", "route", check=False).stdout,
+                                60, "Domain-list address did not reach BIRD")
+                self.wait_until(login, 30, "Portainer admin did not start")
+                self.assertIn("Test domains", api("/api/lists/domain-list-urls")["content"])
+                api("/api/lists/domain-list-urls", "PUT", {"content": "# saved from panel\n"})
+                saved = self.compose("exec", "-T", "bgp-antifilter", "cat", "/etc/bird/generated/config/domain-list-urls.txt").stdout
+                self.assertEqual(saved, "# saved from panel\n")
+                with opener.open(f"http://127.0.0.1:{admin_port}/assets/vendor/lucide.min.js", timeout=3) as asset:
+                    self.assertIn("javascript", asset.headers["Content-Type"])
+                    self.assertGreater(len(asset.read()), 10000)
+                self.assertIn("starting update", self.compose("logs", "bgp-antifilter").stdout)
+                self.assertEqual(len(self.compose("ps", "-q").stdout.split()), 1)
+                for service in ("bgp-antifilter",):
+                    cid = self.compose("ps", "-q", service).stdout.strip()
+                    info = json.loads(subprocess.check_output(["docker", "inspect", cid], text=True))[0]
+                    mounted = next(m for m in info["Mounts"] if m["Destination"] == "/etc/bird/generated")
+                    self.assertEqual(mounted["Name"], volume)
+                    self.assertFalse(info["HostConfig"]["Privileged"])
+                    self.assertIn("NET_ADMIN", [cap.removeprefix("CAP_") for cap in info["HostConfig"]["CapDrop"]])
+                    self.assertFalse(any(m["Destination"] == "/var/run/docker.sock" for m in info["Mounts"]))
+                self.compose("down", "--remove-orphans")
+                self.compose("up", "-d")
+                self.wait_until(login, 30, "Portainer admin did not restart")
+                self.assertEqual(api("/api/lists/domain-list-urls")["content"], "# saved from panel\n")
+            finally:
+                self.compose("down", "--volumes", "--remove-orphans", check=False)
+
     def test_restart_uses_previous_snapshot_until_background_refresh_completes(self):
         old_route = "route 192.0.2.0/24 blackhole;"
         new_route = "route 198.51.100.0/24 blackhole;"
@@ -202,6 +273,7 @@ class DockerSmokeTests(unittest.TestCase):
             timeout=30,
             message="Initial startup did not finish with success status",
         )
+        self.assertTrue((self.config_dir / "domain-list-urls.txt").exists())
 
         self.server_state["body"] = "198.51.100.0/24\n"
         self.server_state["delay"] = 5

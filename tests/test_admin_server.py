@@ -9,6 +9,19 @@ from bgp_antifilter import admin_server
 
 
 class AdminServerHelperTests(unittest.TestCase):
+    def test_successful_polls_are_quiet_but_errors_and_writes_are_logged(self):
+        handler = object.__new__(admin_server.AdminHandler)
+        handler.requestline = "GET /api/status HTTP/1.1"
+        handler.command = "GET"
+        handler.log_message = mock.Mock()
+        handler.log_request(200)
+        handler.log_message.assert_not_called()
+        handler.log_request(503)
+        handler.log_message.assert_called_once()
+        handler.command = "POST"
+        handler.log_request(200)
+        self.assertEqual(handler.log_message.call_count, 2)
+
     def test_parse_resolv_conf_extracts_nameservers_and_search(self):
         payload = admin_server.parse_resolv_conf(
             "nameserver 1.1.1.1\n"

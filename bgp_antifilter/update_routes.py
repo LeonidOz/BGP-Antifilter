@@ -23,6 +23,7 @@ DEFAULT_CACHE_MAX_AGE = 7 * 24 * 60 * 60
 DEFAULT_MIN_PREFIX_LENGTH = 8
 DEFAULT_DNS_HTTP_REDIRECTS = 5
 COUNTRY_CODE_RE = re.compile(r"^[A-Z]{2}$")
+DOMAIN_LABEL_RE = re.compile(r"^[A-Za-z0-9](?:[A-Za-z0-9-]{0,61}[A-Za-z0-9])?$")
 DELEGATED_REGISTRIES = ("afrinic", "apnic", "arin", "lacnic", "ripencc")
 DELEGATED_STATS_BASE_URL = "https://ftp.apnic.net/pub/stats"
 PROGRESS_STEPS = {
@@ -132,6 +133,66 @@ def read_list(path):
             result.append(value)
 
     return result
+
+
+def parse_named_url_list(path):
+    if not path.exists():
+        return []
+
+    result = []
+    for raw_line in path.read_text(encoding="utf-8").splitlines():
+        line = raw_line.strip()
+        if not line or line.startswith("#"):
+            continue
+        if "|" in line and not re.match(r"^[A-Za-z][A-Za-z0-9+.-]*://", line):
+            name, url = line.split("|", 1)
+            name = name.strip()
+            url = url.strip()
+        else:
+            name = ""
+            url = line
+        if not url:
+            continue
+        result.append({"name": name, "url": url})
+
+    return result
+
+
+def normalize_domain_name(value):
+    domain = str(value or "").strip().rstrip(".").lower()
+    if not domain or any(char.isspace() for char in domain):
+        return None
+    if "://" in domain or "/" in domain or ":" in domain or domain.startswith("."):
+        return None
+    try:
+        domain = domain.encode("idna").decode("ascii")
+    except UnicodeError:
+        return None
+    if len(domain) > 253:
+        return None
+    labels = domain.split(".")
+    if any(not DOMAIN_LABEL_RE.fullmatch(label) for label in labels):
+        return None
+    return domain
+
+
+def parse_domain_list(text):
+    domains = []
+    seen = set()
+    invalid = 0
+    for raw_line in str(text or "").splitlines():
+        line = raw_line.strip()
+        if not line or line.startswith("#"):
+            continue
+        domain = normalize_domain_name(line)
+        if domain is None:
+            invalid += 1
+            continue
+        if domain in seen:
+            continue
+        seen.add(domain)
+        domains.append(domain)
+    return domains, invalid
 
 
 def parse_ipv4_literal(value):
@@ -667,13 +728,15 @@ def collect_sources(cache_dir, cache_max_age, include_google):
     include_text = []
     exclude_text = []
 
-    url_sources = read_list(list_files["urls"])
+    url_sources = parse_named_url_list(list_files["urls"])
+    domain_list_sources = parse_named_url_list(list_files["domain-list-urls"])
     asn_sources = read_list(list_files["asns"])
     country_sources = read_list(list_files["countries"])
     exclude_domains = read_list(list_files["exclude-domains"])
     include_domains = read_list(list_files["include-domains"])
     total_items = (
         len(url_sources)
+        + len(domain_list_sources)
         + len(asn_sources)
         + len(country_sources)
         + len(exclude_domains)
@@ -715,6 +778,7 @@ def collect_sources(cache_dir, cache_max_age, include_google):
     progress(
         "starting update",
         urls=len(url_sources),
+        domain_list_urls=len(domain_list_sources),
         asns=len(asn_sources),
         countries=len(country_sources),
         exclude_domains=len(exclude_domains),
@@ -722,19 +786,21 @@ def collect_sources(cache_dir, cache_max_age, include_google):
         google="enabled" if include_google else "disabled",
     )
 
-    for index, url in enumerate(url_sources, 1):
+    for index, source in enumerate(url_sources, 1):
+        url = source["url"]
+        source_name = source["name"] or url
         current_index = processed_items + 1
         update_collection_progress(
             f"Fetching URL {current_index}/{total_items}",
             current_kind="url",
-            current_name=url,
+            current_name=source_name,
             current_index=current_index,
             current_step=0.15,
         )
-        progress("fetching url", index=index, total=len(url_sources), url=url)
+        progress("fetching url", index=index, total=len(url_sources), name=source_name, url=url)
         text, record, ok = fetch_text_source(
             "url",
-            url,
+            source_name,
             url,
             cache_path(cache_dir, "url", url),
             now,
@@ -743,7 +809,7 @@ def collect_sources(cache_dir, cache_max_age, include_google):
             progress_callback=lambda attempt, attempts, current_index=current_index, url=url: update_collection_progress(
                 f"Fetching URL {current_index}/{total_items}",
                 current_kind="url",
-                current_name=url,
+                current_name=source_name,
                 current_index=current_index,
                 current_attempt=attempt,
                 current_attempt_total=attempts,
@@ -767,7 +833,114 @@ def collect_sources(cache_dir, cache_max_age, include_google):
         update_collection_progress(
             f"Processed URL {processed_items}/{total_items}",
             current_kind="url",
-            current_name=url,
+            current_name=source_name,
+            current_index=processed_items,
+        )
+
+    for index, source in enumerate(domain_list_sources, 1):
+        url = source["url"]
+        source_name = source["name"] or url
+        current_index = processed_items + 1
+        update_collection_progress(
+            f"Fetching domain list URL {current_index}/{total_items}",
+            current_kind="domain-list-url",
+            current_name=source_name,
+            current_index=current_index,
+            current_step=0.15,
+        )
+        progress("fetching domain list url", index=index, total=len(domain_list_sources), name=source_name, url=url)
+        text, record, ok = fetch_text_source(
+            "domain-list-url",
+            source_name,
+            url,
+            cache_path(cache_dir, "domain-list-url", url),
+            now,
+            cache_max_age,
+            dns_nameservers=dns_nameservers,
+            progress_callback=lambda attempt, attempts, current_index=current_index, url=url: update_collection_progress(
+                f"Fetching domain list URL {current_index}/{total_items}",
+                current_kind="domain-list-url",
+                current_name=source_name,
+                current_index=current_index,
+                current_attempt=attempt,
+                current_attempt_total=attempts,
+                current_step=min(0.45, 0.1 + (attempt / max(1, attempts)) * 0.35),
+            ),
+        )
+        record["required"] = require_all_url_sources
+        record["domains"] = 0
+        record["resolved_domains"] = 0
+        record["cached_domains"] = 0
+        record["skipped_domains"] = 0
+        record["invalid_lines"] = 0
+        record["routes"] = 0
+
+        if ok:
+            domains, invalid_lines = parse_domain_list(text)
+            record["domains"] = len(domains)
+            record["invalid_lines"] = invalid_lines
+            resolved_routes = []
+            skipped_domains = []
+
+            for domain_index, domain in enumerate(domains, 1):
+                domain_text, _domain_record, domain_ok = resolve_domain(
+                    "domain-list-domain",
+                    domain,
+                    cache_path(cache_dir, "domain-list-domain", domain),
+                    now,
+                    cache_max_age,
+                    dns_nameservers=dns_nameservers,
+                    dns_timeout=dns_timeout,
+                )
+                if domain_ok:
+                    if _domain_record["status"] == "cache":
+                        record["cached_domains"] += 1
+                    resolved_routes.append(domain_text)
+                    record["resolved_domains"] += 1
+                    record["routes"] += len([line for line in domain_text.splitlines() if line.strip()])
+                else:
+                    record["skipped_domains"] += 1
+                    if len(skipped_domains) < 10:
+                        skipped_domains.append(domain)
+                update_collection_progress(
+                    f"Resolving domains from list {current_index}/{total_items}: {domain_index}/{max(1, len(domains))}",
+                    current_kind="domain-list-url",
+                    current_name=source_name,
+                    current_index=current_index,
+                    current_step=0.45 + 0.5 * (domain_index / max(1, len(domains))),
+                )
+
+            if skipped_domains:
+                record["skipped_domain_samples"] = skipped_domains
+            if record["cached_domains"]:
+                record["download_status"] = record["status"]
+                record["status"] = "cache"
+            if domains:
+                resolved_cache_file = cache_path(cache_dir, "domain-list-routes", url)
+                resolved_cache_file.write_text("".join(resolved_routes), encoding="utf-8")
+                record["resolved_cache_file"] = str(resolved_cache_file)
+                include_text.extend(resolved_routes)
+            else:
+                ok = False
+                record["status"] = "failed"
+                record["error"] = "domain list contains no valid domains"
+
+        if not ok:
+            if require_all_url_sources:
+                source_failed = True
+            errors.append(record)
+            progress(
+                "required domain list URL failed" if require_all_url_sources else "skipping unavailable domain list URL",
+                url=url,
+                status="failed",
+            )
+
+        sources.append(record)
+        processed_items += 1
+        update_collection_progress(
+            f"Processed domain list URL {processed_items}/{total_items}",
+            current_kind="domain-list-url",
+            current_name=source_name,
             current_index=processed_items,
         )
 

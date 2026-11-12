@@ -1,5 +1,6 @@
 import contextlib
 import io
+import ipaddress
 import json
 import tempfile
 import unittest
@@ -45,6 +46,28 @@ class CheckIpTests(unittest.TestCase):
             exit_code, _ = run_main_quiet(["192.0.2.10", "--routes", str(routes), "--status", str(status)])
 
             self.assertEqual(exit_code, 0)
+
+    def test_domain_list_source_uses_resolved_route_cache(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            domain_cache = root / "domains.cache"
+            resolved_cache = root / "resolved.cache"
+
+            domain_cache.write_text("bato.to\n", encoding="utf-8")
+            resolved_cache.write_text("3.164.110.54/32\n", encoding="utf-8")
+
+            source = {
+                "kind": "domain-list-url",
+                "name": "anime",
+                "url": "https://example.com/anime.txt",
+                "status": "fresh",
+                "cache_file": str(domain_cache),
+                "resolved_cache_file": str(resolved_cache),
+            }
+
+            matches = check_ip.source_matches(ipaddress.ip_address("3.164.110.54"), source)
+
+            self.assertEqual(matches, [ipaddress.ip_network("3.164.110.54/32")])
 
     def test_main_returns_one_when_ip_is_not_in_generated_routes(self):
         with tempfile.TemporaryDirectory() as tmp:

@@ -83,6 +83,152 @@ class SourceRouteCountTests(unittest.TestCase):
         self.assertEqual(count, 3)
 
 
+class NamedUrlSourceTests(unittest.TestCase):
+    def test_named_regular_url_source_keeps_name(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            source = root / "routes.txt"
+            lists = root / "lists.txt"
+            domain_lists = root / "domain-list-urls.txt"
+            include_asns = root / "include-asns.txt"
+            include_countries = root / "include-countries.txt"
+            include_domains = root / "include-domains.txt"
+            exclude_domains = root / "exclude-domains.txt"
+            cache_dir = root / "cache"
+
+            source.write_text("192.0.2.0/24\n", encoding="utf-8")
+            lists.write_text(f"Antifilter | {source.as_uri()}\n", encoding="utf-8")
+            for path in (domain_lists, include_asns, include_countries, include_domains, exclude_domains):
+                path.write_text("", encoding="utf-8")
+            cache_dir.mkdir()
+
+            old_env = os.environ.copy()
+            os.environ.update({
+                "LISTS_FILE": str(lists),
+                "DOMAIN_LIST_URLS_FILE": str(domain_lists),
+                "INCLUDE_ASNS_FILE": str(include_asns),
+                "INCLUDE_COUNTRIES_FILE": str(include_countries),
+                "INCLUDE_DOMAINS_FILE": str(include_domains),
+                "EXCLUDE_DOMAINS_FILE": str(exclude_domains),
+            })
+            try:
+                failed, sources, errors, base, _include, _exclude = update_routes.collect_sources(
+                    cache_dir, 604800, include_google=False
+                )
+            finally:
+                os.environ.clear()
+                os.environ.update(old_env)
+
+        self.assertFalse(failed)
+        self.assertEqual(errors, [])
+        self.assertIn("192.0.2.0/24", "".join(base))
+        record = next(item for item in sources if item["kind"] == "url")
+        self.assertEqual(record["name"], "Antifilter")
+        self.assertEqual(record["url"], source.as_uri())
+
+
+class DomainListTests(unittest.TestCase):
+    def test_parse_named_url_list_supports_optional_names_and_comments(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            path = Path(tmp) / "domain-list-urls.txt"
+            path.write_text(
+                "# sources\n"
+                "YouTube | https://example.com/youtube.txt\n"
+                "https://example.com/plain.txt\n",
+                encoding="utf-8",
+            )
+
+            sources = update_routes.parse_named_url_list(path)
+
+        self.assertEqual(
+            sources,
+            [
+                {"name": "YouTube", "url": "https://example.com/youtube.txt"},
+                {"name": "", "url": "https://example.com/plain.txt"},
+            ],
+        )
+
+    def test_parse_domain_list_normalizes_deduplicates_and_ignores_invalid_lines(self):
+        domains, invalid = update_routes.parse_domain_list(
+            "# comment\n"
+            "Example.COM\n"
+            "example.com.\n"
+            "sub.example.com\n"
+            "https://bad.example/path\n"
+            "bad domain.example\n"
+            "\n"
+        )
+
+        self.assertEqual(domains, ["example.com", "sub.example.com"])
+        self.assertEqual(invalid, 2)
+
+    def test_domain_list_url_is_resolved_into_include_routes(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            domain_source = root / "domains.txt"
+            domain_lists = root / "domain-list-urls.txt"
+            lists = root / "lists.txt"
+            include_asns = root / "include-asns.txt"
+            include_countries = root / "include-countries.txt"
+            include_domains = root / "include-domains.txt"
+            exclude_domains = root / "exclude-domains.txt"
+            cache_dir = root / "cache"
+
+            domain_source.write_text("alpha.example\nbeta.example\n", encoding="utf-8")
+            domain_lists.write_text(f"Test domains | {domain_source.as_uri()}\n", encoding="utf-8")
+            lists.write_text("", encoding="utf-8")
+            include_asns.write_text("", encoding="utf-8")
+            include_countries.write_text("", encoding="utf-8")
+            include_domains.write_text("", encoding="utf-8")
+            exclude_domains.write_text("", encoding="utf-8")
+            cache_dir.mkdir()
+
+            old_env = os.environ.copy()
+            os.environ.update({
+                "LISTS_FILE": str(lists),
+                "DOMAIN_LIST_URLS_FILE": str(domain_lists),
+                "INCLUDE_ASNS_FILE": str(include_asns),
+                "INCLUDE_COUNTRIES_FILE": str(include_countries),
+                "INCLUDE_DOMAINS_FILE": str(include_domains),
+                "EXCLUDE_DOMAINS_FILE": str(exclude_domains),
+                "DNS_RESOLVE_TIMEOUT": "1",
+            })
+            answers = {
+                "alpha.example": ["192.0.2.10"],
+                "beta.example": ["198.51.100.20", "198.51.100.21"],
+            }
+
+            try:
+                with mock.patch.object(
+                    update_routes.dns_resolver,
+                    "resolve_ipv4_addresses",
+                    side_effect=lambda domain, **kwargs: answers[domain],
+                ):
+                    failed, sources, errors, _base, include, _exclude = update_routes.collect_sources(
+                        cache_dir,
+                        604800,
+                        include_google=False,
+                    )
+            finally:
+                os.environ.clear()
+                os.environ.update(old_env)
+
+            self.assertFalse(failed)
+            self.assertEqual(errors, [])
+            self.assertEqual(
+                "".join(include),
+                "192.0.2.10/32\n198.51.100.20/32\n198.51.100.21/32\n",
+            )
+            record = next(source for source in sources if source["kind"] == "domain-list-url")
+            self.assertEqual(record["name"], "Test domains")
+            self.assertEqual(record["url"], domain_source.as_uri())
+            self.assertEqual(record["domains"], 2)
+            self.assertEqual(record["resolved_domains"], 2)
+            self.assertEqual(record["skipped_domains"], 0)
+            self.assertEqual(record["routes"], 3)
+            self.assertTrue(Path(record["resolved_cache_file"]).exists())
+
+
 class CountrySourceTests(unittest.TestCase):
     def test_read_ipv4_prefixes_from_country_json_extracts_networks(self):
         networks = update_routes.read_ipv4_prefixes_from_country_json(

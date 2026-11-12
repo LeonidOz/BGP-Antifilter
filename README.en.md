@@ -75,6 +75,7 @@ The override switches the container to bridge networking and publishes `ADMIN_PO
 - `default-lists/` - default source, ASN, country, and include/exclude domain lists copied on first start.
 - `.env.example` - example AS, IP, update interval, cache, and healthcheck settings.
 - `generated/config/lists.txt` - the user's working IP/CIDR source list.
+- `generated/config/domain-list-urls.txt` - URLs of domain lists to add to routes.
 - `generated/config/include-asns.txt` - the user's working ASN list.
 - `generated/config/include-countries.txt` - the user's working ISO 3166-1 alpha-2 country list (`US`, `DE`, `NL`).
 - `generated/config/include-domains.txt` - the user's working include-domain list.
@@ -201,6 +202,8 @@ The container also checks whether `BIRD_IP` is assigned inside its network names
 
 ## Running
 
+For the Portainer stack and upgrade instructions, see [docs/portainer.md](docs/portainer.md).
+
 From the repository root, you can use short `docker compose ...` commands: the root-level `docker-compose.yml` is kept as a convenience entrypoint and automatically picks up `.env`.
 
 Run modes:
@@ -241,6 +244,31 @@ https://iplist.opencck.org/?format=json&data=cidr4&site=claude.ai&site=chatgpt.c
 ```
 
 If you have multiple lists, add each URL as a separate line in `generated/config/lists.txt`.
+
+Both kinds of URL source accept an optional name: `Name | URL`. Existing plain
+URL entries continue to work.
+
+Put domain-list URLs in `generated/config/domain-list-urls.txt`:
+
+```text
+Video | https://example.org/video-domains.txt
+https://example.org/other-domains.txt
+```
+
+Each downloaded file must contain one domain per line. Blank lines and comments
+starting with `#` are ignored. Names are lowercased, IDNs are converted to Punycode,
+and duplicates are removed. URLs, Adblock rules and hosts-file entries are not supported.
+
+Manual and scheduled updates download the lists, resolve their domains to IPv4,
+and add the addresses as `/32` routes before applying the usual exclusions and
+route aggregation. Source and domain caches are reused up to `CACHE_MAX_AGE`.
+Domains with neither an answer nor a usable cache are skipped. An unavailable
+list stops the update when `REQUIRE_ALL_URL_SOURCES=1`.
+
+The admin UI shows domain-list sources in the include-domains tab. Sources can
+be named, added, edited or removed; the raw editor accepts multiple entries.
+Cards show domain, address and skipped-entry counts. The check-IP tool also
+reports matches from these sources. Reload routes after saving changes.
 
 ASNs whose announced IPv4 prefixes should be force-added go into `generated/config/include-asns.txt`. For example, `AS32934` adds Meta routes for Facebook, Instagram, WhatsApp, and Messenger.
 

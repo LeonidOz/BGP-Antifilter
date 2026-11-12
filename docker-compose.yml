@@ -26,11 +26,14 @@ services:
       ROUTER_ID: "${ROUTER_ID:-192.168.55.5}"
       BGP_COMMUNITY: "${BGP_COMMUNITY:-65432,500}"
       LISTS_FILE: /etc/bird/generated/config/lists.txt
+      DOMAIN_LIST_URLS_FILE: /etc/bird/generated/config/domain-list-urls.txt
       INCLUDE_ASNS_FILE: /etc/bird/generated/config/include-asns.txt
       INCLUDE_COUNTRIES_FILE: /etc/bird/generated/config/include-countries.txt
       INCLUDE_DOMAINS_FILE: /etc/bird/generated/config/include-domains.txt
       EXCLUDE_DOMAINS_FILE: /etc/bird/generated/config/exclude-domains.txt
       INCLUDE_GOOGLE_RANGES: "${INCLUDE_GOOGLE_RANGES:-1}"
+      REQUIRE_ALL_URL_SOURCES: "${REQUIRE_ALL_URL_SOURCES:-0}"
+      UPDATE_INTERVAL: "${UPDATE_INTERVAL:-1800}"
       CACHE_MAX_AGE: "${CACHE_MAX_AGE:-604800}"
       MIN_PREFIX_LENGTH: "${MIN_PREFIX_LENGTH:-8}"
       ALLOW_BROAD_ROUTES: "${ALLOW_BROAD_ROUTES:-0}"
