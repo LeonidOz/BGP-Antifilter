@@ -572,6 +572,11 @@ def write_metrics(path, status):
 def build_status(success, started_at, sources, routes, errors, cache_max_age, dry_run=False, check_sources=False):
     now = int(time.time())
     degraded = os.environ.get("DEGRADED", "0") == "1"
+    network_status_file = env_path(*GENERATED_PATH_SPECS["network_status_file"])
+    try:
+        network = json.loads(network_status_file.read_text(encoding="utf-8")) if network_status_file.exists() else {}
+    except (OSError, json.JSONDecodeError):
+        network = {}
     return {
         "success": success,
         "degraded": degraded,
@@ -587,6 +592,7 @@ def build_status(success, started_at, sources, routes, errors, cache_max_age, dr
         "routes": routes,
         "sources": sources,
         "errors": errors,
+        "network": network,
     }
 
 

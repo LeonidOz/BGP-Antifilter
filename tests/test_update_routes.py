@@ -139,6 +139,41 @@ class CustomDnsFetchTests(unittest.TestCase):
 
 
 class MainTests(unittest.TestCase):
+    def test_build_status_includes_network_diagnostics_payload(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            network_status = root / "network-status.json"
+            network_status.write_text(
+                json.dumps({
+                    "configured_bird_ip": "192.168.77.111",
+                    "local_ipv4": ["192.168.65.6"],
+                    "bird_ip_assigned": False,
+                    "supported_for_bgp": False,
+                    "mode": "dev-only",
+                    "message": "configured BIRD_IP 192.168.77.111 is not assigned inside container",
+                }),
+                encoding="utf-8",
+            )
+
+            old_env = os.environ.copy()
+            os.environ["NETWORK_STATUS_FILE"] = str(network_status)
+            try:
+                status = update_routes.build_status(
+                    True,
+                    time.time() - 1,
+                    [],
+                    {"final": 0, "invalid": 0, "exclude_rules_applied": 0},
+                    [],
+                    60,
+                )
+            finally:
+                os.environ.clear()
+                os.environ.update(old_env)
+
+        self.assertIn("network", status)
+        self.assertFalse(status["network"]["bird_ip_assigned"])
+        self.assertEqual(status["network"]["mode"], "dev-only")
+
     def test_dry_run_status_includes_run_reason_and_message(self):
         with tempfile.TemporaryDirectory() as tmp:
             root = Path(tmp)

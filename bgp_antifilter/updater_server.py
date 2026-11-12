@@ -17,10 +17,10 @@ COMPOSE_FILE = Path(os.environ.get("COMPOSE_FILE", str(WORKSPACE_DIR / "docker-c
 UPDATE_RUNTIME_FILE = Path(os.environ.get("UPDATE_RUNTIME_FILE", str(WORKSPACE_DIR / "generated" / "update-runtime.json")))
 COMPOSE_SERVICES = tuple(
     item.strip()
-    for item in os.environ.get("UPDATER_COMPOSE_SERVICES", "bird admin").split()
+    for item in os.environ.get("UPDATER_COMPOSE_SERVICES", "bgp-antifilter").split()
     if item.strip()
 )
-SELF_SERVICE = os.environ.get("UPDATER_SELF_SERVICE", "admin").strip()
+SELF_SERVICE = os.environ.get("UPDATER_SELF_SERVICE", "bgp-antifilter").strip()
 UPDATE_LOCK = threading.Lock()
 UPDATE_THREAD = None
 _TOP_LEVEL_NAME_RE = re.compile(r"^name:\s*(['\"]?)([^#\n]+?)\1\s*(?:#.*)?$", re.MULTILINE)
@@ -60,11 +60,11 @@ def version_value():
         return ""
 
 
-def configured_version():
+def configured_version_setting():
     try:
         text = ENV_FILE.read_text(encoding="utf-8")
     except OSError:
-        return version_value()
+        return ""
     for line in text.splitlines():
         current = line.strip()
         if not current or current.startswith("#"):
@@ -78,6 +78,13 @@ def configured_version():
             return validate_version(value)
         except ValueError:
             break
+    return ""
+
+
+def configured_version():
+    configured = configured_version_setting()
+    if configured:
+        return configured
     return version_value()
 
 
@@ -158,7 +165,7 @@ def compose_base_command():
         command.extend(["-f", str(COMPOSE_FILE)])
         return command, None
 
-    raise FileNotFoundError("docker compose executable is not available inside admin container")
+    raise FileNotFoundError("docker compose executable is not available inside container")
 
 
 def uses_legacy_docker_compose():
@@ -182,6 +189,8 @@ def health_status():
         return False, f"workspace directory not found: {WORKSPACE_DIR}"
     if not COMPOSE_FILE.exists():
         return False, f"compose file not found: {COMPOSE_FILE}"
+    if not configured_version_setting():
+        return False, "self-update is disabled for local dev builds; set BGP_ANTIFILTER_VERSION in .env to pin a release image tag"
     try:
         _, cleanup_path = compose_base_command()
     except OSError as exc:

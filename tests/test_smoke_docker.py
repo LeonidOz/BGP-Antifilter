@@ -83,8 +83,9 @@ class DockerSmokeTests(unittest.TestCase):
         return textwrap.dedent(
             f"""
             services:
-              bird:
-                image: "bgp-antifilter-bird:smoke"
+              bgp-antifilter:
+                container_name: bgp-antifilter-smoke
+                image: "bgp-antifilter:smoke"
                 build:
                   context: "{context}"
                   dockerfile: deploy/Dockerfile
@@ -147,7 +148,7 @@ class DockerSmokeTests(unittest.TestCase):
                 "sh",
                 "-v",
                 f"{self.root.as_posix()}:/work",
-                "bgp-antifilter-bird:smoke",
+                "bgp-antifilter:smoke",
                 "-c",
                 f"chown -R {uid}:{gid} /work || true",
             ],
@@ -166,7 +167,7 @@ class DockerSmokeTests(unittest.TestCase):
             except AssertionError as exc:
                 last_error = exc
             time.sleep(interval)
-        logs = self.compose("logs", "bird", check=False)
+        logs = self.compose("logs", "bgp-antifilter", check=False)
         details = logs.stdout[-4000:] if logs.stdout else ""
         if last_error is not None:
             raise AssertionError(f"{message}: {last_error}\n{details}".strip())
@@ -179,7 +180,7 @@ class DockerSmokeTests(unittest.TestCase):
         old_route = "route 192.0.2.0/24 blackhole;"
         new_route = "route 198.51.100.0/24 blackhole;"
 
-        self.compose("up", "-d", "--build", "bird")
+        self.compose("up", "-d", "--build", "bgp-antifilter")
 
         routes_file = self.generated_dir / "routes.conf"
         last_good_file = self.generated_dir / "routes.last-good.conf"
@@ -206,7 +207,7 @@ class DockerSmokeTests(unittest.TestCase):
         self.server_state["delay"] = 5
 
         self.compose("down", "--remove-orphans")
-        self.compose("up", "-d", "bird")
+        self.compose("up", "-d", "bgp-antifilter")
 
         self.wait_until(
             lambda: runtime_file.exists() and self.read_json(runtime_file).get("generation_kind") == "startup",
@@ -242,7 +243,7 @@ class DockerSmokeTests(unittest.TestCase):
     def test_failed_refresh_keeps_last_known_good_snapshot_and_sets_degraded_state(self):
         old_route = "route 192.0.2.0/24 blackhole;"
 
-        self.compose("up", "-d", "--build", "bird")
+        self.compose("up", "-d", "--build", "bgp-antifilter")
 
         routes_file = self.generated_dir / "routes.conf"
         last_good_file = self.generated_dir / "routes.last-good.conf"
@@ -256,7 +257,7 @@ class DockerSmokeTests(unittest.TestCase):
         )
 
         self.server_state["body"] = "0.0.0.0/0\n"
-        result = self.compose("exec", "-T", "bird", "/reload-routes.sh", check=False)
+        result = self.compose("exec", "-T", "bgp-antifilter", "/reload-routes.sh", check=False)
         self.assertNotEqual(result.returncode, 0, result.stdout + result.stderr)
 
         self.wait_until(

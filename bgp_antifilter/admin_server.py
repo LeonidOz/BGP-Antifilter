@@ -22,6 +22,7 @@ from urllib.parse import parse_qs, urlparse
 
 from . import __version__
 from . import dns_resolver
+from . import network_diagnostics
 from .runtime_paths import GENERATED_PATH_SPECS, LIST_FILE_SPECS, env_path, env_paths
 from . import updater_server
 
@@ -589,23 +590,7 @@ def parse_resolv_conf(text):
 
 
 def local_ipv4_addresses():
-    addresses = set()
-    for host in {socket.gethostname(), socket.getfqdn(), "localhost"}:
-        try:
-            infos = socket.getaddrinfo(host, None, socket.AF_INET, socket.SOCK_STREAM)
-        except socket.gaierror:
-            continue
-        for info in infos:
-            address = info[4][0]
-            if address:
-                addresses.add(address)
-    try:
-        with socket.socket(socket.AF_INET, socket.SOCK_DGRAM) as sock:
-            sock.connect(("8.8.8.8", 80))
-            addresses.add(sock.getsockname()[0])
-    except OSError:
-        pass
-    return sorted(addresses)
+    return network_diagnostics.local_ipv4_addresses()
 
 
 def external_ip_summary(timeout=5):
@@ -733,6 +718,7 @@ def network_summary():
             "bgp_protocol": settings.get("BGP_PROTOCOL", ""),
             "my_as": settings.get("MY_AS", ""),
             "mt_as": settings.get("MT_AS", ""),
+            "bird_ip_check": network_diagnostics.bird_ip_diagnostic(settings.get("BIRD_IP", ""), addresses=addresses),
         },
         "admin": {
             "port": os.environ.get("ADMIN_PORT", "8080"),

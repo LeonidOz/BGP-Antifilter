@@ -1,5 +1,13 @@
 # Changelog
 
+## 0.5.0 - 2026-11-12
+
+- Consolidated BIRD, the route scheduler, and the admin UI into one `bgp-antifilter` container managed by supervisord.
+- Added explicit BIRD bind-address diagnostics to startup logs and runtime/status JSON; restored full runtime and optional BGP checks in the Compose healthcheck.
+- Documented Linux as the supported BGP deployment target and added a bridge-network Docker Desktop dev override with a published admin port.
+- Made local builds use the `dev` image tag without a version setting in `.env`; self-update now requires an explicit release pin.
+- Updated release-version tooling and tests for the single-container layout, and preserved scheduler runtime state across process boundaries.
+
 ## 0.4.4 - 2026-07-07
 
 - Added a public `/status.json` endpoint without authentication that exposes only compact operational counters: generated route count, time since the last generation, generation duration, and admin-server uptime.

@@ -11,7 +11,7 @@ smoke-test:
 	RUN_DOCKER_SMOKE=1 python -m unittest tests.test_smoke_docker -v
 
 shellcheck:
-	shellcheck deploy/entrypoint.sh deploy/healthcheck.sh deploy/reload-routes.sh
+	shellcheck deploy/entrypoint.sh deploy/container-start.sh deploy/init-config.sh deploy/lib.sh deploy/run-admin.sh deploy/run-bird.sh deploy/run-scheduler.sh deploy/healthcheck.sh deploy/reload-routes.sh
 
 compose-config:
 	$(COMPOSE) config
@@ -41,19 +41,19 @@ down:
 	$(COMPOSE) down
 
 logs:
-	$(COMPOSE) logs -f bird admin
+	$(COMPOSE) logs -f bgp-antifilter
 
 ps:
 	$(COMPOSE) ps
 
 reload:
-	$(COMPOSE) exec bird /reload-routes.sh
+	$(COMPOSE) exec bgp-antifilter /reload-routes.sh
 
 dry-run:
-	$(COMPOSE) exec bird /update-routes.py --dry-run
+	$(COMPOSE) exec bgp-antifilter /update-routes.py --dry-run
 
 check-sources:
-	$(COMPOSE) exec bird /update-routes.py --check-sources
+	$(COMPOSE) exec bgp-antifilter /update-routes.py --check-sources
 
 check-ip:
-	$(COMPOSE) exec bird /check-ip.py $(IP)
+	$(COMPOSE) exec bgp-antifilter /check-ip.py $(IP)

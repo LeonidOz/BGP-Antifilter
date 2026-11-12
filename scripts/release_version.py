@@ -7,8 +7,6 @@ ROOT = Path(__file__).resolve().parents[1]
 
 FILES = {
     "version": ROOT / "VERSION",
-    "env_example": ROOT / ".env.example",
-    "compose": ROOT / "docker-compose.yml",
     "readme_ru": ROOT / "README.md",
     "readme_en": ROOT / "README.en.md",
     "changelog": ROOT / "CHANGELOG.md",
@@ -49,17 +47,8 @@ def prepend_changelog(version, date_text):
 
 def update_version(version, date_text=None, add_changelog=False):
     write_text(FILES["version"], f"{version}\n")
-    replace_exact(FILES["env_example"], r"^BGP_ANTIFILTER_VERSION=.*$", f"BGP_ANTIFILTER_VERSION={version}")
-    replace_min(
-        FILES["compose"],
-        r'bgp-antifilter-bird:\$\{BGP_ANTIFILTER_VERSION:-[^}]+\}',
-        f'bgp-antifilter-bird:${{BGP_ANTIFILTER_VERSION:-{version}}}',
-        min_count=2,
-    )
     replace_min(FILES["readme_ru"], r"BGP_ANTIFILTER_VERSION=\d+\.\d+\.\d+", f"BGP_ANTIFILTER_VERSION={version}")
-    replace_min(FILES["readme_ru"], r"по умолчанию `\d+\.\d+\.\d+`", f"по умолчанию `{version}`")
     replace_min(FILES["readme_en"], r"BGP_ANTIFILTER_VERSION=\d+\.\d+\.\d+", f"BGP_ANTIFILTER_VERSION={version}")
-    replace_min(FILES["readme_en"], r"defaults to `\d+\.\d+\.\d+`", f"defaults to `{version}`")
     if add_changelog:
         if not date_text:
             raise SystemExit("--date is required with --add-changelog")

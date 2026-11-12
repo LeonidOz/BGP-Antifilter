@@ -17,6 +17,7 @@ GENERATED_PATH_SPECS = {
     "metrics_file": ("METRICS_FILE", "/etc/bird/generated/metrics.prom"),
     "runtime_file": ("RUNTIME_FILE", "/etc/bird/generated/runtime.json"),
     "update_runtime_file": ("UPDATE_RUNTIME_FILE", "/etc/bird/generated/update-runtime.json"),
+    "network_status_file": ("NETWORK_STATUS_FILE", "/etc/bird/generated/network-status.json"),
     "container_log_file": ("CONTAINER_LOG_FILE", "/etc/bird/generated/container.log"),
     "settings_file": ("SETTINGS_FILE", "/etc/bird/generated/settings.json"),
     "settings_env_file": ("SETTINGS_ENV_FILE", "/etc/bird/generated/settings.env"),

@@ -32,17 +32,29 @@ BGP Antifilter - контейнеризированная конфигураци
 
 ## Быстрый старт
 
-Если нужен минимальный путь до рабочего стенда:
+Если нужен минимальный путь до локального dev-стенда:
 
 1. Скопируйте пример окружения: `cp .env.example .env`.
 2. Проверьте `MY_AS`, `MT_AS`, `MT_IP`, `BIRD_IP`, `ROUTER_ID`, `BGP_COMMUNITY`.
 3. Добавьте хотя бы один URL-источник в `generated/config/lists.txt` или подготовьте его через дефолты при первом старте.
 4. При необходимости включите админку: `ADMIN_ENABLED=1`, `ADMIN_PORT=8080`, `ADMIN_PASSWORD=change-me`.
 5. Поднимите контейнер: `docker compose up -d --build`.
-6. Проверьте состояние: `docker compose ps` и `docker compose logs -f bird admin`.
-7. Перед изменением списков запускайте `docker compose exec bird /update-routes.py --dry-run`, затем применяйте `docker compose exec bird /reload-routes.sh`.
+6. Проверьте состояние: `docker compose ps` и `docker compose logs -f bgp-antifilter`.
+7. Перед изменением списков запускайте `docker compose exec bgp-antifilter /update-routes.py --dry-run`, затем применяйте `docker compose exec bgp-antifilter /reload-routes.sh`.
 
 Если после рестарта контейнер уже имел подтвержденный snapshot, BIRD поднимется сразу с ним, а refresh пойдет в фоне.
+
+Рабочий одноконтейнерный BGP-режим поддерживается в первую очередь на Linux-host deployment. На Docker Desktop для Windows/macOS контейнер стоит рассматривать как dev-режим для генератора маршрутов и админки: `network_mode: host` там обычно не дает контейнеру LAN-адрес хоста для реального BGP bind.
+
+Для release/pull-режима можно явно закрепить тег образа в `.env`, например `BGP_ANTIFILTER_VERSION=0.5.0`. Если переменная не задана, compose использует локальный dev-образ `bgp-antifilter:dev`.
+
+Для Docker Desktop dev-режима используйте override:
+
+```bash
+docker compose -f docker-compose.yml -f docker-compose.dev.yml up -d --build
+```
+
+Этот override переводит контейнер на `bridge`-сеть и публикует `ADMIN_PORT`, чтобы админка открывалась с хоста. Реальный BGP при этом по-прежнему считается Linux-only сценарием.
 
 ## Что входит в проект
 
@@ -83,10 +95,9 @@ cp .env.example .env
 
 Если вы обновляетесь с предыдущей структуры репозитория, перенесите свои кастомные списки в `generated/config/`: `lists.txt`, `include-asns.txt`, `include-countries.txt`, `include-domains.txt`, `exclude-domains.txt`.
 
-Основные параметры:
+Основные параметры dev/runtime:
 
 ```dotenv
-BGP_ANTIFILTER_VERSION=0.4.4
 MY_AS=64500
 MT_AS=65455
 MT_IP=192.168.55.1
@@ -111,7 +122,6 @@ ADMIN_PASSWORD=
 Где:
 
 - `MY_AS` - AS контейнера с BIRD.
-- `BGP_ANTIFILTER_VERSION` - тег локального Docker-образа, по умолчанию `0.4.4`.
 - `MT_AS` - AS MikroTik.
 - `MT_IP` - IP-адрес MikroTik.
 - `BIRD_IP` - IP-адрес хоста или интерфейса, с которого BIRD устанавливает BGP-сессию.
@@ -130,6 +140,10 @@ ADMIN_PASSWORD=
 - `ADMIN_ENABLED` - `1` включает веб-админку, по умолчанию `0`.
 - `ADMIN_PORT` - порт веб-админки, по умолчанию `8080`.
 - `ADMIN_PASSWORD` - пароль входа в веб-админку; обязателен при `ADMIN_ENABLED=1`.
+
+Опционально для release-режима:
+
+- `BGP_ANTIFILTER_VERSION` - pinned tag опубликованного Docker-образа для `pull`/self-update. Если переменная не задана, compose использует локальный образ `bgp-antifilter:dev`, а self-update отключается.
 
 Если `.env` не создан, используются значения по умолчанию из compose-конфига.
 
@@ -160,7 +174,7 @@ ADMIN_PASSWORD=change-me
 - `Warning` - идет генерация, используется кеш или контейнер работает в `degraded`-режиме на предыдущем подтвержденном snapshot.
 - `Failed` - последняя операция завершилась ошибкой и новый набор маршрутов не был применен.
 
-При `ADMIN_ENABLED=1` отдельный сервис `admin` поднимается всегда. Это убирает конкуренцию за stdout/stderr у контейнера BIRD и делает поведение одинаковым на Linux и Docker Desktop для Windows/macOS. Сервис `admin` публикует порт через обычный `ports:`, а с BIRD общается через общий `/run/bird` socket и общие файлы `generated/`.
+При `ADMIN_ENABLED=1` веб-админка запускается внутри того же контейнера `bgp-antifilter`, что и BIRD. За жизненный цикл процессов отвечают `supervisord`, отдельный планировщик обновлений и сам BIRD, а админка продолжает работать через общий `/run/bird` socket, `generated/` и смонтированный `/workspace` вместе с `docker.sock` для self-update.
 
 Рабочие файлы `generated/config/lists.txt`, `generated/config/include-asns.txt`, `generated/config/include-countries.txt`, `generated/config/include-domains.txt` и `generated/config/exclude-domains.txt` хранятся вне git и редактируются админкой без конфликтов с `git pull`. Если файла еще нет, контейнер создает его из дефолта из `default-lists/`. Перед сохранением создается backup в `generated/list-backups`.
 
@@ -174,9 +188,16 @@ ADMIN_PASSWORD=change-me
 - `UPDATE_INTERVAL` должен быть положительным числом секунд.
 - `CACHE_MAX_AGE` должен быть положительным числом секунд.
 
+Контейнер также проверяет, назначен ли `BIRD_IP` внутри его network namespace. Если адрес контейнеру не виден, явная диагностика записывается в `generated/network-status.json`, `generated/runtime.json` и `generated/status.json`. На Docker Desktop это обычно означает, что реальная BGP-сессия не поддерживается и контейнер пригоден только для генерации маршрутов и веб-админки.
+
 ## Запуск
 
 Из корня репозитория можно использовать короткие команды `docker compose ...`: root-level `docker-compose.yml` оставлен как удобная точка входа и автоматически подхватывает `.env`.
+
+Режимы запуска:
+
+- Dev: не задавайте `BGP_ANTIFILTER_VERSION`, используйте `docker compose up -d --build`, и compose соберет локальный образ `bgp-antifilter:dev`.
+- Release: задайте `BGP_ANTIFILTER_VERSION=<tag>` и запускайте через `docker compose pull`/`docker compose up -d`; только в этом режиме поддерживаются self-update и rollback по тегам образов.
 
 ```bash
 docker compose up -d --build
@@ -185,7 +206,7 @@ docker compose up -d --build
 Посмотреть логи:
 
 ```bash
-docker compose logs -f bird admin
+docker compose logs -f bgp-antifilter
 ```
 
 Проверить состояние контейнера:
@@ -287,22 +308,24 @@ flowchart TD
 
 Docker healthcheck проверяет `birdc show status`, непустой `generated/routes.conf`, ненулевое количество маршрутов в `status.json` и, если `HEALTHCHECK_REQUIRE_BGP=1`, состояние BGP-протокола `BGP_PROTOCOL`. Если включить `HEALTHCHECK_FAIL_ON_DEGRADED=1`, healthcheck дополнительно упадет в ситуации, когда новое обновление не применилось и контейнер продолжает работать на предыдущем рабочем snapshot.
 
+Если `HEALTHCHECK_REQUIRE_BGP=1` и `BIRD_IP` не назначен контейнеру, healthcheck завершится ошибкой с явным сообщением `configured BIRD_IP is not assigned inside container`, а не только с косвенным `bind`/`Connection closed`.
+
 Проверить состояние BIRD внутри контейнера:
 
 ```bash
-docker compose exec bird birdc show status
+docker compose exec bgp-antifilter birdc show status
 ```
 
 Посмотреть количество опубликованных статических маршрутов:
 
 ```bash
-docker compose exec bird birdc show route protocol static_antifilter count
+docker compose exec bgp-antifilter birdc show route protocol static_antifilter count
 ```
 
 Проверить, есть ли IP в сгенерированной базе, и увидеть источники из кеша:
 
 ```bash
-docker compose exec bird /check-ip.py 1.2.3.4
+docker compose exec bgp-antifilter /check-ip.py 1.2.3.4
 ```
 
 Команда проверяет попадание IP в `generated/routes.conf`, затем ищет совпадения в кешах источников из `generated/status.json`. Если IP найден в финальной базе, команда завершится с кодом `0`; если нет - с кодом `1`.
@@ -310,23 +333,23 @@ docker compose exec bird /check-ip.py 1.2.3.4
 Для скриптов можно получить машинно-читаемый вывод:
 
 ```bash
-docker compose exec bird /check-ip.py 1.2.3.4 --json
+docker compose exec bgp-antifilter /check-ip.py 1.2.3.4 --json
 ```
 
 Принудительно обновить маршруты без перезапуска BIRD:
 
 ```bash
-docker compose exec bird /reload-routes.sh
+docker compose exec bgp-antifilter /reload-routes.sh
 ```
 
 Эта команда запускает обновление источников внутри работающего контейнера. Старые маршруты остаются активными, пока новый кандидат `routes.conf` не будет сгенерирован и принят командой `birdc configure`. Если генерация или применение не удались, контейнер возвращается к `routes.last-good.conf`.
 
-Во время ручного обновления и в `docker compose logs -f bird admin` выводится прогресс по этапам: загрузка URL/ASN/Google ranges, резолв include/exclude-доменов, парсинг, сборка итоговой таблицы, запись status/metrics.
+Во время ручного обновления и в `docker compose logs -f bgp-antifilter` выводится прогресс по этапам: загрузка URL/ASN/Google ranges, резолв include/exclude-доменов, парсинг, сборка итоговой таблицы, запись status/metrics.
 
 Проверить обновление без записи `routes.conf`, `status.json` и `metrics.prom`:
 
 ```bash
-docker compose exec bird /update-routes.py --dry-run
+docker compose exec bgp-antifilter /update-routes.py --dry-run
 ```
 
 Dry-run скачивает и валидирует источники, собирает итоговую таблицу в памяти и печатает JSON-сводку. Кеши источников при этом могут обновиться, но активные маршруты и диагностические файлы не меняются.
@@ -334,7 +357,7 @@ Dry-run скачивает и валидирует источники, соби�
 Проверить только доступность источников без парсинга маршрутов и записи диагностических файлов:
 
 ```bash
-docker compose exec bird /update-routes.py --check-sources
+docker compose exec bgp-antifilter /update-routes.py --check-sources
 ```
 
 Если установлен `make`, доступны короткие команды:
@@ -354,6 +377,7 @@ make check-ip IP=1.2.3.4
 
 - `generated/status.json` - итог последнего обновления, ошибки и состояние источников.
 - `generated/runtime.json` - активный progress, startup snapshot, `degraded`, результат последнего apply.
+- `generated/network-status.json` - видимые контейнеру IPv4-адреса и проверка, назначен ли `BIRD_IP` внутри контейнера.
 - `generated/metrics.prom` - сводные метрики для мониторинга.
 - `generated/routes.last-good.conf` - последний подтвержденный snapshot.
 
@@ -361,11 +385,11 @@ make check-ip IP=1.2.3.4
 
 | Симптом | Куда смотреть | Команда / действие |
 | --- | --- | --- |
-| BIRD не поднялся после первого старта | `docker compose logs -f bird admin`, `generated/status.json` | Убедитесь, что генератор собрал непустой `routes.conf` и не завершился на ошибке валидации |
+| BIRD не поднялся после первого старта | `docker compose logs -f bgp-antifilter`, `generated/status.json` | Убедитесь, что генератор собрал непустой `routes.conf` и не завершился на ошибке валидации |
 | Контейнер работает, но новое обновление не применилось | `generated/runtime.json` | Проверьте `degraded`, `degraded_reason`, `last_update_success` |
 | `dry-run` или `check-sources` падают | `generated/status.json`, `generated/cache` | Ищите источники со статусом `failed`, проверяйте свежесть кеша и доступность URL/DNS |
 | Маршрутов стало неожиданно мало или ноль | `generated/status.json`, `generated/metrics.prom` | Смотрите `routes.final`, `routes.invalid`, а также значения `REQUIRE_ALL_URL_SOURCES`, `MIN_PREFIX_LENGTH`, `ALLOW_BROAD_ROUTES` |
-| BGP не устанавливается, хотя BIRD жив | `birdc show status`, `birdc show protocols <BGP_PROTOCOL>` | Проверьте `MT_IP`, `BIRD_IP`, `MY_AS`, `MT_AS`, `BGP_PROTOCOL` |
+| BGP не устанавливается, хотя BIRD жив | `birdc show status`, `birdc show protocols <BGP_PROTOCOL>`, `generated/network-status.json` | Проверьте `MT_IP`, `BIRD_IP`, `MY_AS`, `MT_AS`, `BGP_PROTOCOL`; если `BIRD_IP` не назначен контейнеру, на Docker Desktop это ожидаемое ограничение |
 | После неудачного reload нужно понять, на чем работает контейнер | `generated/routes.last-good.conf`, `generated/runtime.json` | Убедитесь, что активен предыдущий подтвержденный snapshot и rollback действительно произошел |
 
 ## Эксплуатационный чеклист

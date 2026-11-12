@@ -13,6 +13,7 @@ CACHE_DIR="${CACHE_DIR:-/etc/bird/generated/cache}"
 STATUS_FILE="${STATUS_FILE:-/etc/bird/generated/status.json}"
 METRICS_FILE="${METRICS_FILE:-/etc/bird/generated/metrics.prom}"
 RUNTIME_FILE="${RUNTIME_FILE:-/etc/bird/generated/runtime.json}"
+NETWORK_STATUS_FILE="${NETWORK_STATUS_FILE:-/etc/bird/generated/network-status.json}"
 LOCK_DIR="${UPDATE_LOCK_DIR:-/etc/bird/generated/update.lock}"
 SETTINGS_ENV_FILE="${SETTINGS_ENV_FILE:-/etc/bird/generated/settings.env}"
 
@@ -47,7 +48,7 @@ write_runtime_state() {
   generation_stage_message="${7:-}"
   generation_items_done="${8:-}"
   generation_items_total="${9:-}"
-  export RUNTIME_FILE UPDATE_INTERVAL ADMIN_ENABLED ADMIN_PORT
+  export RUNTIME_FILE NETWORK_STATUS_FILE UPDATE_INTERVAL ADMIN_ENABLED ADMIN_PORT
   export generation_active generation_kind generation_message generation_started_at
   export generation_progress_percent generation_stage generation_stage_message
   export generation_items_done generation_items_total
@@ -68,11 +69,16 @@ import time
 from pathlib import Path
 
 path = Path(os.environ["RUNTIME_FILE"])
+network_status_file = Path(os.environ["NETWORK_STATUS_FILE"])
 path.parent.mkdir(parents=True, exist_ok=True)
 try:
     data = json.loads(path.read_text(encoding="utf-8"))
 except (OSError, json.JSONDecodeError):
     data = {}
+try:
+    network = json.loads(network_status_file.read_text(encoding="utf-8")) if network_status_file.exists() else {}
+except (OSError, json.JSONDecodeError):
+    network = {}
 
 now = int(time.time())
 finished_at_raw = os.environ.get("LAST_UPDATE_FINISHED_AT_UNIX", "")
@@ -109,6 +115,7 @@ data.update({
     "last_update_finished_at_unix": finished_at,
     "degraded": os.environ.get("DEGRADED", "0") == "1",
     "degraded_reason": os.environ.get("DEGRADED_REASON", "") if os.environ.get("DEGRADED", "0") == "1" else "",
+    "network": network,
 })
 tmp = path.with_suffix(path.suffix + ".tmp")
 tmp.write_text(json.dumps(data, indent=2) + "\n", encoding="utf-8")
@@ -118,7 +125,7 @@ PY
 
 write_degraded_status() {
   reason="${1:-Route update failed; previous route snapshot remains active}"
-  export STATUS_FILE LAST_UPDATE_REASON LAST_UPDATE_MESSAGE
+  export STATUS_FILE NETWORK_STATUS_FILE LAST_UPDATE_REASON LAST_UPDATE_MESSAGE
   export DEGRADED_REASON="$reason"
   python3 - <<'PY'
 import json
@@ -127,10 +134,15 @@ import time
 from pathlib import Path
 
 path = Path(os.environ["STATUS_FILE"])
+network_status_file = Path(os.environ["NETWORK_STATUS_FILE"])
 try:
     data = json.loads(path.read_text(encoding="utf-8"))
 except (OSError, json.JSONDecodeError):
     data = {}
+try:
+    network = json.loads(network_status_file.read_text(encoding="utf-8")) if network_status_file.exists() else {}
+except (OSError, json.JSONDecodeError):
+    network = {}
 
 now = int(time.time())
 data["success"] = False
@@ -153,6 +165,7 @@ if data["degraded_reason"] and not any(
         "status": "failed",
         "error": data["degraded_reason"],
     })
+data["network"] = network
 
 path.parent.mkdir(parents=True, exist_ok=True)
 tmp = path.with_suffix(path.suffix + ".tmp")

@@ -62,6 +62,14 @@ class UpdaterServerTests(unittest.TestCase):
                 with mock.patch.object(updater_server, "VERSION_FILE", version_file):
                     self.assertEqual(updater_server.configured_version(), "0.3.2")
 
+    def test_configured_version_setting_is_empty_when_env_has_no_pin(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            env_file = Path(tmp) / ".env"
+            env_file.write_text("MY_AS=64500\n", encoding="utf-8")
+
+            with mock.patch.object(updater_server, "ENV_FILE", env_file):
+                self.assertEqual(updater_server.configured_version_setting(), "")
+
     def test_compose_project_name_reads_top_level_name(self):
         with tempfile.TemporaryDirectory() as tmp:
             compose_file = Path(tmp) / "docker-compose.yml"
@@ -97,7 +105,9 @@ class UpdaterServerTests(unittest.TestCase):
     def test_health_status_requires_docker_socket(self):
         with tempfile.TemporaryDirectory() as tmp:
             workspace = Path(tmp)
+            env_file = workspace / ".env"
             compose_file = workspace / "docker-compose.yml"
+            env_file.write_text("BGP_ANTIFILTER_VERSION=0.3.2\n", encoding="utf-8")
             compose_file.write_text("services: {}\n", encoding="utf-8")
 
             real_exists = Path.exists
@@ -108,13 +118,30 @@ class UpdaterServerTests(unittest.TestCase):
                 return real_exists(path_obj)
 
             with mock.patch.object(updater_server, "WORKSPACE_DIR", workspace):
-                with mock.patch.object(updater_server, "COMPOSE_FILE", compose_file):
-                    with mock.patch.object(updater_server.shutil, "which", return_value="docker-compose"):
-                        with mock.patch.object(Path, "exists", autospec=True, side_effect=exists_side_effect):
-                            ok, error = updater_server.health_status()
+                with mock.patch.object(updater_server, "ENV_FILE", env_file):
+                    with mock.patch.object(updater_server, "COMPOSE_FILE", compose_file):
+                        with mock.patch.object(updater_server.shutil, "which", return_value="docker-compose"):
+                            with mock.patch.object(Path, "exists", autospec=True, side_effect=exists_side_effect):
+                                ok, error = updater_server.health_status()
 
         self.assertFalse(ok)
         self.assertIn("docker socket", error)
+
+    def test_health_status_rejects_local_dev_mode_without_version_pin(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            workspace = Path(tmp)
+            env_file = workspace / ".env"
+            compose_file = workspace / "docker-compose.yml"
+            env_file.write_text("MY_AS=64500\n", encoding="utf-8")
+            compose_file.write_text("services: {}\n", encoding="utf-8")
+
+            with mock.patch.object(updater_server, "WORKSPACE_DIR", workspace):
+                with mock.patch.object(updater_server, "ENV_FILE", env_file):
+                    with mock.patch.object(updater_server, "COMPOSE_FILE", compose_file):
+                        ok, error = updater_server.health_status()
+
+        self.assertFalse(ok)
+        self.assertIn("self-update is disabled for local dev builds", error)
 
     def test_compose_base_command_uses_docker_compose_v2_when_available(self):
         with tempfile.TemporaryDirectory() as tmp:
@@ -164,9 +191,9 @@ class UpdaterServerTests(unittest.TestCase):
 
     def test_restart_services_for_update_skips_self_service_for_legacy_compose(self):
         with mock.patch.object(updater_server, "uses_legacy_docker_compose", return_value=True):
-            with mock.patch.object(updater_server, "COMPOSE_SERVICES", ("bird", "admin")):
-                with mock.patch.object(updater_server, "SELF_SERVICE", "admin"):
-                    self.assertEqual(updater_server.restart_services_for_update(), ("bird",))
+            with mock.patch.object(updater_server, "COMPOSE_SERVICES", ("bgp-antifilter", "metrics")):
+                with mock.patch.object(updater_server, "SELF_SERVICE", "metrics"):
+                    self.assertEqual(updater_server.restart_services_for_update(), ("bgp-antifilter",))
 
     def test_recreate_services_uses_rm_then_up(self):
         calls = []
@@ -176,10 +203,10 @@ class UpdaterServerTests(unittest.TestCase):
             return {"ok": True, "stderr": "", "stdout": "", "returncode": 0}
 
         with mock.patch.object(updater_server, "run_compose", side_effect=fake_run_compose):
-            result = updater_server.recreate_services("bird")
+            result = updater_server.recreate_services("bgp-antifilter")
 
         self.assertTrue(result["ok"])
-        self.assertEqual(calls, [("rm", "-f", "-s", "bird"), ("up", "-d", "bird")])
+        self.assertEqual(calls, [("rm", "-f", "-s", "bgp-antifilter"), ("up", "-d", "bgp-antifilter")])
 
     def test_reconcile_runtime_marks_restart_as_completed_after_version_switch(self):
         with tempfile.TemporaryDirectory() as tmp:
@@ -268,8 +295,9 @@ class UpdaterServerTests(unittest.TestCase):
             with mock.patch.object(updater_server, "ENV_FILE", env_file):
                 with mock.patch.object(updater_server, "VERSION_FILE", version_file):
                     with mock.patch.object(updater_server, "UPDATE_RUNTIME_FILE", runtime_file):
-                        with mock.patch.object(updater_server, "run_compose", side_effect=fake_run_compose):
-                            updater_server.apply_update("0.3.3")
+                        with mock.patch.object(updater_server, "COMPOSE_SERVICES", ("bgp-antifilter",)):
+                            with mock.patch.object(updater_server, "run_compose", side_effect=fake_run_compose):
+                                updater_server.apply_update("0.3.3")
 
             self.assertEqual(compose_calls[0], ("pull", *updater_server.COMPOSE_SERVICES))
             self.assertEqual(compose_calls[1], ("up", "-d", *updater_server.COMPOSE_SERVICES))
@@ -296,8 +324,8 @@ class UpdaterServerTests(unittest.TestCase):
             with mock.patch.object(updater_server, "ENV_FILE", env_file):
                 with mock.patch.object(updater_server, "VERSION_FILE", version_file):
                     with mock.patch.object(updater_server, "UPDATE_RUNTIME_FILE", runtime_file):
-                        with mock.patch.object(updater_server, "COMPOSE_SERVICES", ("bird", "admin")):
-                            with mock.patch.object(updater_server, "SELF_SERVICE", "admin"):
+                        with mock.patch.object(updater_server, "COMPOSE_SERVICES", ("bgp-antifilter", "metrics")):
+                            with mock.patch.object(updater_server, "SELF_SERVICE", "metrics"):
                                 with mock.patch.object(updater_server, "uses_legacy_docker_compose", return_value=True):
                                     with mock.patch.object(updater_server, "run_compose", side_effect=fake_run_compose):
                                         updater_server.apply_update("0.3.3")
@@ -305,9 +333,9 @@ class UpdaterServerTests(unittest.TestCase):
             self.assertEqual(
                 compose_calls,
                 [
-                    ("pull", "bird", "admin"),
-                    ("rm", "-f", "-s", "bird"),
-                    ("up", "-d", "bird"),
+                    ("pull", "bgp-antifilter", "metrics"),
+                    ("rm", "-f", "-s", "bgp-antifilter"),
+                    ("up", "-d", "bgp-antifilter"),
                 ],
             )
             runtime = updater_server.read_json(runtime_file, {})
