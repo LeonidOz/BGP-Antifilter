@@ -12,6 +12,7 @@ services:
     volumes:
       - ./deploy/bird.conf.template:/etc/bird/bird.conf.template:ro
       - ./generated:/etc/bird/generated
+      - ./config:/etc/bird/config
       - bird-run:/run/bird
       - ./:/workspace
       - /var/run/docker.sock:/var/run/docker.sock
@@ -25,12 +26,13 @@ services:
       BIRD_IP: "${BIRD_IP:-192.168.55.5}"
       ROUTER_ID: "${ROUTER_ID:-192.168.55.5}"
       BGP_COMMUNITY: "${BGP_COMMUNITY:-65432,500}"
-      LISTS_FILE: /etc/bird/generated/config/lists.txt
-      DOMAIN_LIST_URLS_FILE: /etc/bird/generated/config/domain-list-urls.txt
-      INCLUDE_ASNS_FILE: /etc/bird/generated/config/include-asns.txt
-      INCLUDE_COUNTRIES_FILE: /etc/bird/generated/config/include-countries.txt
-      INCLUDE_DOMAINS_FILE: /etc/bird/generated/config/include-domains.txt
-      EXCLUDE_DOMAINS_FILE: /etc/bird/generated/config/exclude-domains.txt
+      CONFIG_DIR: /etc/bird/config
+      LISTS_FILE: /etc/bird/config/lists.txt
+      DOMAIN_LIST_URLS_FILE: /etc/bird/config/domain-list-urls.txt
+      INCLUDE_ASNS_FILE: /etc/bird/config/include-asns.txt
+      INCLUDE_COUNTRIES_FILE: /etc/bird/config/include-countries.txt
+      INCLUDE_DOMAINS_FILE: /etc/bird/config/include-domains.txt
+      EXCLUDE_DOMAINS_FILE: /etc/bird/config/exclude-domains.txt
       INCLUDE_GOOGLE_RANGES: "${INCLUDE_GOOGLE_RANGES:-1}"
       REQUIRE_ALL_URL_SOURCES: "${REQUIRE_ALL_URL_SOURCES:-0}"
       UPDATE_INTERVAL: "${UPDATE_INTERVAL:-1800}"
@@ -47,8 +49,8 @@ services:
       RUNTIME_FILE: /etc/bird/generated/runtime.json
       UPDATE_RUNTIME_FILE: /etc/bird/generated/update-runtime.json
       CONTAINER_LOG_FILE: /etc/bird/generated/container.log
-      SETTINGS_FILE: /etc/bird/generated/settings.json
-      SETTINGS_ENV_FILE: /etc/bird/generated/settings.env
+      SETTINGS_FILE: /etc/bird/config/settings.json
+      SETTINGS_ENV_FILE: /etc/bird/config/settings.env
       WORKSPACE_DIR: /workspace
       ENV_FILE: /workspace/.env
       VERSION_FILE: /workspace/VERSION

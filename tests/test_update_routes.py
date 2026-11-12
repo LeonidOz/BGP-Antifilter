@@ -11,6 +11,7 @@ from pathlib import Path
 from unittest import mock
 
 from bgp_antifilter import update_routes
+from bgp_antifilter.sources import fetch
 
 
 def net(value):
@@ -259,6 +260,22 @@ class CountrySourceTests(unittest.TestCase):
 
 
 class CustomDnsFetchTests(unittest.TestCase):
+    def test_https_connects_to_resolved_ipv4_and_keeps_hostname_for_tls(self):
+        connection = fetch.CustomDnsHTTPSConnection(
+            "203.0.113.5", 8443, server_hostname="example.com", timeout=4,
+        )
+        raw_socket = mock.Mock()
+        tls_socket = mock.Mock()
+        with mock.patch.object(socket, "create_connection", return_value=raw_socket) as connect:
+            with mock.patch.object(connection._context, "wrap_socket", return_value=tls_socket) as wrap:
+                try:
+                    connection.connect()
+                    self.assertIs(connection.sock, tls_socket)
+                    connect.assert_called_once_with(("203.0.113.5", 8443), 4, None)
+                    wrap.assert_called_once_with(raw_socket, server_hostname="example.com")
+                finally:
+                    connection.close()
+
     def test_fetch_url_uses_custom_dns_for_http_sources(self):
         response = mock.Mock()
         response.status = 200
@@ -268,7 +285,7 @@ class CustomDnsFetchTests(unittest.TestCase):
         connection.getresponse.return_value = response
 
         with mock.patch.object(update_routes.dns_resolver, "resolve_ipv4_addresses", return_value=["203.0.113.5"]) as resolve_mock:
-            with mock.patch("bgp_antifilter.update_routes.http.client.HTTPConnection", return_value=connection) as http_mock:
+            with mock.patch("bgp_antifilter.sources.fetch.http.client.HTTPConnection", return_value=connection) as http_mock:
                 text = update_routes.fetch_url(
                     "http://example.com/routes.txt",
                     timeout=4,
@@ -666,7 +683,7 @@ class MainTests(unittest.TestCase):
                 }
             })
 
-            with mock.patch.object(update_routes, "fetch_url", return_value=country_payload) as fetch_mock:
+            with mock.patch.object(fetch, "fetch_url", return_value=country_payload) as fetch_mock:
                 try:
                     exit_code, _ = run_main_quiet(["--output", str(output), "--status", str(status), "--metrics", str(metrics)])
                 finally:
@@ -725,7 +742,7 @@ class MainTests(unittest.TestCase):
                 }
             )
 
-            with mock.patch.object(update_routes, "fetch_url", side_effect=RuntimeError("offline")):
+            with mock.patch.object(fetch, "fetch_url", side_effect=RuntimeError("offline")):
                 try:
                     exit_code, _ = run_main_quiet(["--output", str(output), "--status", str(status), "--metrics", str(metrics)])
                 finally:
@@ -781,7 +798,7 @@ class MainTests(unittest.TestCase):
                     return delegated_payload
                 return "2|apnic|20260619|0|0|20260619|+0000\n"
 
-            with mock.patch.object(update_routes, "fetch_url", side_effect=fake_fetch):
+            with mock.patch.object(fetch, "fetch_url", side_effect=fake_fetch):
                 try:
                     exit_code, _ = run_main_quiet(["--output", str(output), "--status", str(status), "--metrics", str(metrics)])
                 finally:

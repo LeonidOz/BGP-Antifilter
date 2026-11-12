@@ -1,11 +1,13 @@
 #!/bin/sh
 set -eu
 
-LISTS_FILE="${LISTS_FILE:-/etc/bird/lists.txt}"
-DOMAIN_LIST_URLS_FILE="${DOMAIN_LIST_URLS_FILE:-/etc/bird/domain-list-urls.txt}"
-INCLUDE_ASNS_FILE="${INCLUDE_ASNS_FILE:-/etc/bird/include-asns.txt}"
-INCLUDE_DOMAINS_FILE="${INCLUDE_DOMAINS_FILE:-/etc/bird/include-domains.txt}"
-EXCLUDE_DOMAINS_FILE="${EXCLUDE_DOMAINS_FILE:-/etc/bird/exclude-domains.txt}"
+CONFIG_DIR="${CONFIG_DIR:-/etc/bird/config}"
+LISTS_FILE="${LISTS_FILE:-$CONFIG_DIR/lists.txt}"
+DOMAIN_LIST_URLS_FILE="${DOMAIN_LIST_URLS_FILE:-$CONFIG_DIR/domain-list-urls.txt}"
+INCLUDE_ASNS_FILE="${INCLUDE_ASNS_FILE:-$CONFIG_DIR/include-asns.txt}"
+INCLUDE_COUNTRIES_FILE="${INCLUDE_COUNTRIES_FILE:-$CONFIG_DIR/include-countries.txt}"
+INCLUDE_DOMAINS_FILE="${INCLUDE_DOMAINS_FILE:-$CONFIG_DIR/include-domains.txt}"
+EXCLUDE_DOMAINS_FILE="${EXCLUDE_DOMAINS_FILE:-$CONFIG_DIR/exclude-domains.txt}"
 INCLUDE_GOOGLE_RANGES="${INCLUDE_GOOGLE_RANGES:-1}"
 CACHE_MAX_AGE="${CACHE_MAX_AGE:-604800}"
 ROUTES="${ROUTES_FILE:-/etc/bird/generated/routes.conf}"
@@ -16,7 +18,7 @@ METRICS_FILE="${METRICS_FILE:-/etc/bird/generated/metrics.prom}"
 RUNTIME_FILE="${RUNTIME_FILE:-/etc/bird/generated/runtime.json}"
 NETWORK_STATUS_FILE="${NETWORK_STATUS_FILE:-/etc/bird/generated/network-status.json}"
 LOCK_DIR="${UPDATE_LOCK_DIR:-/etc/bird/generated/update.lock}"
-SETTINGS_ENV_FILE="${SETTINGS_ENV_FILE:-/etc/bird/generated/settings.env}"
+SETTINGS_ENV_FILE="${SETTINGS_ENV_FILE:-$CONFIG_DIR/settings.env}"
 
 if [ -f "$SETTINGS_ENV_FILE" ]; then
   set -a
@@ -63,116 +65,14 @@ write_runtime_state() {
   export LAST_UPDATE_FINISHED_AT_UNIX="${LAST_UPDATE_FINISHED_AT_UNIX:-}"
   export DEGRADED="${DEGRADED:-0}"
   export DEGRADED_REASON="${DEGRADED_REASON:-}"
-  python3 - <<'PY'
-import json
-import os
-import time
-from pathlib import Path
-
-path = Path(os.environ["RUNTIME_FILE"])
-network_status_file = Path(os.environ["NETWORK_STATUS_FILE"])
-path.parent.mkdir(parents=True, exist_ok=True)
-try:
-    data = json.loads(path.read_text(encoding="utf-8"))
-except (OSError, json.JSONDecodeError):
-    data = {}
-try:
-    network = json.loads(network_status_file.read_text(encoding="utf-8")) if network_status_file.exists() else {}
-except (OSError, json.JSONDecodeError):
-    network = {}
-
-now = int(time.time())
-finished_at_raw = os.environ.get("LAST_UPDATE_FINISHED_AT_UNIX", "")
-finished_at = int(finished_at_raw) if finished_at_raw else None
-interval_seconds = int(os.environ.get("UPDATE_INTERVAL") or data.get("update_interval_seconds") or 1800)
-if os.environ.get("generation_active", "0") == "1":
-    next_scheduled_update_unix = int(data.get("next_scheduled_update_unix") or 0)
-elif finished_at is not None:
-    next_scheduled_update_unix = finished_at + interval_seconds
-else:
-    next_scheduled_update_unix = int(data.get("next_scheduled_update_unix") or 0)
-data.update({
-    "updated_at_unix": now,
-    "update_interval_seconds": interval_seconds,
-    "next_scheduled_update_unix": next_scheduled_update_unix,
-    "admin_enabled": os.environ.get("ADMIN_ENABLED", "0") == "1",
-    "admin_port": int(os.environ.get("ADMIN_PORT") or data.get("admin_port") or 8080),
-    "generation_active": os.environ.get("generation_active", "0") == "1",
-    "generation_kind": os.environ.get("generation_kind", ""),
-    "generation_message": os.environ.get("generation_message", ""),
-    "generation_started_at_unix": int(os.environ["generation_started_at"]) if os.environ.get("generation_started_at") else None,
-    "generation_progress_percent": int(os.environ.get("generation_progress_percent", "0") or 0),
-    "generation_stage": os.environ.get("generation_stage", ""),
-    "generation_stage_message": os.environ.get("generation_stage_message", ""),
-    "generation_items_done": int(os.environ["generation_items_done"]) if os.environ.get("generation_items_done") else None,
-    "generation_items_total": int(os.environ["generation_items_total"]) if os.environ.get("generation_items_total") else None,
-    "startup_snapshot_used": os.environ.get("STARTUP_SNAPSHOT_USED", "0") == "1",
-    "startup_snapshot_size_bytes": int(os.environ.get("STARTUP_SNAPSHOT_SIZE_BYTES", "0") or 0),
-    "startup_snapshot_mtime_unix": int(os.environ["STARTUP_SNAPSHOT_MTIME_UNIX"]) if os.environ.get("STARTUP_SNAPSHOT_MTIME_UNIX") else None,
-    "startup_snapshot_age_seconds": int(os.environ["STARTUP_SNAPSHOT_AGE_SECONDS"]) if os.environ.get("STARTUP_SNAPSHOT_AGE_SECONDS") else None,
-    "last_update_reason": os.environ.get("LAST_UPDATE_REASON", ""),
-    "last_update_message": os.environ.get("LAST_UPDATE_MESSAGE", ""),
-    "last_update_success": None if os.environ.get("LAST_UPDATE_SUCCESS", "") == "" else os.environ.get("LAST_UPDATE_SUCCESS") == "1",
-    "last_update_finished_at_unix": finished_at,
-    "degraded": os.environ.get("DEGRADED", "0") == "1",
-    "degraded_reason": os.environ.get("DEGRADED_REASON", "") if os.environ.get("DEGRADED", "0") == "1" else "",
-    "network": network,
-})
-tmp = path.with_suffix(path.suffix + ".tmp")
-tmp.write_text(json.dumps(data, indent=2) + "\n", encoding="utf-8")
-tmp.replace(path)
-PY
+  python3 -m bgp_antifilter.runtime_state write-reload
 }
 
 write_degraded_status() {
   reason="${1:-Route update failed; previous route snapshot remains active}"
   export STATUS_FILE NETWORK_STATUS_FILE LAST_UPDATE_REASON LAST_UPDATE_MESSAGE
   export DEGRADED_REASON="$reason"
-  python3 - <<'PY'
-import json
-import os
-import time
-from pathlib import Path
-
-path = Path(os.environ["STATUS_FILE"])
-network_status_file = Path(os.environ["NETWORK_STATUS_FILE"])
-try:
-    data = json.loads(path.read_text(encoding="utf-8"))
-except (OSError, json.JSONDecodeError):
-    data = {}
-try:
-    network = json.loads(network_status_file.read_text(encoding="utf-8")) if network_status_file.exists() else {}
-except (OSError, json.JSONDecodeError):
-    network = {}
-
-now = int(time.time())
-data["success"] = False
-data["degraded"] = True
-data["degraded_reason"] = os.environ.get("DEGRADED_REASON", "")
-data["run_reason"] = os.environ.get("LAST_UPDATE_REASON", data.get("run_reason", "manual"))
-data["run_message"] = os.environ.get("LAST_UPDATE_MESSAGE", data.get("run_message", ""))
-data["updated_at_unix"] = now
-data["updated_at"] = time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime(now))
-data.setdefault("routes", {})
-data.setdefault("sources", [])
-data.setdefault("errors", [])
-if data["degraded_reason"] and not any(
-    isinstance(item, dict) and item.get("error") == data["degraded_reason"]
-    for item in data["errors"]
-):
-    data["errors"].append({
-        "kind": "runtime",
-        "name": "apply",
-        "status": "failed",
-        "error": data["degraded_reason"],
-    })
-data["network"] = network
-
-path.parent.mkdir(parents=True, exist_ok=True)
-tmp = path.with_suffix(path.suffix + ".tmp")
-tmp.write_text(json.dumps(data, indent=2, ensure_ascii=False) + "\n", encoding="utf-8")
-tmp.replace(path)
-PY
+  python3 -m bgp_antifilter.runtime_state write-degraded-status
 }
 
 cleanup() {
@@ -202,7 +102,7 @@ LAST_UPDATE_FINISHED_AT_UNIX=""
 DEGRADED=0
 DEGRADED_REASON=""
 
-export LISTS_FILE DOMAIN_LIST_URLS_FILE INCLUDE_ASNS_FILE INCLUDE_DOMAINS_FILE EXCLUDE_DOMAINS_FILE
+export LISTS_FILE DOMAIN_LIST_URLS_FILE INCLUDE_ASNS_FILE INCLUDE_COUNTRIES_FILE INCLUDE_DOMAINS_FILE EXCLUDE_DOMAINS_FILE
 export INCLUDE_GOOGLE_RANGES CACHE_DIR CACHE_MAX_AGE STATUS_FILE METRICS_FILE RUNTIME_FILE SETTINGS_ENV_FILE
 export ROUTES_FILE="$tmp_new"
 

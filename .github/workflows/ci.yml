@@ -6,6 +6,21 @@ on:
   pull_request:
 
 jobs:
+  javascript:
+    name: JavaScript modules
+    runs-on: ubuntu-latest
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v6
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+
+      - name: Run JavaScript tests
+        run: node --test tests/js/admin-modules.test.mjs
+
   test:
     name: Tests and Docker checks
     runs-on: ubuntu-latest
@@ -29,6 +44,9 @@ jobs:
 
       - name: Build canonical Docker image
         run: docker compose --env-file .env.example build
+
+      - name: Test persistent config volume migration
+        run: RUN_DOCKER_CONFIG_MIGRATION=1 CONFIG_MIGRATION_IMAGE=bgp-antifilter:dev python -m unittest tests.test_config_volume -v
 
       - name: Run Docker smoke test
         run: RUN_DOCKER_SMOKE=1 python -m unittest tests.test_smoke_docker -v

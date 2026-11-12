@@ -20,46 +20,16 @@ if [ ! -s "$ROUTES" ]; then
 fi
 
 if [ -f "$STATUS_FILE" ]; then
-  python3 - "$STATUS_FILE" <<'PY'
-import json
-import sys
-
-with open(sys.argv[1], encoding="utf-8") as file:
-    status = json.load(file)
-
-if status.get("routes", {}).get("final", 0) <= 0:
-    print("status reports zero routes", file=sys.stderr)
-    raise SystemExit(1)
-PY
+  python3 -m bgp_antifilter.container_runtime check-health status "$STATUS_FILE"
 fi
 
 if [ "$HEALTHCHECK_FAIL_ON_DEGRADED" = "1" ] && [ -f "${RUNTIME_FILE:-/etc/bird/generated/runtime.json}" ]; then
-  python3 - "${RUNTIME_FILE:-/etc/bird/generated/runtime.json}" <<'PY'
-import json
-import sys
-
-with open(sys.argv[1], encoding="utf-8") as file:
-    runtime = json.load(file)
-
-if runtime.get("degraded"):
-    print(runtime.get("degraded_reason") or "runtime is degraded", file=sys.stderr)
-    raise SystemExit(1)
-PY
+  python3 -m bgp_antifilter.container_runtime check-health runtime "${RUNTIME_FILE:-/etc/bird/generated/runtime.json}"
 fi
 
 if [ "$HEALTHCHECK_REQUIRE_BGP" = "1" ]; then
   if [ -f "$NETWORK_STATUS_FILE" ]; then
-    python3 - "$NETWORK_STATUS_FILE" <<'PY'
-import json
-import sys
-
-with open(sys.argv[1], encoding="utf-8") as file:
-    network = json.load(file)
-
-if not network.get("bird_ip_assigned", True):
-    print(network.get("message") or "configured BIRD_IP is not assigned inside container", file=sys.stderr)
-    raise SystemExit(1)
-PY
+    python3 -m bgp_antifilter.container_runtime check-health network "$NETWORK_STATUS_FILE"
   fi
   if ! birdc show protocols "$BGP_PROTOCOL" | grep -q Established; then
     echo "BGP protocol $BGP_PROTOCOL is not established" >&2

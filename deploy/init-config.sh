@@ -4,6 +4,7 @@ set -eu
 # shellcheck source=deploy/lib.sh
 . /lib.sh
 
+prepare_user_config
 load_settings_env
 validate_env
 setup_runtime_dirs
@@ -16,17 +17,7 @@ rm -f "$STARTUP_REFRESH_FLAG"
 
 startup_mode="$(python3 -m bgp_antifilter.route_runtime startup-mode "$LAST_GOOD_ROUTES")"
 startup_snapshot_json="$(python3 -m bgp_antifilter.route_runtime startup-mode "$LAST_GOOD_ROUTES" --json)"
-startup_snapshot_values="$(python3 - "$startup_snapshot_json" <<'PY'
-import json
-import sys
-
-data = json.loads(sys.argv[1])
-print("1" if data.get("startup_snapshot_used") else "0")
-print(int(data.get("startup_snapshot_size_bytes") or 0))
-print("" if data.get("startup_snapshot_mtime_unix") is None else int(data["startup_snapshot_mtime_unix"]))
-print("" if data.get("startup_snapshot_age_seconds") is None else int(data["startup_snapshot_age_seconds"]))
-PY
-)"
+startup_snapshot_values="$(python3 -m bgp_antifilter.container_runtime snapshot-values "$startup_snapshot_json")"
 STARTUP_SNAPSHOT_USED="$(printf '%s\n' "$startup_snapshot_values" | sed -n '1p')"
 STARTUP_SNAPSHOT_SIZE_BYTES="$(printf '%s\n' "$startup_snapshot_values" | sed -n '2p')"
 STARTUP_SNAPSHOT_MTIME_UNIX="$(printf '%s\n' "$startup_snapshot_values" | sed -n '3p')"

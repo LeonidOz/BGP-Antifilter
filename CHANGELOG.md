@@ -1,5 +1,16 @@
 # Changelog
 
+## 0.5.2 - 2026-11-13
+
+- Separate user lists, settings and their backups into `/etc/bird/config`, with a dedicated configuration volume. Keep routes, cache and runtime data in `/etc/bird/generated` and preserve explicit legacy path overrides.
+- Import existing data-volume configuration before loading settings or defaults. Preserve originals and existing destination files, resume interrupted copies, and record completion to prevent stale settings from returning after a reset.
+- Move embedded Python out of shell scripts and centralize runtime JSON transactions with process locks and atomic publication.
+- Split route updates into source providers, route construction and output modules; separate admin HTTP handling from application services.
+- Split the web panel into native ES modules without adding a frontend build step.
+- Fix custom-DNS HTTPS downloads after module extraction and keep runtime Python commands available from any container working directory.
+- Cover HTTPS connections, runtime concurrency, admin HTTP behavior, JavaScript modules, volume migration, legacy paths and image rollback with regression tests.
+- Reorganize Russian and English guides into installation, MikroTik setup, maintenance and development documentation; document storage migration, backups, recovery and the new module structure.
+
 ## 0.5.1 - 2026-11-12
 
 - Add authenticated MikroTik Address List `.rsc` downloads and a CLI exporter using confirmed route snapshots, configurable list names, managed-entry cleanup, and safeguards against empty, invalid or changing snapshots.

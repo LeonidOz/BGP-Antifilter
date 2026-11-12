@@ -6,7 +6,14 @@ import unittest
 from unittest import mock
 from urllib.parse import urlparse
 
-from bgp_antifilter import admin_server
+import os
+from http import HTTPStatus
+from types import SimpleNamespace
+
+from bgp_antifilter import __version__, dns_resolver
+from bgp_antifilter.admin import actions, diagnostics, lists, settings, status, storage, updates
+from bgp_antifilter.admin.server import AdminHandler
+from tests.admin_support import admin_application
 from bgp_antifilter import export_address_list as exporter
 
 
@@ -14,6 +21,11 @@ ROUTES = "route 192.0.2.0/24 blackhole;\nroute 198.51.100.7/32 blackhole;\n"
 
 
 class AddressListExportTests(unittest.TestCase):
+    def setUp(self):
+        temporary = tempfile.TemporaryDirectory()
+        self.addCleanup(temporary.cleanup)
+        self.app = admin_application(Path(temporary.name))
+
     def test_export_preserves_prefixes_and_emits_host_addresses(self):
         script = exporter.export_rsc(ROUTES, "vpn-list")
         self.assertIn('add list="vpn-list" address=192.0.2.0/24', script)
@@ -72,7 +84,8 @@ class AddressListExportTests(unittest.TestCase):
                     exporter.read_snapshot(source, lock)
 
     def test_api_requires_authentication(self):
-        handler = object.__new__(admin_server.AdminHandler)
+        handler = object.__new__(AdminHandler)
+        handler.server = SimpleNamespace(app=self.app)
         handler.require_auth = mock.Mock(return_value=False)
         handler.send_file_text = mock.Mock()
         path = "/api/routes/address-list.rsc"
@@ -81,16 +94,18 @@ class AddressListExportTests(unittest.TestCase):
         handler.require_auth.assert_called_once()
 
     def test_api_uses_confirmed_snapshot_not_candidate_and_custom_name(self):
-        handler = object.__new__(admin_server.AdminHandler)
+        handler = object.__new__(AdminHandler)
+        handler.server = SimpleNamespace(app=self.app)
         handler.require_auth = mock.Mock(return_value=True)
         handler.send_file_text = mock.Mock()
-        with mock.patch.object(admin_server, "read_snapshot", return_value=ROUTES) as read:
+        with mock.patch.object(lists, "read_snapshot", return_value=ROUTES) as read:
             handler.handle_api_get("/api/routes/address-list.rsc", urlparse("/api/routes/address-list.rsc?list=vpn"))
-        read.assert_called_once_with(admin_server.LAST_GOOD_ROUTES_FILE, admin_server.UPDATE_LOCK_DIR)
+        read.assert_called_once_with(self.app.config.last_good_routes_file, self.app.config.update_lock_dir)
         handler.send_file_text.assert_called_once_with(exporter.export_rsc(ROUTES, "vpn"), "vpn.rsc")
 
     def test_api_rejects_invalid_name_and_unavailable_snapshots(self):
-        handler = object.__new__(admin_server.AdminHandler)
+        handler = object.__new__(AdminHandler)
+        handler.server = SimpleNamespace(app=self.app)
         handler.require_auth = mock.Mock(return_value=True)
         handler.send_json = mock.Mock()
         for query in ("?list=", "?list=%22%3Bbad"):
@@ -98,7 +113,7 @@ class AddressListExportTests(unittest.TestCase):
                 handler.handle_api_get("/api/routes/address-list.rsc", urlparse("/api/routes/address-list.rsc" + query))
                 self.assertEqual(handler.send_json.call_args.args[1], 400)
         for error in (FileNotFoundError("missing"), ValueError("empty")):
-            with self.subTest(error=error), mock.patch.object(admin_server, "read_snapshot", side_effect=error):
+            with self.subTest(error=error), mock.patch.object(lists, "read_snapshot", side_effect=error):
                 handler.handle_api_get("/api/routes/address-list.rsc", urlparse("/api/routes/address-list.rsc"))
                 self.assertEqual(handler.send_json.call_args.args[1], 503)
 

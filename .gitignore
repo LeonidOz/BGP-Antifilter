@@ -1,5 +1,6 @@
 # Generated route cache
 generated/
+config/
 cache/
 .cache/
 tmp/

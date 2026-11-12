@@ -9,6 +9,7 @@ import tempfile
 import threading
 import time
 
+from .state_store import mutate_state, patch_state, read_state
 
 WORKSPACE_DIR = Path(os.environ.get("WORKSPACE_DIR", "/workspace"))
 ENV_FILE = Path(os.environ.get("ENV_FILE", str(WORKSPACE_DIR / ".env")))
@@ -48,9 +49,7 @@ def write_text_atomic(path, text):
 
 
 def write_runtime(**updates):
-    current = read_json(UPDATE_RUNTIME_FILE, {})
-    current.update(updates)
-    write_text_atomic(UPDATE_RUNTIME_FILE, json.dumps(current, indent=2, ensure_ascii=False) + "\n")
+    patch_state(UPDATE_RUNTIME_FILE, **updates)
 
 
 def version_value():
@@ -98,7 +97,7 @@ def validate_version(value):
 
 
 def runtime_payload():
-    return read_json(UPDATE_RUNTIME_FILE, {})
+    return read_state(UPDATE_RUNTIME_FILE)
 
 
 def compose_project_name(compose_file):
@@ -346,17 +345,25 @@ def reconcile_runtime(current_version):
     active = bool(runtime.get("active"))
     target_version = str(runtime.get("target_version") or "")
     if target_version == str(current_version or "") and (active or runtime.get("success") is False):
-        write_runtime(
-            active=False,
-            stage="completed",
-            message=f"Update to v{target_version} completed",
-            finished_at_unix=int(time.time()),
-            success=True,
-            current_version=target_version,
-            error="",
-            rollback={},
-        )
-        return runtime_payload()
+        def reconcile(current):
+            # A newer update may have started after runtime_payload was read.
+            if str(current.get("target_version") or "") != target_version:
+                return None
+            if not current.get("active") and current.get("success") is not False:
+                return None
+            return {
+                **current,
+                "active": False,
+                "stage": "completed",
+                "message": f"Update to v{target_version} completed",
+                "finished_at_unix": int(time.time()),
+                "success": True,
+                "current_version": target_version,
+                "error": "",
+                "rollback": {},
+            }
+
+        return mutate_state(UPDATE_RUNTIME_FILE, reconcile)
     return runtime
 
 

@@ -8,503 +8,114 @@
 
 English | [Русский](README.md)
 
-BGP Antifilter is a containerized BIRD 2 configuration for announcing blocked IPv4 routes and prefixes to MikroTik via BGP.
+BGP Antifilter collects IP lists and sends routes to MikroTik over BGP.
+Your router uses those routes to send selected traffic through your VPN.
+Manage lists and route updates in the web panel.
 
-The project helps bypass modern VPN detection systems by splitting traffic between blocked and unblocked resources. It is intended for home routers with BGP support, such as MikroTik, and for multi-layer VPN servers with an ingress point inside the local country, where local traffic must stay inside the country.
-
-The project downloads route lists from public sources, enriches them with IPv4 addresses resolved from manually configured domains, removes routes for excluded domains, and generates BIRD `blackhole` static routes.
+**Set up your VPN first.** The application updates routes; VPN connectivity is configured separately.
 
 ![BGP Antifilter login screen](docs/assets/admin-login.png)
 
-## Navigation
+## Requirements
 
-- [Quick Start](#quick-start)
-- [Project Contents](#project-contents)
-- [How It Works](#how-it-works)
-- [Configuration](#configuration)
-- [Web Admin](#web-admin)
-- [Running](#running)
-- [Docker Images](#docker-images)
-- [Managing Lists](#managing-lists)
-- [MikroTik Address Lists](#mikrotik-address-lists)
-- [Startup And Rollback Model](#startup-and-rollback-model)
-- [Verification And Rollback](#verification-and-rollback)
-- [Troubleshooting](#troubleshooting)
-- [Operations Checklist](#operations-checklist)
-- [MikroTik Example](#mikrotik-example)
+- A Linux server or mini PC with Docker Engine and the Docker Compose plugin.
+- MikroTik running RouterOS 7 with a working VPN.
+- Network connectivity between MikroTik and the Linux server.
 
-## Quick Start
+Images support amd64 and arm64. Run the commands below in the Linux server terminal.
+For Portainer, follow the [Portainer installation guide](docs/portainer.en.md).
 
-If you want the shortest path to a local dev setup:
+## Installation
 
-1. Copy the example environment: `cp .env.example .env`.
-2. Review `MY_AS`, `MT_AS`, `MT_IP`, `BIRD_IP`, `ROUTER_ID`, and `BGP_COMMUNITY`.
-3. Add at least one URL source to `generated/config/lists.txt`, or let the first start populate defaults.
-4. If needed, enable the admin UI: `ADMIN_ENABLED=1`, `ADMIN_PORT=8080`, `ADMIN_PASSWORD=change-me`.
-5. Start the stack: `docker compose up -d --build`.
-6. Check state with `docker compose ps` and `docker compose logs -f bgp-antifilter`.
-7. Before changing lists, run `docker compose exec bgp-antifilter /update-routes.py --dry-run`, then apply with `docker compose exec bgp-antifilter /reload-routes.sh`.
-
-If the container already has a confirmed snapshot from a previous successful run, BIRD starts with it immediately and the refresh happens in the background.
-
-The single-container BGP mode is supported primarily for Linux host deployment. On Docker Desktop for Windows/macOS, treat the container as a dev mode for route generation and the admin UI: `network_mode: host` there usually does not expose the host LAN address to the container for a real BGP bind.
-
-For release/pull mode, you can explicitly pin an image tag in `.env`, for example `BGP_ANTIFILTER_VERSION=0.5.1`. When the variable is not set, compose uses the local dev image tag `bgp-antifilter:dev`.
-
-For Docker Desktop dev mode, use the override file:
+### 1. Download the Compose file
 
 ```bash
-docker compose -f docker-compose.yml -f docker-compose.dev.yml up -d --build
+mkdir -p bgp-antifilter
+cd bgp-antifilter
+curl -fsSL https://raw.githubusercontent.com/LeonidOz/BGP-Antifilter/main/deploy/portainer-stack.yml -o compose.yaml
 ```
 
-The override switches the container to bridge networking and publishes `ADMIN_PORT`, so the admin UI is reachable from the host. Real BGP is still considered a Linux-only scenario.
+### 2. Set addresses and a password
 
-## Project Contents
-
-- `deploy/` - canonical runtime files: `Dockerfile`, `docker-compose.yml`, shell scripts, and `bird.conf.template`.
-- `scripts/` - Python entrypoint wrappers used by the container and manual checks.
-- `bgp_antifilter/` - main route generation, admin UI backend, and utility logic.
-- `admin-ui/` - static web admin assets.
-- `default-lists/` - default source, ASN, country, and include/exclude domain lists copied on first start.
-- `.env.example` - example AS, IP, update interval, cache, and healthcheck settings.
-- `generated/config/lists.txt` - the user's working IP/CIDR source list.
-- `generated/config/domain-list-urls.txt` - URLs of domain lists to add to routes.
-- `generated/config/include-asns.txt` - the user's working ASN list.
-- `generated/config/include-countries.txt` - the user's working ISO 3166-1 alpha-2 country list (`US`, `DE`, `NL`).
-- `generated/config/include-domains.txt` - the user's working include-domain list.
-- `generated/config/exclude-domains.txt` - the user's working exclude-domain list.
-- `generated/` - generated route cache, not stored in git.
-
-## How It Works
-
-1. The container renders `/etc/bird/bird.conf` from `deploy/bird.conf.template`.
-2. BIRD starts with the rendered configuration.
-3. `deploy/entrypoint.sh` calls `update-routes.py`.
-4. On first start, `deploy/entrypoint.sh` copies defaults from `default-lists/` into `generated/config/`, then fetches URLs from the working `generated/config/lists.txt`.
-5. ASNs from `generated/config/include-asns.txt` are loaded from the RouteViews API.
-6. Countries from `generated/config/include-countries.txt` are loaded as country IPv4 prefixes, using RIPE Stat first and delegated RIR statistics as an automatic fallback.
-7. If `INCLUDE_GOOGLE_RANGES=1`, Google `goog.json` and `cloud.json` are fetched; Cloud prefixes are subtracted from the general Google list.
-8. `scripts/generate-routes.py` extracts and validates IPv4/CIDR routes from text or JSON sources.
-9. Domains from `generated/config/include-domains.txt` are resolved to IPv4 and added as `/32`.
-10. Domains from `generated/config/exclude-domains.txt` are resolved to IPv4 and subtracted from the final route set.
-11. `generated/routes.conf` is included by BIRD as static `blackhole` routes.
-12. BIRD exports the routes to MikroTik via BGP.
-
-## Configuration
-
-Copy the example environment file and adjust it for your network:
+Create `.env` in the same directory:
 
 ```bash
-cp .env.example .env
+nano .env
 ```
 
-If you are upgrading from the previous repository layout, move your custom list files into `generated/config/`: `lists.txt`, `include-asns.txt`, `include-countries.txt`, `include-domains.txt`, and `exclude-domains.txt`.
-
-Main dev/runtime settings:
+Paste these settings and replace the addresses and password:
 
 ```dotenv
-MY_AS=64500
-MT_AS=65455
+BGP_ANTIFILTER_VERSION=0.5.2
+BGP_ANTIFILTER_IMAGE=ghcr.io/leonidoz/bgp-antifilter:${BGP_ANTIFILTER_VERSION}
 MT_IP=192.168.55.1
 BIRD_IP=192.168.55.5
 ROUTER_ID=192.168.55.5
+MY_AS=64500
+MT_AS=65455
 BGP_COMMUNITY=65432,500
-UPDATE_INTERVAL=1800
-CACHE_MAX_AGE=604800
-INCLUDE_GOOGLE_RANGES=1
-REQUIRE_ALL_URL_SOURCES=0
-MIN_PREFIX_LENGTH=8
-ALLOW_BROAD_ROUTES=0
-UPDATE_LOCK_DIR=/etc/bird/generated/update.lock
-HEALTHCHECK_REQUIRE_BGP=1
-HEALTHCHECK_FAIL_ON_DEGRADED=0
-BGP_PROTOCOL=mikrotik
-ADMIN_ENABLED=0
-ADMIN_PORT=8080
-ADMIN_PASSWORD=
+ADMIN_PASSWORD='replace-with-your-password'
 ```
 
-- `MY_AS` - AS number used by the BIRD container.
-- `MT_AS` - MikroTik AS number.
-- `MT_IP` - MikroTik IP address.
-- `BIRD_IP` - host/interface IP used by BIRD for the BGP session.
-- `ROUTER_ID` - BIRD router ID, usually the same as `BIRD_IP`.
-- `BGP_COMMUNITY` - community added to exported routes.
-- `UPDATE_INTERVAL` - route refresh interval in seconds.
-- `CACHE_MAX_AGE` - maximum source cache age in seconds; defaults to 7 days.
-- `INCLUDE_GOOGLE_RANGES` - `1` adds default Google service ranges from `goog.json` excluding Google Cloud from `cloud.json`; `0` disables this source.
-- `REQUIRE_ALL_URL_SOURCES` - `1` makes every URL from `generated/config/lists.txt` mandatory; `0` by default allows an unavailable URL source to be skipped if the final route set can still be built from other data.
-- `MIN_PREFIX_LENGTH` - shortest IPv4 prefix accepted from external sources; defaults to `8`.
-- `ALLOW_BROAD_ROUTES` - `1` disables the broad-route safety guard; defaults to `0`.
-- `UPDATE_LOCK_DIR` - lock directory used to prevent parallel route updates.
-- `HEALTHCHECK_REQUIRE_BGP` - `1` requires an established BGP session in Docker healthcheck; `0` checks only BIRD and routes.
-- `HEALTHCHECK_FAIL_ON_DEGRADED` - `1` makes the Docker healthcheck fail when the container had to keep the previous working route snapshot after an unsuccessful update; `0` by default keeps the container healthy and exposes the degraded state only through `status.json`, `runtime.json`, and the admin UI.
-- `BGP_PROTOCOL` - BIRD BGP protocol name used by healthcheck; defaults to `mikrotik`.
-- `ADMIN_ENABLED` - `1` enables the web admin UI; defaults to `0`.
-- `ADMIN_PORT` - web admin port; defaults to `8080`.
-- `ADMIN_PASSWORD` - web admin login password; required when `ADMIN_ENABLED=1`.
+| Setting | What to enter |
+| --- | --- |
+| `MT_IP` | MikroTik's IP address, reachable from the server |
+| `BIRD_IP` | An existing Linux server IP address, reachable from MikroTik |
+| `ROUTER_ID` | For a simple network, use the same address as `BIRD_IP` |
+| `MY_AS`, `MT_AS` | The BGP AS numbers; keep the example values for a new setup |
+| `BGP_COMMUNITY` | A route label; keep the example and use it in the MikroTik filter |
+| `ADMIN_PASSWORD` | Your web panel password |
 
-Optional for release mode:
+`BIRD_IP` does not create an IP address. Check the server's addresses with `ip -4 addr`.
+The first line selects the version; leave the image name on the next line unchanged.
 
-- `BGP_ANTIFILTER_VERSION` - pinned tag of the published Docker image used for `pull`/self-update. When unset, compose uses the local image `bgp-antifilter:dev`, and self-update is disabled.
-
-If `.env` is missing, defaults from the compose configuration are used.
-
-## Web Admin
-
-The admin UI is disabled by default. Enable it by setting a password and port:
-
-```dotenv
-ADMIN_ENABLED=1
-ADMIN_PORT=8080
-ADMIN_PASSWORD=change-me
-```
-
-![BGP Antifilter dashboard](docs/assets/admin-dashboard.png)
-
-After restarting the container, the interface is available on the configured host port. The UI includes an RU/EN language switch, a dashboard with the next auto-refresh countdown, BIRD/BGP status, route counts and source summary, `dry-run`, `check-sources`, `reload`, IP or domain lookup, metrics, route and container log views, `routes.conf` download, an editor for all five list files, and a settings page.
-
-Main sections:
-
-- `Dashboard` - current BIRD/BGP state, route count, last generation time, and `dry-run`, `check-sources`, `reload` actions.
-- `Lists` - editing `lists.txt`, `include-asns.txt`, `include-countries.txt`, `include-domains.txt`, and `exclude-domains.txt` without `git pull` conflicts.
-- `Tools` - metrics, active routes, container logs, and IP/domain diagnostics.
-- `Settings` - runtime generator settings plus BGP and healthcheck-related parameters.
-
-How to read statuses:
-
-- `OK` - the last operation completed successfully and BIRD accepted the current configuration.
-- `Warning` - a generation is running, cache is being used, or the container is in `degraded` mode on the previous confirmed snapshot.
-- `Failed` - the last operation ended with an error and the new route set was not applied.
-
-With `ADMIN_ENABLED=1`, the web admin UI runs inside the same `bgp-antifilter` container as BIRD. `supervisord` keeps the long-running processes alive, while the admin server still uses the shared `/run/bird` socket, `generated/` files, mounted `/workspace`, and `docker.sock` for self-update operations.
-
-Working files `generated/config/lists.txt`, `generated/config/include-asns.txt`, `generated/config/include-countries.txt`, `generated/config/include-domains.txt`, and `generated/config/exclude-domains.txt` live outside git and are edited by the admin UI without `git pull` conflicts. If a file does not exist yet, the container creates it from the default version in `default-lists/`. A backup is created in `generated/list-backups` before saving.
-
-The `Countries` tab presents a prepared set of country toggles instead of raw text editing. The UI still writes simple 2-letter ISO codes such as `UA`, `US`, and `DE` into `include-countries.txt`, but it is faster for the common case of enabling all IPv4 prefixes assigned to a country.
-
-At startup, the container validates environment values before starting BIRD:
-
-- `MY_AS` and `MT_AS` must be integer AS numbers.
-- `MT_IP`, `BIRD_IP`, and `ROUTER_ID` must be valid IPv4 addresses.
-- `BGP_COMMUNITY` must use the `AS,VALUE` tuple format, for example `65432,500`.
-- `UPDATE_INTERVAL` must be a positive number of seconds.
-- `CACHE_MAX_AGE` must be a positive number of seconds.
-
-The container also checks whether `BIRD_IP` is assigned inside its network namespace. When the address is not visible inside the container, an explicit diagnostic is written to `generated/network-status.json`, `generated/runtime.json`, and `generated/status.json`. On Docker Desktop, this usually means the container is suitable only for route generation and the web admin UI, not for a real BGP session.
-
-## Running
-
-For the Portainer stack and upgrade instructions, see [docs/portainer.md](docs/portainer.md).
-
-From the repository root, you can use short `docker compose ...` commands: the root-level `docker-compose.yml` is kept as a convenience entrypoint and automatically picks up `.env`.
-
-Run modes:
-
-- Dev: leave `BGP_ANTIFILTER_VERSION` unset and use `docker compose up -d --build`; compose builds the local image as `bgp-antifilter:dev`.
-- Release: set `BGP_ANTIFILTER_VERSION=<tag>` and use `docker compose pull`/`docker compose up -d`; self-update and tag-based rollback are supported only in this mode.
+### 3. Start the application
 
 ```bash
-docker compose up -d --build
+docker compose up -d
+docker compose logs -f --tail=50
 ```
 
-Show logs:
+Docker downloads the prebuilt image. On first startup, the application creates the default
+lists and downloads routes. Wait for the first download to finish. Press `Ctrl+C` to leave
+the log view; the container keeps running.
 
-```bash
-docker compose logs -f bgp-antifilter
-```
+Open **http://192.168.55.5:8080**, using your server's address, and enter the password from `.env`.
+The panel uses port `8080`. To change it, add `ADMIN_PORT=8081` to `.env` and run
+`docker compose up -d` again.
+Keep panel access within your LAN or VPN.
 
-Check container status:
+Data is stored in Docker volumes and survives container recreation.
+Before moving an existing installation to a separate configuration volume, read
+the [migration steps](docs/usage.en.md#moving-to-separate-config-storage).
+
+### 4. Connect MikroTik
+
+Follow the [MikroTik BGP setup](docs/mikrotik.en.md).
+It uses the same example addresses and shows where to enter your VPN gateway.
+
+### 5. Check the result
+
+The web panel should show routes and an established BGP connection.
+On the server, run:
 
 ```bash
 docker compose ps
+docker compose exec bgp-antifilter birdc show protocols
 ```
 
-Stop:
+After the first download and MikroTik configuration, expect `healthy` and an
+`Established` state for the `mikrotik` protocol. Before connecting the router, the
+container may show `unhealthy` because its healthcheck expects a BGP connection.
 
-```bash
-docker compose down
-```
+From a device behind MikroTik, check access to a listed resource and confirm its route uses the VPN.
 
-## Docker Images
+## Next steps
 
-Prebuilt images: `ghcr.io/leonidoz/bgp-antifilter`. Supported platforms: `linux/amd64` and `linux/arm64`.
+- [Edit lists, adjust updates, or troubleshoot](docs/usage.en.md).
+- [Update the application and keep your data](docs/usage.en.md#updating-the-application).
+- [Use an Address List instead of BGP](docs/mikrotik.en.md#address-list-instead-of-bgp).
+- [Build from source, explore the code structure, and run checks](docs/development.en.md).
+- [Changelog](CHANGELOG.md).
 
-- `latest` - the latest stable release.
-- A version tag, such as `0.5.0` - a specific release.
-- `edge` - current development from `main`.
-- `sha-<commit>` - a build of a specific commit.
-
-<details>
-<summary>Image publishing for contributors</summary>
-
-Updates to `main` trigger `Publish Docker image`, which publishes `edge` and a SHA tag.
-The workflow can also be started manually from Actions; other branches publish only a SHA tag.
-The `Release` workflow handles `v*` tags, validates `VERSION`, publishes version tags
-and `latest`, then creates a GitHub Release. Publishing uses `GITHUB_TOKEN`
-with `packages: write` permission.
-
-</details>
-
-## Managing Lists
-
-Add new IP/CIDR sources to `generated/config/lists.txt`, one URL per line.
-
-Sources may be plain text or JSON. The generator extracts IPv4/CIDR values from source content, so URLs such as `format=json&data=cidr4` are supported. Example:
-
-```text
-https://iplist.opencck.org/?format=json&data=cidr4&site=claude.ai&site=chatgpt.com&site=copilot&site=deepseek.com&site=grok.com
-```
-
-If you have multiple lists, add each URL as a separate line in `generated/config/lists.txt`.
-
-Both kinds of URL source accept an optional name: `Name | URL`. Existing plain
-URL entries continue to work.
-
-Put domain-list URLs in `generated/config/domain-list-urls.txt`:
-
-```text
-Video | https://example.org/video-domains.txt
-https://example.org/other-domains.txt
-```
-
-Each downloaded file must contain one domain per line. Blank lines and comments
-starting with `#` are ignored. Names are lowercased, IDNs are converted to Punycode,
-and duplicates are removed. URLs, Adblock rules and hosts-file entries are not supported.
-
-Manual and scheduled updates download the lists, resolve their domains to IPv4,
-and add the addresses as `/32` routes before applying the usual exclusions and
-route aggregation. Source and domain caches are reused up to `CACHE_MAX_AGE`.
-Domains with neither an answer nor a usable cache are skipped. An unavailable
-list stops the update when `REQUIRE_ALL_URL_SOURCES=1`.
-
-The admin UI shows domain-list sources in the include-domains tab. Sources can
-be named, added, edited or removed; the raw editor accepts multiple entries.
-Cards show domain, address and skipped-entry counts. The check-IP tool also
-reports matches from these sources. Reload routes after saving changes.
-
-ASNs whose announced IPv4 prefixes should be force-added go into `generated/config/include-asns.txt`. For example, `AS32934` adds Meta routes for Facebook, Instagram, WhatsApp, and Messenger.
-
-Countries whose IPv4 prefixes should be force-added go into `generated/config/include-countries.txt`. Use one 2-letter ISO country code per line, for example:
-
-```text
-UA
-DE
-NL
-```
-
-For country sources, the updater queries `stat.ripe.net` first and automatically falls back to the official delegated stats published by `afrinic`, `apnic`, `arin`, `lacnic`, and `ripencc` when RIPE Stat is unavailable. Fresh cache can also be reused under the same rules as other network sources.
-
-For YouTube, a dedicated Google ranges source is enabled: with `INCLUDE_GOOGLE_RANGES=1`, the container uses `https://www.gstatic.com/ipranges/goog.json`, subtracts `https://www.gstatic.com/ipranges/cloud.json`, and adds the remaining IPv4 prefixes. YouTube domains in `generated/config/include-domains.txt` remain an additional point source.
-
-Domains to force-add go into `generated/config/include-domains.txt`. These domains are best-effort: if a domain temporarily does not resolve and has no cache, it is marked as `skipped`, but route updates continue.
-
-Domains to exclude go into `generated/config/exclude-domains.txt`. These domains are strict: if an exclude domain cannot be resolved and has no fresh cache, the new `routes.conf` is not applied. If an excluded IP is inside a larger prefix, the generator splits the prefix into smaller routes without that IP.
-
-Before writing the final file, the generator removes exact duplicates, drops routes already covered by larger prefixes, and collapses adjacent networks when doing so does not reintroduce excluded addresses.
-
-If a URL source from `generated/config/lists.txt` is temporarily unavailable, the default behavior is to mark it as `failed` but continue building from other sources and apply the result if the final route set is still non-empty. Enable `REQUIRE_ALL_URL_SOURCES=1` for strict mode; then any URL without fresh cache stops the update.
-
-Blank lines and lines starting with `#` are ignored.
-
-## MikroTik Address Lists
-
-In **Tools → Load routes**, choose a list name (default: `bgp-antifilter`) and click
-**Download Address List .rsc**. The export uses IPv4 prefixes from the confirmed
-`routes.last-good.conf`, after exclusions and route merging. The endpoint
-`/api/routes/address-list.rsc?list=bgp-antifilter` requires an authenticated admin session.
-Exports are rejected during updates or when the snapshot is missing, malformed or empty.
-List names allow 1-64 ASCII letters, digits and `_.-`.
-
-Alternatively, generate a file from the command line:
-
-```bash
-docker compose exec bgp-antifilter python3 -m bgp_antifilter.export_address_list --list-name bgp-antifilter --output /etc/bird/generated/bgp-antifilter.rsc
-```
-
-Upload the file to MikroTik Files and run:
-
-```routeros
-/import file-name=bgp-antifilter.rsc
-```
-
-On RouterOS versions supporting dry-run, validate first with
-`/import file-name=bgp-antifilter.rsc verbose=yes dry-run=yes`.
-The project's automated tests do not execute imports on real RouterOS.
-
-The script adds/refreshes entries first, then removes stale entries only from the selected
-list with the reserved comment prefix `bgp-antifilter:managed:`. Do not use this prefix
-for manual entries. Unmanaged entries, including matching addresses, are preserved.
-Repeated imports do not add duplicates. Import the complete file and do not run concurrent
-imports for the same list. This is not transactional: an error before final cleanup may
-leave both old and new prefixes. Existence checks can make large imports slow.
-
-The export does not change BGP, firewall, NAT or mangle. Configure connection/routing marks,
-VPN/WAN tables and FastTrack exceptions separately on MikroTik. For generation without an
-established BGP session, set `HEALTHCHECK_REQUIRE_BGP=0`; the single-container runtime remains unchanged.
-
-## Startup And Rollback Model
-
-The project uses two route files:
-
-- `generated/routes.conf` - the current active file included by BIRD.
-- `generated/routes.last-good.conf` - the confirmed snapshot, updated only after a successful `birdc configure`.
-
-```mermaid
-flowchart TD
-    A["Sources: URL / ASN / include / exclude"] --> B["Build candidate routes.conf"]
-    B --> C["birdc configure"]
-    C -->|success| D["Update routes.last-good.conf"]
-    D --> E["BIRD runs on the new route set"]
-    C -->|failure| F["Rollback to routes.last-good.conf"]
-    F --> G["Runtime/status = degraded"]
-```
-
-Startup behavior:
-
-1. If `routes.last-good.conf` exists and is non-empty, the container copies it into `routes.conf` and starts BIRD immediately.
-2. After BIRD is up, the container performs a background source refresh and `birdc configure`.
-3. If no confirmed snapshot exists yet, the container still builds routes before starting BIRD.
-
-Update behavior:
-
-1. The generator builds a new candidate in a temporary file.
-2. The candidate replaces `routes.conf` only for the `birdc configure` step.
-3. If BIRD accepts the configuration, the candidate becomes the new `routes.last-good.conf`.
-4. If generation or apply fails, the container rolls back to `routes.last-good.conf` and marks the state as `degraded`.
-
-## Verification And Rollback
-
-Before applying a new `generated/routes.conf`, the container relies on a separate confirmed snapshot at `generated/routes.last-good.conf`. That file is updated only after a successful `birdc configure` and serves as the last-known-good state for restart and rollback. Every network source has a separate cache in `generated/cache`: URLs from `generated/config/lists.txt`, ASN prefixes, country data, Google ranges, and DNS results for include/exclude domains. If a source is temporarily unavailable, the generator uses its last cache and continues updating other sources.
-
-Cache is used only while it is younger than `CACHE_MAX_AGE`; the default is 604800 seconds, or 7 days. If an unavailable source has no fresh cache, the final route file is not updated and `routes.last-good.conf` stays active. If `birdc configure` rejects the new configuration, `deploy/reload-routes.sh` restores the confirmed snapshot and asks BIRD to apply the working version again.
-
-On startup, the container first checks whether a non-empty `generated/routes.last-good.conf` from the previous successful run already exists. If it does, BIRD starts immediately with that confirmed snapshot, and route refresh plus `birdc configure` happen in the background after startup. If no confirmed snapshot exists yet, the container still prepares routes before starting BIRD so it does not come up with an empty table.
-
-After each update attempt, diagnostic files are written:
-
-- `generated/status.json` - update result, route counts, per-source status (`fresh`, `cache`, `skipped`, `failed`, `disabled`), and errors.
-- `generated/metrics.prom` - Prometheus text format metrics: route count, update success, last attempt time, and source status summary.
-
-Update logs are emitted as structured JSON with `ts`, `level`, `message`, and context fields for the current stage or source. Route refreshes are protected by the `generated/update.lock` directory, so manual and scheduled updates do not write `routes.conf`, `status.json`, or `metrics.prom` concurrently.
-
-By default, the generator refuses IPv4 routes broader than `/8`, such as `0.0.0.0/0`. Change the threshold with `MIN_PREFIX_LENGTH`; disable the guard only explicitly with `ALLOW_BROAD_ROUTES=1`.
-
-Docker healthcheck checks `birdc show status`, non-empty `generated/routes.conf`, non-zero route count in `status.json`, and, if `HEALTHCHECK_REQUIRE_BGP=1`, the BGP protocol state from `BGP_PROTOCOL`. If you enable `HEALTHCHECK_FAIL_ON_DEGRADED=1`, the healthcheck also fails when a new update could not be applied and the container keeps serving the previous working snapshot.
-
-If `HEALTHCHECK_REQUIRE_BGP=1` and `BIRD_IP` is not assigned inside the container, the healthcheck fails with an explicit `configured BIRD_IP is not assigned inside container` message instead of only an indirect `bind`/`Connection closed` failure.
-
-Check BIRD status inside the container:
-
-```bash
-docker compose exec bgp-antifilter birdc show status
-```
-
-Show the number of exported static routes:
-
-```bash
-docker compose exec bgp-antifilter birdc show route protocol static_antifilter count
-```
-
-Check whether an IP is present in the generated route database and show cached source matches:
-
-```bash
-docker compose exec bgp-antifilter /check-ip.py 1.2.3.4
-```
-
-The command checks whether the IP is covered by `generated/routes.conf`, then searches source caches referenced by `generated/status.json`. It exits with code `0` when the IP is present in the final route file and `1` when it is not.
-
-For scripts, use machine-readable output:
-
-```bash
-docker compose exec bgp-antifilter /check-ip.py 1.2.3.4 --json
-```
-
-Force a route refresh without restarting BIRD:
-
-```bash
-docker compose exec bgp-antifilter /reload-routes.sh
-```
-
-This command refreshes sources inside the running container. Existing routes stay active until the new candidate `routes.conf` is generated and accepted by `birdc configure`. If generation or apply fails, the container rolls back to `routes.last-good.conf`.
-
-During a manual refresh and in `docker compose logs -f bgp-antifilter`, progress is printed by stage: URL/ASN/Google ranges fetching, include/exclude domain resolving, parsing, final route table build, and status/metrics writing.
-
-Validate an update without writing `routes.conf`, `status.json`, or `metrics.prom`:
-
-```bash
-docker compose exec bgp-antifilter /update-routes.py --dry-run
-```
-
-Dry-run fetches and validates sources, builds the final table in memory, and prints a JSON summary. Source caches may be refreshed, but active routes and diagnostic files are not changed.
-
-Check only source availability without parsing routes or writing diagnostic files:
-
-```bash
-docker compose exec bgp-antifilter /update-routes.py --check-sources
-```
-
-If `make` is installed, short commands are available:
-
-```bash
-make up
-make logs
-make reload
-make dry-run
-make check-sources
-make check-ip IP=1.2.3.4
-```
-
-## Troubleshooting
-
-If something goes wrong, start with these files:
-
-- `generated/status.json` - result of the last update, source states, and errors.
-- `generated/runtime.json` - active progress, startup snapshot data, `degraded`, and the outcome of the last apply.
-- `generated/network-status.json` - IPv4 addresses visible to the container and whether `BIRD_IP` is actually assigned inside it.
-- `generated/metrics.prom` - summary metrics for monitoring.
-- `generated/routes.last-good.conf` - the last confirmed snapshot.
-
-Common scenarios:
-
-| Symptom | Where to look | Command / action |
-| --- | --- | --- |
-| BIRD did not start after the first boot | `docker compose logs -f bgp-antifilter`, `generated/status.json` | Confirm that the generator produced a non-empty `routes.conf` and did not stop on a validation error |
-| The container is running but a new update was not applied | `generated/runtime.json` | Check `degraded`, `degraded_reason`, and `last_update_success` |
-| `dry-run` or `check-sources` fails | `generated/status.json`, `generated/cache` | Look for sources with `failed` status and verify cache freshness plus URL/DNS availability |
-| The route count unexpectedly dropped or became zero | `generated/status.json`, `generated/metrics.prom` | Review `routes.final`, `routes.invalid`, and the values of `REQUIRE_ALL_URL_SOURCES`, `MIN_PREFIX_LENGTH`, and `ALLOW_BROAD_ROUTES` |
-| BGP does not establish while BIRD itself is up | `birdc show status`, `birdc show protocols <BGP_PROTOCOL>`, `generated/network-status.json` | Verify `MT_IP`, `BIRD_IP`, `MY_AS`, `MT_AS`, and `BGP_PROTOCOL`; if `BIRD_IP` is not assigned inside the container, this is an expected Docker Desktop limitation |
-| You need to confirm what stays active after a failed reload | `generated/routes.last-good.conf`, `generated/runtime.json` | Confirm that the previous verified snapshot is still active and that rollback actually happened |
-
-## Operations Checklist
-
-- Run dry-run before changing `generated/config/lists.txt`, `generated/config/include-asns.txt`, `generated/config/include-countries.txt`, `generated/config/include-domains.txt`, or `generated/config/exclude-domains.txt`.
-- After manual reload, check `generated/status.json`: `success` should be `true`, and `routes.final` should be greater than zero.
-- On MikroTik, accept only routes with the expected BGP community and reject everything else.
-- Keep exclude-domain caches fresh: if DNS is unavailable and no cache exists, the update intentionally fails.
-- Monitor `bgp_antifilter_update_success`, `bgp_antifilter_routes_total`, and source cache age in `metrics.prom`.
-- Do not set `ALLOW_BROAD_ROUTES=1` unless you understand which source produced the broad prefix.
-
-
-## MikroTik Example
-
-Minimal RouterOS 7 example:
-
-```routeros
-/routing bgp template
-add name=antifilter-template as=65455 routing-table=main
-
-/routing bgp connection
-add name=antifilter-bird \
-    template=antifilter-template \
-    remote.address=192.168.55.5 \
-    remote.as=64500 \
-    local.address=192.168.55.1 \
-    multihop=yes \
-    input.filter=antifilter-in
-
-/routing filter rule
-add chain=antifilter-in rule="if (bgp-communities includes 65432:500) { accept } else { reject }"
-```
-
-AS and IP parameters must match the values in `.env`.
+![BGP Antifilter dashboard](docs/assets/admin-dashboard.png)

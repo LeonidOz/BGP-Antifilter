@@ -1,5 +1,8 @@
 FROM debian:bookworm-slim
 
+# Keep python -m runtime commands available for docker exec with a custom cwd.
+ENV PYTHONPATH=/
+
 LABEL org.opencontainers.image.title="BGP Antifilter" \
       org.opencontainers.image.source="https://github.com/LeonidOz/BGP-Antifilter" \
       org.opencontainers.image.url="https://github.com/LeonidOz/BGP-Antifilter" \

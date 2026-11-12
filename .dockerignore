@@ -1,5 +1,6 @@
 .git/
 generated/
+config/
 cache/
 .cache/
 tmp/

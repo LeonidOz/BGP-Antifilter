@@ -1,11 +1,13 @@
 #!/bin/sh
 
-LISTS_FILE="${LISTS_FILE:-/etc/bird/lists.txt}"
-DOMAIN_LIST_URLS_FILE="${DOMAIN_LIST_URLS_FILE:-/etc/bird/domain-list-urls.txt}"
-INCLUDE_ASNS_FILE="${INCLUDE_ASNS_FILE:-/etc/bird/include-asns.txt}"
-INCLUDE_COUNTRIES_FILE="${INCLUDE_COUNTRIES_FILE:-/etc/bird/include-countries.txt}"
-INCLUDE_DOMAINS_FILE="${INCLUDE_DOMAINS_FILE:-/etc/bird/include-domains.txt}"
-EXCLUDE_DOMAINS_FILE="${EXCLUDE_DOMAINS_FILE:-/etc/bird/exclude-domains.txt}"
+CONFIG_DIR="${CONFIG_DIR:-/etc/bird/config}"
+GENERATED_DIR="${GENERATED_DIR:-/etc/bird/generated}"
+LISTS_FILE="${LISTS_FILE:-$CONFIG_DIR/lists.txt}"
+DOMAIN_LIST_URLS_FILE="${DOMAIN_LIST_URLS_FILE:-$CONFIG_DIR/domain-list-urls.txt}"
+INCLUDE_ASNS_FILE="${INCLUDE_ASNS_FILE:-$CONFIG_DIR/include-asns.txt}"
+INCLUDE_COUNTRIES_FILE="${INCLUDE_COUNTRIES_FILE:-$CONFIG_DIR/include-countries.txt}"
+INCLUDE_DOMAINS_FILE="${INCLUDE_DOMAINS_FILE:-$CONFIG_DIR/include-domains.txt}"
+EXCLUDE_DOMAINS_FILE="${EXCLUDE_DOMAINS_FILE:-$CONFIG_DIR/exclude-domains.txt}"
 INCLUDE_GOOGLE_RANGES="${INCLUDE_GOOGLE_RANGES:-1}"
 UPDATE_INTERVAL="${UPDATE_INTERVAL:-1800}"
 CACHE_MAX_AGE="${CACHE_MAX_AGE:-604800}"
@@ -25,7 +27,9 @@ METRICS_FILE="${METRICS_FILE:-/etc/bird/generated/metrics.prom}"
 RUNTIME_FILE="${RUNTIME_FILE:-/etc/bird/generated/runtime.json}"
 NETWORK_STATUS_FILE="${NETWORK_STATUS_FILE:-/etc/bird/generated/network-status.json}"
 CONTAINER_LOG_FILE="${CONTAINER_LOG_FILE:-/etc/bird/generated/container.log}"
-SETTINGS_ENV_FILE="${SETTINGS_ENV_FILE:-/etc/bird/generated/settings.env}"
+SETTINGS_FILE="${SETTINGS_FILE:-$CONFIG_DIR/settings.json}"
+SETTINGS_ENV_FILE="${SETTINGS_ENV_FILE:-$CONFIG_DIR/settings.env}"
+LIST_BACKUP_DIR="${LIST_BACKUP_DIR:-$(dirname "$SETTINGS_FILE")/list-backups}"
 ADMIN_ENABLED="${ADMIN_ENABLED:-0}"
 ADMIN_PORT="${ADMIN_PORT:-8080}"
 ADMIN_PASSWORD="${ADMIN_PASSWORD:-}"
@@ -34,23 +38,10 @@ STATE_DIR="${STATE_DIR:-/run/bgp-antifilter}"
 STARTUP_REFRESH_FLAG="${STATE_DIR}/startup-refresh-needed"
 export STARTUP_REFRESH_FLAG
 
-ensure_runtime_config_file() {
-  target="$1"
-  default_name="$2"
-  target_dir="$(dirname "$target")"
-  default_path="$DEFAULT_CONFIG_DIR/$default_name"
-
-  mkdir -p "$target_dir"
-  if [ -f "$target" ]; then
-    return 0
-  fi
-  if [ -f "$default_path" ]; then
-    cp "$default_path" "$target"
-    echo "initialized runtime config $(basename "$target") from defaults"
-    return 0
-  fi
-  : >"$target"
-  echo "initialized empty runtime config $(basename "$target")"
+prepare_user_config() {
+  export CONFIG_DIR GENERATED_DIR DEFAULT_CONFIG_DIR SETTINGS_FILE SETTINGS_ENV_FILE LIST_BACKUP_DIR
+  export LISTS_FILE DOMAIN_LIST_URLS_FILE INCLUDE_ASNS_FILE INCLUDE_COUNTRIES_FILE INCLUDE_DOMAINS_FILE EXCLUDE_DOMAINS_FILE
+  python3 -m bgp_antifilter.config_migration
 }
 
 load_settings_env() {
@@ -64,108 +55,12 @@ load_settings_env() {
 
 validate_env() {
   export MY_AS MT_AS MT_IP BIRD_IP ROUTER_ID BGP_COMMUNITY UPDATE_INTERVAL CACHE_MAX_AGE ADMIN_ENABLED ADMIN_PORT ADMIN_PASSWORD
-  python3 - <<'PY'
-import ipaddress
-import os
-import sys
-
-
-def fail(message):
-    print(f"Invalid environment: {message}", file=sys.stderr)
-    raise SystemExit(1)
-
-
-def validate_as(name):
-    value = os.environ[name]
-    try:
-        number = int(value)
-    except ValueError:
-        fail(f"{name} must be an integer AS number")
-
-    if not 1 <= number <= 4294967295:
-        fail(f"{name} must be between 1 and 4294967295")
-
-
-def validate_ipv4(name):
-    value = os.environ[name]
-    try:
-        ipaddress.IPv4Address(value)
-    except ValueError:
-        fail(f"{name} must be a valid IPv4 address")
-
-
-def validate_update_interval():
-    for name in ("UPDATE_INTERVAL", "CACHE_MAX_AGE"):
-        value = os.environ[name]
-        try:
-            seconds = int(value)
-        except ValueError:
-            fail(f"{name} must be an integer number of seconds")
-
-        if seconds <= 0:
-            fail(f"{name} must be greater than zero")
-
-
-def validate_community():
-    value = os.environ["BGP_COMMUNITY"]
-    parts = value.split(",")
-
-    if len(parts) != 2:
-        fail("BGP_COMMUNITY must use the BIRD tuple format AS,VALUE")
-
-    for part in parts:
-        try:
-            number = int(part)
-        except ValueError:
-            fail("BGP_COMMUNITY parts must be integers")
-
-        if not 0 <= number <= 65535:
-            fail("BGP_COMMUNITY parts must be between 0 and 65535")
-
-
-def validate_admin():
-    enabled = os.environ["ADMIN_ENABLED"]
-    if enabled not in {"0", "1"}:
-        fail("ADMIN_ENABLED must be 0 or 1")
-
-    try:
-        port = int(os.environ["ADMIN_PORT"])
-    except ValueError:
-        fail("ADMIN_PORT must be an integer")
-
-    if not 1 <= port <= 65535:
-        fail("ADMIN_PORT must be between 1 and 65535")
-
-    if enabled == "1" and not os.environ["ADMIN_PASSWORD"]:
-        fail("ADMIN_PASSWORD must be set when ADMIN_ENABLED=1")
-
-
-validate_as("MY_AS")
-validate_as("MT_AS")
-validate_ipv4("MT_IP")
-validate_ipv4("BIRD_IP")
-validate_ipv4("ROUTER_ID")
-validate_update_interval()
-validate_community()
-validate_admin()
-PY
+  python3 -m bgp_antifilter.container_runtime validate-env
 }
 
 render_bird_config() {
   export MY_AS MT_AS MT_IP BIRD_IP ROUTER_ID BGP_COMMUNITY
-  python3 - "$BIRD_TEMPLATE" "$BIRD_CONFIG" <<'PY'
-import os
-import string
-import sys
-
-template_file, config_file = sys.argv[1:3]
-
-with open(template_file, encoding="utf-8") as file:
-    template = string.Template(file.read())
-
-with open(config_file, "w", encoding="utf-8") as file:
-    file.write(template.safe_substitute(os.environ))
-PY
+  python3 -m bgp_antifilter.container_runtime render-bird "$BIRD_TEMPLATE" "$BIRD_CONFIG"
 }
 
 update_routes() {
@@ -215,100 +110,24 @@ write_runtime() {
   export LAST_UPDATE_FINISHED_AT_UNIX="${LAST_UPDATE_FINISHED_AT_UNIX:-}"
   export DEGRADED="${DEGRADED:-0}"
   export DEGRADED_REASON="${DEGRADED_REASON:-}"
-  python3 - "$next_update" <<'PY'
-import json
-import os
-from pathlib import Path
-import sys
-import time
-
-path = Path(os.environ["RUNTIME_FILE"])
-path.parent.mkdir(parents=True, exist_ok=True)
-now = int(time.time())
-next_update = int(sys.argv[1])
-network_status_file = Path(os.environ["NETWORK_STATUS_FILE"])
-try:
-    network = json.loads(network_status_file.read_text(encoding="utf-8")) if network_status_file.exists() else {}
-except (OSError, json.JSONDecodeError):
-    network = {}
-data = {
-    "updated_at_unix": now,
-    "update_interval_seconds": int(os.environ["UPDATE_INTERVAL"]),
-    "next_scheduled_update_unix": next_update,
-    "admin_enabled": os.environ["ADMIN_ENABLED"] == "1",
-    "admin_port": int(os.environ["ADMIN_PORT"]),
-    "generation_active": os.environ.get("GENERATION_ACTIVE", "0") == "1",
-    "generation_kind": os.environ.get("GENERATION_KIND", ""),
-    "generation_message": os.environ.get("GENERATION_MESSAGE", ""),
-    "generation_started_at_unix": int(os.environ["GENERATION_STARTED_AT"]) if os.environ.get("GENERATION_STARTED_AT") else None,
-    "generation_progress_percent": int(os.environ.get("GENERATION_PROGRESS_PERCENT", "0") or 0),
-    "generation_stage": os.environ.get("GENERATION_STAGE", ""),
-    "generation_stage_message": os.environ.get("GENERATION_STAGE_MESSAGE", ""),
-    "generation_items_done": int(os.environ["GENERATION_ITEMS_DONE"]) if os.environ.get("GENERATION_ITEMS_DONE") else None,
-    "generation_items_total": int(os.environ["GENERATION_ITEMS_TOTAL"]) if os.environ.get("GENERATION_ITEMS_TOTAL") else None,
-    "startup_snapshot_used": os.environ.get("STARTUP_SNAPSHOT_USED", "0") == "1",
-    "startup_snapshot_size_bytes": int(os.environ.get("STARTUP_SNAPSHOT_SIZE_BYTES", "0") or 0),
-    "startup_snapshot_mtime_unix": int(os.environ["STARTUP_SNAPSHOT_MTIME_UNIX"]) if os.environ.get("STARTUP_SNAPSHOT_MTIME_UNIX") else None,
-    "startup_snapshot_age_seconds": int(os.environ["STARTUP_SNAPSHOT_AGE_SECONDS"]) if os.environ.get("STARTUP_SNAPSHOT_AGE_SECONDS") else None,
-    "last_update_reason": os.environ.get("LAST_UPDATE_REASON", ""),
-    "last_update_message": os.environ.get("LAST_UPDATE_MESSAGE", ""),
-    "last_update_success": None if os.environ.get("LAST_UPDATE_SUCCESS", "") == "" else os.environ.get("LAST_UPDATE_SUCCESS") == "1",
-    "last_update_finished_at_unix": int(os.environ["LAST_UPDATE_FINISHED_AT_UNIX"]) if os.environ.get("LAST_UPDATE_FINISHED_AT_UNIX") else None,
-    "degraded": os.environ.get("DEGRADED", "0") == "1",
-    "degraded_reason": os.environ.get("DEGRADED_REASON", "") if os.environ.get("DEGRADED", "0") == "1" else "",
-    "network": network,
-}
-if os.environ.get("RUNTIME_PRESERVE_STATE") == "1":
-    try:
-        previous = json.loads(path.read_text(encoding="utf-8"))
-    except (OSError, json.JSONDecodeError):
-        previous = {}
-    for key, value in previous.items():
-        if key.startswith(("generation_", "startup_snapshot_", "last_update_", "degraded")):
-            data[key] = value
-tmp = path.with_suffix(path.suffix + ".tmp")
-tmp.write_text(json.dumps(data, indent=2) + "\n", encoding="utf-8")
-tmp.replace(path)
-PY
+  python3 -m bgp_antifilter.runtime_state write-schedule "$next_update"
 }
 
 runtime_next_update_unix() {
   export RUNTIME_FILE
-  python3 - <<'PY'
-import json
-import os
-from pathlib import Path
-
-path = Path(os.environ["RUNTIME_FILE"])
-try:
-    data = json.loads(path.read_text(encoding="utf-8"))
-except (OSError, json.JSONDecodeError):
-    print("")
-    raise SystemExit(0)
-
-value = data.get("next_scheduled_update_unix")
-if value in (None, ""):
-    print("")
-else:
-    print(int(value))
-PY
+  python3 -m bgp_antifilter.runtime_state next-update
 }
 
 setup_runtime_dirs() {
-  mkdir -p /etc/bird/generated "$CACHE_DIR" /run/bird "$STATE_DIR"
+  mkdir -p "$GENERATED_DIR" "$CACHE_DIR" /run/bird "$STATE_DIR"
 }
 
 prepare_runtime_files() {
-  ensure_runtime_config_file "$LISTS_FILE" "lists.txt"
-  ensure_runtime_config_file "$DOMAIN_LIST_URLS_FILE" "domain-list-urls.txt"
-  ensure_runtime_config_file "$INCLUDE_ASNS_FILE" "include-asns.txt"
-  ensure_runtime_config_file "$INCLUDE_COUNTRIES_FILE" "include-countries.txt"
-  ensure_runtime_config_file "$INCLUDE_DOMAINS_FILE" "include-domains.txt"
-  ensure_runtime_config_file "$EXCLUDE_DOMAINS_FILE" "exclude-domains.txt"
   touch "$ROUTES" "$LAST_GOOD_ROUTES" "$CONTAINER_LOG_FILE"
 }
 
 export_runtime_env() {
+  export CONFIG_DIR GENERATED_DIR SETTINGS_FILE LIST_BACKUP_DIR
   export LISTS_FILE DOMAIN_LIST_URLS_FILE INCLUDE_ASNS_FILE INCLUDE_COUNTRIES_FILE INCLUDE_DOMAINS_FILE EXCLUDE_DOMAINS_FILE
   export INCLUDE_GOOGLE_RANGES CACHE_DIR CACHE_MAX_AGE STATUS_FILE METRICS_FILE RUNTIME_FILE NETWORK_STATUS_FILE SETTINGS_ENV_FILE
   export ROUTES_FILE="$ROUTES"
@@ -317,25 +136,11 @@ export_runtime_env() {
 }
 
 write_network_status() {
-  NETWORK_STATUS_FILE="$NETWORK_STATUS_FILE" python3 -m bgp_antifilter.network_diagnostics --bird-ip "$BIRD_IP" >"$NETWORK_STATUS_FILE.tmp"
-  mv "$NETWORK_STATUS_FILE.tmp" "$NETWORK_STATUS_FILE"
+  NETWORK_STATUS_FILE="$NETWORK_STATUS_FILE" python3 -m bgp_antifilter.container_runtime write-network-status "$BIRD_IP"
 }
 
 print_network_status_warning() {
-  NETWORK_STATUS_FILE="$NETWORK_STATUS_FILE" python3 - <<'PY'
-import json
-import os
-from pathlib import Path
-
-path = Path(os.environ["NETWORK_STATUS_FILE"])
-try:
-    payload = json.loads(path.read_text(encoding="utf-8"))
-except (OSError, json.JSONDecodeError):
-    raise SystemExit(0)
-message = str(payload.get("message") or "").strip()
-if message and not payload.get("bird_ip_assigned", False):
-    print(message)
-PY
+  NETWORK_STATUS_FILE="$NETWORK_STATUS_FILE" python3 -m bgp_antifilter.container_runtime network-warning
 }
 
 start_log_stream() {

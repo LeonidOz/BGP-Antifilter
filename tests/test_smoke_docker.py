@@ -188,6 +188,7 @@ class DockerSmokeTests(unittest.TestCase):
         volume = self.project_name + "-data"
         settings = {"BGP_ANTIFILTER_IMAGE": "bgp-antifilter:smoke", "ADMIN_PASSWORD": "smoke-test",
                     "BGP_DATA_VOLUME": volume, "BGP_DATA_EXTERNAL": "false", "ADMIN_PORT": str(admin_port),
+                    "BGP_CONFIG_VOLUME": self.project_name + "-config", "BGP_CONFIG_EXTERNAL": "false",
                     "HEALTHCHECK_REQUIRE_BGP": "0", "INCLUDE_GOOGLE_RANGES": "0",
                     "HTTP_PROXY": "", "HTTPS_PROXY": "", "NO_PROXY": "localhost,127.0.0.1"}
         stack = (self.repo_root / "deploy/portainer-stack.yml").read_text()
@@ -230,7 +231,7 @@ class DockerSmokeTests(unittest.TestCase):
                     self.assertIn('list="smoke-vpn" address=198.51.100.10', script)
                     self.assertIn("bgp-antifilter:managed:", script)
                 api("/api/lists/domain-list-urls", "PUT", {"content": "# saved from panel\n"})
-                saved = self.compose("exec", "-T", "bgp-antifilter", "cat", "/etc/bird/generated/config/domain-list-urls.txt").stdout
+                saved = self.compose("exec", "-T", "bgp-antifilter", "cat", "/etc/bird/config/domain-list-urls.txt").stdout
                 self.assertEqual(saved, "# saved from panel\n")
                 with opener.open(f"http://127.0.0.1:{admin_port}/assets/vendor/lucide.min.js", timeout=3) as asset:
                     self.assertIn("javascript", asset.headers["Content-Type"])
@@ -242,6 +243,8 @@ class DockerSmokeTests(unittest.TestCase):
                     info = json.loads(subprocess.check_output(["docker", "inspect", cid], text=True))[0]
                     mounted = next(m for m in info["Mounts"] if m["Destination"] == "/etc/bird/generated")
                     self.assertEqual(mounted["Name"], volume)
+                    config_mount = next(m for m in info["Mounts"] if m["Destination"] == "/etc/bird/config")
+                    self.assertEqual(config_mount["Name"], self.project_name + "-config")
                     self.assertFalse(info["HostConfig"]["Privileged"])
                     self.assertIn("NET_ADMIN", [cap.removeprefix("CAP_") for cap in info["HostConfig"]["CapDrop"]])
                     self.assertFalse(any(m["Destination"] == "/var/run/docker.sock" for m in info["Mounts"]))

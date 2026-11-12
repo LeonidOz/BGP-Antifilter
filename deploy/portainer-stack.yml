@@ -21,12 +21,13 @@ x-environment: &environment
   BGP_PROTOCOL: "${BGP_PROTOCOL:-mikrotik}"
   HEALTHCHECK_REQUIRE_BGP: "${HEALTHCHECK_REQUIRE_BGP:-1}"
   HEALTHCHECK_FAIL_ON_DEGRADED: "${HEALTHCHECK_FAIL_ON_DEGRADED:-0}"
-  LISTS_FILE: /etc/bird/generated/config/lists.txt
-  DOMAIN_LIST_URLS_FILE: /etc/bird/generated/config/domain-list-urls.txt
-  INCLUDE_ASNS_FILE: /etc/bird/generated/config/include-asns.txt
-  INCLUDE_COUNTRIES_FILE: /etc/bird/generated/config/include-countries.txt
-  INCLUDE_DOMAINS_FILE: /etc/bird/generated/config/include-domains.txt
-  EXCLUDE_DOMAINS_FILE: /etc/bird/generated/config/exclude-domains.txt
+  CONFIG_DIR: /etc/bird/config
+  LISTS_FILE: /etc/bird/config/lists.txt
+  DOMAIN_LIST_URLS_FILE: /etc/bird/config/domain-list-urls.txt
+  INCLUDE_ASNS_FILE: /etc/bird/config/include-asns.txt
+  INCLUDE_COUNTRIES_FILE: /etc/bird/config/include-countries.txt
+  INCLUDE_DOMAINS_FILE: /etc/bird/config/include-domains.txt
+  EXCLUDE_DOMAINS_FILE: /etc/bird/config/exclude-domains.txt
   INCLUDE_GOOGLE_RANGES: "${INCLUDE_GOOGLE_RANGES:-1}"
   REQUIRE_ALL_URL_SOURCES: "${REQUIRE_ALL_URL_SOURCES:-0}"
   UPDATE_INTERVAL: "${UPDATE_INTERVAL:-1800}"
@@ -34,8 +35,8 @@ x-environment: &environment
   MIN_PREFIX_LENGTH: "${MIN_PREFIX_LENGTH:-8}"
   ALLOW_BROAD_ROUTES: "${ALLOW_BROAD_ROUTES:-0}"
   UPDATE_LOCK_DIR: /etc/bird/generated/update.lock
-  SETTINGS_FILE: /etc/bird/generated/settings.json
-  SETTINGS_ENV_FILE: /etc/bird/generated/settings.env
+  SETTINGS_FILE: /etc/bird/config/settings.json
+  SETTINGS_ENV_FILE: /etc/bird/config/settings.env
   CONTAINER_LOG_FILE: /etc/bird/generated/container.log
   RUNTIME_FILE: /etc/bird/generated/runtime.json
   UPDATE_RUNTIME_FILE: /etc/bird/generated/update-runtime.json
@@ -58,9 +59,13 @@ services:
       ADMIN_PASSWORD: "${ADMIN_PASSWORD:?Set ADMIN_PASSWORD in the stack environment}"
     volumes:
       - generated:/etc/bird/generated
+      - config:/etc/bird/config
       - bird-run:/run/bird
 
 volumes:
+  config:
+    name: "${BGP_CONFIG_VOLUME:-bgp-antifilter-config}"
+    external: ${BGP_CONFIG_EXTERNAL:-false}
   generated:
     name: "${BGP_DATA_VOLUME:-bgp-antifilter-data}"
     external: ${BGP_DATA_EXTERNAL:-false}
