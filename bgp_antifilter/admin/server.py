@@ -65,8 +65,11 @@ class AdminHandler(BaseHTTPRequestHandler):
 
     def read_json_or_error(self):
         try:
-            return self.read_json()
-        except (UnicodeDecodeError, json.JSONDecodeError):
+            value = self.read_json()
+            if not isinstance(value, dict):
+                raise ValueError("request must be an object")
+            return value
+        except (UnicodeDecodeError, ValueError):
             self.send_json({"error": "invalid json"}, HTTPStatus.BAD_REQUEST)
             return None
 

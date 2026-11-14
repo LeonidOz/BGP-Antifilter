@@ -3,7 +3,7 @@ name: bgp-antifilter
 services:
   bgp-antifilter:
     container_name: bgp-antifilter
-    image: "bgp-antifilter:${BGP_ANTIFILTER_VERSION:-dev}"
+    image: "ghcr.io/leonidoz/bgp-antifilter:${BGP_ANTIFILTER_VERSION:-dev}"
     build:
       context: .
       dockerfile: deploy/Dockerfile

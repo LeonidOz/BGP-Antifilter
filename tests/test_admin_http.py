@@ -194,6 +194,26 @@ class AdminHttpTests(unittest.TestCase):
                 self.assertEqual(admin_http.main(), 1)
             server.assert_not_called()
 
+    def test_update_api_authentication_validation_and_accepted_status(self):
+        with mock.patch.object(self.app.updates, "start_update", return_value={"ok": True, "accepted": True,
+                                                                               "target_version": "9.9.9"}) as start, \
+             mock.patch.object(self.app.updates, "status_payload", return_value={"runtime": {"active": True}}) as status:
+            self.assertEqual(self.request("POST", "/api/update/apply", {"version": "9.9.9"})[0], 401)
+            self.assertEqual(self.request("GET", "/api/update/status")[0], 401)
+            start.assert_not_called()
+            status.assert_not_called()
+            cookie = self.login()
+            for body in (b"null", b"[]", b"42", b"{bad"):
+                self.assertEqual(self.request("POST", "/api/update/apply", cookie=cookie, raw=body)[0], 400)
+            code, _, payload = self.request("POST", "/api/update/apply", {"version": "9.9.9"}, cookie)
+            self.assertEqual(code, 202)
+            self.assertTrue(payload["accepted"])
+            start.assert_called_once_with("9.9.9")
+            code, _, payload = self.request("GET", "/api/update/status?force=yes", cookie=cookie)
+            self.assertEqual(code, 200)
+            self.assertTrue(payload["runtime"]["active"])
+            status.assert_called_once_with(force=True)
+
     def test_main_keeps_port_binding_and_update_reconciliation(self):
         with mock.patch.dict(os.environ, {"ADMIN_ENABLED": "1", "ADMIN_PORT": "18080"}):
             with mock.patch.object(admin_http, "AdminApplication", return_value=self.app):

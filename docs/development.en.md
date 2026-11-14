@@ -22,7 +22,7 @@ docker compose up -d --build
 docker compose logs -f --tail=50
 ```
 
-The root `docker-compose.yml` builds the local `bgp-antifilter:dev` image.
+The root `docker-compose.yml` builds the local `ghcr.io/leonidoz/bgp-antifilter:dev` image.
 Source installations keep user lists, settings and their backups in `config/`,
 and routes, cache and runtime state in `generated/`.
 The first startup copies configuration from the old layout automatically;
@@ -97,14 +97,14 @@ To test migration on temporary Docker volumes, build the current image first:
 
 ```bash
 docker compose --env-file .env.example build
-RUN_DOCKER_CONFIG_MIGRATION=1 CONFIG_MIGRATION_IMAGE=bgp-antifilter:dev python -m unittest tests.test_config_volume -v
+RUN_DOCKER_CONFIG_MIGRATION=1 CONFIG_MIGRATION_IMAGE=ghcr.io/leonidoz/bgp-antifilter:dev python -m unittest tests.test_config_volume -v
 ```
 
 Equivalent test invocation in PowerShell:
 
 ```powershell
 $env:RUN_DOCKER_CONFIG_MIGRATION = '1'
-$env:CONFIG_MIGRATION_IMAGE = 'bgp-antifilter:dev'
+$env:CONFIG_MIGRATION_IMAGE = 'ghcr.io/leonidoz/bgp-antifilter:dev'
 py -3 -m unittest tests.test_config_volume -v
 Remove-Item Env:RUN_DOCKER_CONFIG_MIGRATION
 Remove-Item Env:CONFIG_MIGRATION_IMAGE
@@ -116,6 +116,20 @@ another working directory. It creates temporary volumes and removes them after t
 For an additional rollback check, set `CONFIG_ROLLBACK_IMAGE` to a locally available
 previous image supporting path environment variables. Test against an image built from current code.
 
+The web update integration test exercises the real HTTP API, local registry,
+image pulls, BIRD, Compose and health verification. It covers self-replacement,
+failed pulls and automatic rollback of an unhealthy image, preserving `.env`
+and user lists:
+
+```bash
+RUN_DOCKER_WEB_UPDATE=1 python -m unittest tests.test_web_update_docker -v
+```
+
+On Windows, set `$env:RUN_DOCKER_WEB_UPDATE = '1'` before the same Python command.
+The test launches a Linux environment with a temporary volume. It builds the
+current code by default; `WEB_UPDATE_TEST_IMAGE` selects an existing build.
+Test containers, image tags and temporary volumes are removed after the run.
+
 Run the full container smoke tests on Linux with Docker Engine and Compose available:
 
 ```bash
@@ -125,6 +139,6 @@ RUN_DOCKER_SMOKE=1 python -m unittest tests.test_smoke_docker -v
 This suite separately checks Compose, the HTTP panel and the prebuilt Portainer stack.
 It does not replace testing a real BGP session with MikroTik.
 Commands placing variables before the executable use Linux shell syntax.
-CI runs Python/JavaScript tests, Compose validation, image builds, volume migration,
+CI runs Python/JavaScript tests, Compose validation, image builds, web updates/rollback, volume migration,
 Docker smoke tests and ShellCheck; see the [workflow](../.github/workflows/ci.yml).
 Release instructions are in [AGENTS.md](../AGENTS.md).

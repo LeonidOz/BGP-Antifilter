@@ -6,6 +6,8 @@ import { t } from "./i18n.js";
 
 const updateState = {
   updateStatusPayload: null,
+  applyPending: false,
+  statusRequestId: 0,
 };
 
 function updateStatusLevel(data) {
@@ -21,6 +23,8 @@ function updateStageLabel(stage) {
     preparing: "updateStagePreparing",
     pulling: "updateStagePulling",
     restarting: "updateStageRestarting",
+    verifying: "updateStageVerifying",
+    rolling_back: "updateStageRollingBack",
     completed: "updateStageCompleted",
     failed: "updateStageFailed",
   };
@@ -57,8 +61,11 @@ function renderUpdateStatus(data) {
     : data.update_available
     ? t("latestReleaseAvailable")
     : t("latestReleaseNotAvailable");
-  if (runtime.success === false && runtime.rollback) {
+  if (runtime.success === false && typeof runtime.rollback?.ok === "boolean") {
     summary += runtime.rollback.ok ? ` · ${t("updateRollbackOk")}` : ` · ${t("updateRollbackFailed")}`;
+  }
+  if (data?.update_available && !data?.updater_ok && data?.updater_error && !runtime.active) {
+    summary += ` · ${t("updaterUnavailable")}: ${data.updater_error}`;
   }
   $("update-summary").textContent = summary;
   $("update-release-link").href = data?.repository_url || "https://github.com/LeonidOz/BGP-Antifilter";
@@ -85,26 +92,41 @@ function renderUpdateStatus(data) {
 }
 
 async function loadUpdateStatus(force = false) {
+  const requestId = ++updateState.statusRequestId;
   const path = force ? "/api/update/status?force=1" : "/api/update/status";
-  const data = await api(path);
-  renderUpdateStatus(data);
+  try {
+    const data = await api(path);
+    if (requestId === updateState.statusRequestId && !updateState.applyPending) renderUpdateStatus(data);
+  } catch (err) {
+    if (updateState.updateStatusPayload?.runtime?.active && err?.error === "unauthorized") {
+      window.location.reload();
+    }
+    throw err;
+  }
 }
 
 async function applyUpdate() {
   const version = updateState.updateStatusPayload?.latest_version;
-  if (!version) return;
-  $("update-summary").textContent = t("updateStarting");
-  $("apply-update-btn").disabled = true;
+  if (!version || updateState.applyPending || !updateState.updateStatusPayload?.apply_available || updateState.updateStatusPayload?.runtime?.active) return;
+  const previous = updateState.updateStatusPayload;
+  updateState.applyPending = true;
+  ++updateState.statusRequestId;
+  renderUpdateStatus({...previous, apply_available: false,
+    runtime: {active: true, stage: "preparing", target_version: version}});
   try {
     await api("/api/update/apply", {
       method: "POST",
       body: JSON.stringify({version})
     });
-    await loadUpdateStatus(true);
   } catch (err) {
+    updateState.applyPending = false;
+    // A disconnected POST may already have started the independent worker.
+    if (err instanceof Error) {
+      $("update-summary").textContent = t("updateReconnecting");
+      return;
+    }
     renderUpdateStatus({
-      ...(updateState.updateStatusPayload || {}),
-      ok: updateState.updateStatusPayload?.ok ?? false,
+      ...previous,
       runtime: {
         active: false,
         success: false,
@@ -112,7 +134,12 @@ async function applyUpdate() {
         error: typeof err === "string" ? err : (err.error || err.message || "request failed"),
       },
     });
+    await loadUpdateStatus().catch(() => {});
+    return;
   }
+  updateState.applyPending = false;
+  // Service downtime after an accepted request is expected; keep polling.
+  await loadUpdateStatus().catch(() => {});
 }
 
 function bindUpdatesEvents() {
@@ -137,4 +164,4 @@ function bindUpdatesEvents() {
   });
 }
 
-export { bindUpdatesEvents, loadUpdateStatus, renderUpdateStatus, updateState };
+export { applyUpdate, bindUpdatesEvents, loadUpdateStatus, renderUpdateStatus, updateState };

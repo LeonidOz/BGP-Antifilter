@@ -111,6 +111,32 @@ Panel-based application updates are disabled for this stack.
 Use a version tag or `latest`, the latest stable release, for a normal installation.
 `edge` and `sha-<commit>` are for testing changes.
 
+### Web updates for repository deployments
+
+Web updates are available on Linux when using the repository's root
+`docker-compose.yml`. Set `BGP_ANTIFILTER_VERSION` in `.env` to the installed
+release and keep deployment settings in that file. The application needs a
+writable project mount at `/workspace` and the Docker socket. Unpinned local
+builds, multiple Compose files and the README/Portainer stack do not support
+web installation; the Updates tab displays the reason.
+
+Back up `config/`, `generated/` and `.env`, then open **Tools → Updates**,
+check the release and click **Update now**. The panel installs the latest
+stable GitHub release. Connectivity drops during restart and you may need
+to log in again afterwards.
+
+A temporary updater container pulls the image, recreates the application,
+and verifies its Docker healthcheck, web API and running version. Verification
+allows 180 seconds by default; set `UPDATER_HEALTH_TIMEOUT` in the application
+container environment to change it. A failed pull leaves the application
+running. Startup or verification failures restore the previous image and
+`.env`. The panel shows both the update and rollback results.
+
+Image rollback does not restore data backups. If the updater container itself
+is forcibly stopped or removed, the panel reports an interrupted operation.
+Check `.env`, `docker compose ps` and logs; if needed, select the previous
+version and run `docker compose up -d` manually.
+
 ### Data locations
 
 This table describes the storage layout starting with [0.5.2](../CHANGELOG.md#052---2026-11-13).

@@ -12,6 +12,7 @@ const { buildStages } = await import(new URL("dashboard.js", modulesUrl));
 const { runtimeGenerationState } = await import(new URL("runtime.js", modulesUrl));
 const { parseListLines, parseNamedUrlSourceLine, serializeNamedUrlSource } = await import(new URL("lists.js", modulesUrl));
 const { operationState, renderStoredReloadResult } = await import(new URL("operations.js", modulesUrl));
+const { applyUpdate, loadUpdateStatus, renderUpdateStatus, updateState } = await import(new URL("updates.js", modulesUrl));
 
 test("all feature modules resolve and their import graph has no cycles", async () => {
   const graph = new Map();
@@ -126,4 +127,96 @@ test("an old or active reload result cannot replace a pending operation", () => 
 
 test("rendered text escapes HTML and attribute delimiters", () => {
   assert.equal(escapeHtml('<img src="x"> &'), "&lt;img src=&quot;x&quot;&gt; &amp;");
+});
+
+function installUpdateDom(context) {
+  const nodes = new Map();
+  function get(id) {
+    if (!nodes.has(id)) nodes.set(id, {textContent: "", disabled: false, href: "", className: "",
+      classList: {values: new Set(), toggle(name, enabled) { enabled ? this.values.add(name) : this.values.delete(name); }},
+      querySelector() { return this.span ||= {textContent: ""}; }});
+    return nodes.get(id);
+  }
+  const previous = globalThis.document;
+  globalThis.document = {getElementById: get};
+  context.after(() => { globalThis.document = previous; updateState.updateStatusPayload = null; });
+  return get;
+}
+
+const availableUpdate = {ok: true, current_version: "1.0.0", latest_version: "1.0.1", latest_tag: "v1.0.1",
+  update_available: true, apply_available: true, updater_ok: true, runtime: {}};
+
+test("update display covers availability, progress, verification and rollback", context => {
+  const get = installUpdateDom(context);
+  renderUpdateStatus({...availableUpdate, updater_ok: false, apply_available: false, updater_error: "Portainer"});
+  assert.match(get("update-summary").textContent, /Portainer/);
+  assert.equal(get("apply-update-btn").disabled, true);
+  for (const [stage, label] of [["verifying", "Checking application health"], ["rolling_back", "Restoring previous version"]]) {
+    renderUpdateStatus({...availableUpdate, runtime: {active: true, stage, target_version: "1.0.1"}});
+    assert.match(get("update-summary").textContent, new RegExp(label));
+    assert.equal(get("check-updates-btn").disabled, true);
+    assert.equal(get("apply-update-btn").disabled, true);
+  }
+  for (const ok of [true, false]) {
+    renderUpdateStatus({...availableUpdate, runtime: {active: false, success: false, error: "bad image", rollback: {ok}}});
+    assert.match(get("update-summary").textContent, /bad image/);
+    assert.match(get("update-summary").textContent, ok ? /Rollback completed/ : /Rollback failed/);
+  }
+});
+
+test("accepted update survives status disconnect and blocks double clicks", async context => {
+  const get = installUpdateDom(context);
+  renderUpdateStatus(availableUpdate);
+  const calls = [];
+  let accept;
+  context.mock.method(globalThis, "fetch", (url, options) => {
+    calls.push([url, options]);
+    if (options.method === "POST") return new Promise(resolve => { accept = resolve; });
+    throw new TypeError("connection reset during restart");
+  });
+  const pending = applyUpdate();
+  await applyUpdate();
+  assert.equal(calls.length, 1);
+  assert.equal(get("apply-update-btn").disabled, true);
+  accept(new Response(JSON.stringify({accepted: true}), {headers: {"Content-Type": "application/json"}}));
+  await pending;
+  assert.equal(updateState.updateStatusPayload.runtime.active, true);
+  assert.equal(calls[1][0], "/api/update/status");
+  assert.deepEqual(JSON.parse(calls[0][1].body), {version: "1.0.1"});
+  globalThis.fetch = async () => new Response(JSON.stringify({...availableUpdate, update_available: false,
+    apply_available: false, current_version: "1.0.1", runtime: {success: true, active: false, stage: "completed"}}),
+    {headers: {"Content-Type": "application/json"}});
+  await loadUpdateStatus();
+  assert.equal(updateState.updateStatusPayload.runtime.success, true);
+  assert.equal(get("update-current-version").textContent, "v1.0.1");
+});
+
+test("POST disconnect keeps polling but explicit rejection shows the server error", async context => {
+  const get = installUpdateDom(context);
+  renderUpdateStatus(availableUpdate);
+  context.mock.method(globalThis, "fetch", async () => { throw new TypeError("network error"); });
+  await applyUpdate();
+  assert.equal(updateState.updateStatusPayload.runtime.active, true);
+  assert.match(get("update-summary").textContent, /reconnect/);
+  renderUpdateStatus(availableUpdate);
+  globalThis.fetch = async () => new Response(JSON.stringify({error: "update already running"}), {
+    status: 409, headers: {"Content-Type": "application/json"},
+  });
+  await applyUpdate();
+  assert.equal(updateState.updateStatusPayload.runtime.success, false);
+  assert.match(get("update-summary").textContent, /update already running/);
+});
+
+test("restart session expiry reloads the login page during an active update", async context => {
+  installUpdateDom(context);
+  const previous = globalThis.window;
+  let reloads = 0;
+  globalThis.window = {location: {reload: () => { reloads++; }}};
+  context.after(() => { globalThis.window = previous; });
+  renderUpdateStatus({...availableUpdate, runtime: {active: true}});
+  context.mock.method(globalThis, "fetch", async () => new Response(JSON.stringify({error: "unauthorized"}), {
+    status: 401, headers: {"Content-Type": "application/json"},
+  }));
+  await assert.rejects(loadUpdateStatus());
+  assert.equal(reloads, 1);
 });

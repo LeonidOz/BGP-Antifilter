@@ -162,7 +162,7 @@ class UpdaterServerTests(unittest.TestCase):
                     with mock.patch.object(updater_server.subprocess, "run", return_value=completed):
                         command, cleanup_path = updater_server.compose_base_command()
 
-        self.assertEqual(command, ["docker", "compose", "-f", str(compose_file)])
+        self.assertEqual(command, ["docker", "compose", "--env-file", str(updater_server.ENV_FILE), "-f", str(compose_file)])
         self.assertIsNone(cleanup_path)
 
     def test_compose_base_command_falls_back_to_legacy_compose_with_project_name(self):
@@ -185,8 +185,8 @@ class UpdaterServerTests(unittest.TestCase):
                     with mock.patch.object(updater_server.subprocess, "run", return_value=completed):
                         command, cleanup_path = updater_server.compose_base_command()
 
-                        self.assertEqual(command[:3], ["docker-compose", "-p", "bgp-antifilter"])
-                        self.assertEqual(command[3], "-f")
+                        self.assertEqual(command[:5], ["docker-compose", "--env-file", str(updater_server.ENV_FILE), "-p", "bgp-antifilter"])
+                        self.assertEqual(command[5], "-f")
                         self.assertIsNotNone(cleanup_path)
                         self.assertTrue(cleanup_path.exists())
                         self.assertEqual(
@@ -196,11 +196,11 @@ class UpdaterServerTests(unittest.TestCase):
 
                         cleanup_path.unlink(missing_ok=True)
 
-    def test_restart_services_for_update_skips_self_service_for_legacy_compose(self):
+    def test_independent_worker_restarts_self_service_with_legacy_compose(self):
         with mock.patch.object(updater_server, "uses_legacy_docker_compose", return_value=True):
             with mock.patch.object(updater_server, "COMPOSE_SERVICES", ("bgp-antifilter", "metrics")):
                 with mock.patch.object(updater_server, "SELF_SERVICE", "metrics"):
-                    self.assertEqual(updater_server.restart_services_for_update(), ("bgp-antifilter",))
+                    self.assertEqual(updater_server.restart_services_for_update(), ("bgp-antifilter", "metrics"))
 
     def test_recreate_services_uses_rm_then_up(self):
         calls = []
@@ -213,7 +213,7 @@ class UpdaterServerTests(unittest.TestCase):
             result = updater_server.recreate_services("bgp-antifilter")
 
         self.assertTrue(result["ok"])
-        self.assertEqual(calls, [("rm", "-f", "-s", "bgp-antifilter"), ("up", "-d", "bgp-antifilter")])
+        self.assertEqual(calls, [("rm", "-f", "-s", "bgp-antifilter"), ("up", "-d", "--no-build", "bgp-antifilter")])
 
     def test_reconcile_runtime_marks_restart_as_completed_after_version_switch(self):
         with tempfile.TemporaryDirectory() as tmp:
@@ -308,14 +308,15 @@ class UpdaterServerTests(unittest.TestCase):
                                 updater_server.apply_update("0.3.3")
 
             self.assertEqual(compose_calls[0], ("pull", *updater_server.COMPOSE_SERVICES))
-            self.assertEqual(compose_calls[1], ("up", "-d", *updater_server.COMPOSE_SERVICES))
+            self.assertEqual(len(compose_calls), 1, "pull failure must leave the running application alone")
             self.assertIn("BGP_ANTIFILTER_VERSION=0.2.8\n", env_file.read_text(encoding="utf-8"))
             runtime = updater_server.read_json(runtime_file, {})
             self.assertFalse(runtime["success"])
             self.assertTrue(runtime["rollback"]["ok"])
             self.assertEqual(runtime["rollback"]["version"], "0.2.8")
 
-    def test_apply_update_uses_legacy_recreate_flow_for_non_self_services(self):
+    @mock.patch.object(updater_server, "wait_for_services")
+    def test_apply_update_uses_legacy_recreate_flow_for_all_services(self, wait):
         with tempfile.TemporaryDirectory() as tmp:
             env_file = Path(tmp) / ".env"
             version_file = Path(tmp) / "VERSION"
@@ -342,8 +343,8 @@ class UpdaterServerTests(unittest.TestCase):
                 compose_calls,
                 [
                     ("pull", "bgp-antifilter", "metrics"),
-                    ("rm", "-f", "-s", "bgp-antifilter"),
-                    ("up", "-d", "bgp-antifilter"),
+                    ("rm", "-f", "-s", "bgp-antifilter", "metrics"),
+                    ("up", "-d", "--no-build", "bgp-antifilter", "metrics"),
                 ],
             )
             runtime = updater_server.read_json(runtime_file, {})
@@ -357,19 +358,20 @@ class UpdaterServerTests(unittest.TestCase):
             env_file.write_text("BGP_ANTIFILTER_VERSION=0.2.8\n", encoding="utf-8")
             version_file.write_text("0.3.2\n", encoding="utf-8")
 
-            thread = mock.Mock()
-            thread.is_alive.return_value = False
-
-            with mock.patch.object(updater_server, "ENV_FILE", env_file):
-                with mock.patch.object(updater_server, "VERSION_FILE", version_file):
-                    with mock.patch.object(updater_server, "health_status", return_value=(True, "")):
-                        with mock.patch.object(updater_server, "UPDATE_THREAD", thread):
-                            with mock.patch.object(updater_server.threading, "Thread") as thread_cls:
-                                payload = updater_server.start_update("0.3.3")
+            context = {"container": "self-id", "image": "sha256:old", "project": "test",
+                       "directory": "/srv/test", "worker": "test-image-updater"}
+            with mock.patch.object(updater_server, "ENV_FILE", env_file), \
+                 mock.patch.object(updater_server, "VERSION_FILE", version_file), \
+                 mock.patch.object(updater_server, "UPDATE_RUNTIME_FILE", Path(tmp) / "update.json"), \
+                 mock.patch.object(updater_server, "health_status", return_value=(True, "")), \
+                 mock.patch.object(updater_server, "deployment_context", return_value=context), \
+                 mock.patch.object(updater_server, "run_docker", return_value="worker-id") as docker:
+                payload = updater_server.start_update("0.3.3")
 
             self.assertEqual(payload["current_version"], "0.2.8")
             self.assertEqual(payload["target_version"], "0.3.3")
-            thread_cls.return_value.start.assert_called_once_with()
+            self.assertEqual(docker.call_args.args[:3], ("run", "-d", "--rm"))
+            self.assertIn("sha256:old", docker.call_args.args)
 
 
 if __name__ == "__main__":

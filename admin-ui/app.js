@@ -206,11 +206,11 @@ async function init() {
 }
 
 async function loadStatus() {
-  const data = await api("/api/status");
-  renderStatus(data);
   if (updateState.updateStatusPayload?.runtime?.active) {
     loadUpdateStatus().catch(() => {});
   }
+  const data = await api("/api/status");
+  renderStatus(data);
   if (!$("lists").classList.contains("hidden")) {
     renderListTiles();
   }

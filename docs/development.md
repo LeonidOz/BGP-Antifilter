@@ -22,7 +22,7 @@ docker compose up -d --build
 docker compose logs -f --tail=50
 ```
 
-Корневой `docker-compose.yml` собирает локальный образ `bgp-antifilter:dev`.
+Корневой `docker-compose.yml` собирает локальный образ `ghcr.io/leonidoz/bgp-antifilter:dev`.
 Установка из исходников хранит пользовательские списки, настройки и их резервные копии
 в `config/`, а маршруты, кеш и runtime — в `generated/`.
 При переходе со старой схемы конфигурация копируется автоматически при первом старте;
@@ -97,14 +97,14 @@ ShellCheck и POSIX shell-проверки выполняйте в Linux или 
 
 ```bash
 docker compose --env-file .env.example build
-RUN_DOCKER_CONFIG_MIGRATION=1 CONFIG_MIGRATION_IMAGE=bgp-antifilter:dev python -m unittest tests.test_config_volume -v
+RUN_DOCKER_CONFIG_MIGRATION=1 CONFIG_MIGRATION_IMAGE=ghcr.io/leonidoz/bgp-antifilter:dev python -m unittest tests.test_config_volume -v
 ```
 
 Эквивалент запуска теста в PowerShell:
 
 ```powershell
 $env:RUN_DOCKER_CONFIG_MIGRATION = '1'
-$env:CONFIG_MIGRATION_IMAGE = 'bgp-antifilter:dev'
+$env:CONFIG_MIGRATION_IMAGE = 'ghcr.io/leonidoz/bgp-antifilter:dev'
 py -3 -m unittest tests.test_config_volume -v
 Remove-Item Env:RUN_DOCKER_CONFIG_MIGRATION
 Remove-Item Env:CONFIG_MIGRATION_IMAGE
@@ -116,6 +116,20 @@ Remove-Item Env:CONFIG_MIGRATION_IMAGE
 Для дополнительной проверки отката задайте `CONFIG_ROLLBACK_IMAGE` — локально доступный
 предыдущий образ с поддержкой переменных путей. Запускайте тест с образом текущего кода.
 
+Сквозной тест установки обновлений через HTTP API использует настоящий локальный
+registry, скачивание образов, BIRD, Compose и проверки готовности. Он проверяет
+замену собственного контейнера, ошибку скачивания и автоматический откат
+неработоспособного образа с сохранением `.env` и пользовательских списков:
+
+```bash
+RUN_DOCKER_WEB_UPDATE=1 python -m unittest tests.test_web_update_docker -v
+```
+
+На Windows задайте `$env:RUN_DOCKER_WEB_UPDATE = '1'` перед той же Python-командой.
+Тест сам запустит Linux-окружение с временным томом. По умолчанию он собирает
+текущий код; `WEB_UPDATE_TEST_IMAGE` позволяет указать уже собранный образ.
+Все тестовые контейнеры, теги образов и временные тома удаляются после прогона.
+
 Полный smoke-тест контейнера выполняется на Linux с доступным Docker Engine и Compose:
 
 ```bash
@@ -125,6 +139,6 @@ RUN_DOCKER_SMOKE=1 python -m unittest tests.test_smoke_docker -v
 Этот набор отдельно проверяет Compose, HTTP-панель и готовый стек Portainer.
 Он не заменяет проверку реальной BGP-сессии с MikroTik.
 Команды с переменными перед именем программы используют синтаксис Linux shell.
-CI выполняет Python- и JavaScript-тесты, проверку Compose, сборку, миграцию volumes,
+CI выполняет Python- и JavaScript-тесты, проверку Compose, сборку, обновление и откат, миграцию volumes,
 Docker smoke-тесты и ShellCheck; см. [workflow](../.github/workflows/ci.yml).
 Порядок выпуска релиза описан в [AGENTS.md](../AGENTS.md).

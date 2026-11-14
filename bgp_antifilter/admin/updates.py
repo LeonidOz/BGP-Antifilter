@@ -18,14 +18,7 @@ UPDATE_CHECK_TTL_SECONDS = 15 * 60
 
 
 def parse_semver(value):
-    raw = str(value or "").strip()
-    if raw.lower().startswith("v"):
-        raw = raw[1:]
-    parts = raw.split(".")
-    if len(parts) != 3:
-        raise ValueError("version must use MAJOR.MINOR.PATCH")
-    numbers = tuple(int(part) for part in parts)
-    return numbers
+    return tuple(map(int, updater_server.validate_version(value).split(".")))
 
 
 def github_latest_release(timeout=5):
@@ -38,10 +31,13 @@ def github_latest_release(timeout=5):
     )
     with urllib.request.urlopen(request, timeout=timeout) as response:
         payload = json.loads(response.read().decode("utf-8"))
+    if not isinstance(payload, dict):
+        raise ValueError("latest release payload must be an object")
     tag_name = str(payload.get("tag_name") or "").strip()
     version = tag_name[1:] if tag_name.lower().startswith("v") else tag_name
     if not version:
         raise ValueError("latest release payload does not include tag_name")
+    parse_semver(version)
     return {
         "tag_name": tag_name or f"v{version}",
         "version": version,
@@ -64,7 +60,7 @@ class UpdatesService:
         cached = self.cache.get("payload")
         checked_at = float(self.cache.get("checked_at") or 0.0)
         if not force and cached is not None and now - checked_at < UPDATE_CHECK_TTL_SECONDS:
-            return cached
+            return dict(cached)
 
         current_version = __version__
         payload = {
@@ -82,6 +78,7 @@ class UpdatesService:
         }
         try:
             latest = github_latest_release()
+            update_available = parse_semver(latest["version"]) > parse_semver(current_version)
             payload.update({
                 "ok": True,
                 "latest_version": latest["version"],
@@ -89,14 +86,14 @@ class UpdatesService:
                 "release_url": latest["html_url"],
                 "release_name": latest["name"],
                 "published_at": latest["published_at"],
-                "update_available": parse_semver(latest["version"]) > parse_semver(current_version),
+                "update_available": update_available,
             })
         except (OSError, urllib.error.URLError, json.JSONDecodeError, TimeoutError, ValueError) as exc:
             payload["error"] = str(exc)
 
         self.cache["checked_at"] = now
         self.cache["payload"] = payload
-        return payload
+        return dict(payload)
 
     def status_payload(self, force=False):
         payload = self.update_status_payload(force=force)
@@ -109,4 +106,10 @@ class UpdatesService:
         return payload
 
     def start_update(self, version):
-        return updater_server.start_update(version)
+        target = updater_server.validate_version(version)
+        release = self.update_status_payload(force=True)
+        if not release["ok"]:
+            raise RuntimeError(f"release check failed: {release['error']}")
+        if not release["update_available"] or target != release["latest_version"]:
+            raise ValueError("requested version is not the latest available release; check updates again")
+        return updater_server.start_update(target)

@@ -45,8 +45,11 @@ jobs:
       - name: Build canonical Docker image
         run: docker compose --env-file .env.example build
 
+      - name: Test web application update and rollback
+        run: RUN_DOCKER_WEB_UPDATE=1 WEB_UPDATE_TEST_IMAGE=ghcr.io/leonidoz/bgp-antifilter:dev python -m unittest tests.test_web_update_docker -v
+
       - name: Test persistent config volume migration
-        run: RUN_DOCKER_CONFIG_MIGRATION=1 CONFIG_MIGRATION_IMAGE=bgp-antifilter:dev python -m unittest tests.test_config_volume -v
+        run: RUN_DOCKER_CONFIG_MIGRATION=1 CONFIG_MIGRATION_IMAGE=ghcr.io/leonidoz/bgp-antifilter:dev python -m unittest tests.test_config_volume -v
 
       - name: Run Docker smoke test
         run: RUN_DOCKER_SMOKE=1 python -m unittest tests.test_smoke_docker -v

@@ -1,3 +1,5 @@
+FROM docker:28.5.2-cli@sha256:625d9431a9f54c5a2bc90f24f0e1c3d55b1349fd857dd85035f98c2c9acbdd4d AS docker-client
+
 FROM debian:bookworm-slim
 
 # Keep python -m runtime commands available for docker exec with a custom cwd.
@@ -9,10 +11,14 @@ LABEL org.opencontainers.image.title="BGP Antifilter" \
       org.opencontainers.image.documentation="https://github.com/LeonidOz/BGP-Antifilter"
 
 RUN apt-get update \
- && apt-get install -y --no-install-recommends bird2 curl ca-certificates python3 docker.io docker-compose supervisor \
+ && apt-get install -y --no-install-recommends bird2 curl ca-certificates python3 supervisor \
  && rm -rf /var/lib/apt/lists/*
 
 RUN mkdir -p /var/log/supervisor /run/bgp-antifilter
+
+# Compose v1 cannot reliably recreate networks/containers on current engines.
+COPY --from=docker-client /usr/local/bin/docker /usr/local/bin/docker
+COPY --from=docker-client /usr/local/libexec/docker/cli-plugins/docker-compose /usr/local/libexec/docker/cli-plugins/docker-compose
 
 COPY deploy/container-start.sh /container-start.sh
 COPY deploy/entrypoint.sh /entrypoint.sh

@@ -1,5 +1,15 @@
 # Changelog
 
+## 0.5.3 - 2026-11-15
+
+- Run web-triggered image updates in an independent temporary container that survives application replacement and preserves the Compose project name and host workspace paths.
+- Verify Docker health, web API availability and the running application version before reporting success. Restore the previous image and original `.env` after startup or verification failures; leave the working container untouched when image downloads fail.
+- Prevent concurrent updates, reject stale or invalid release targets, preserve update state across lost launch responses, and detect interrupted updater containers.
+- Keep the web panel polling through restart disconnects, handle expired sessions, show verification and rollback stages, and explain when automatic installation is unavailable.
+- Bundle pinned Docker CLI and Compose v2 binaries and use GHCR release images in the repository Compose deployment.
+- Add regression tests for release checks, update transactions, authentication, concurrency and UI recovery, plus a CI integration test with real image downloads, container replacement and unhealthy-image rollback.
+- Document web update requirements, recovery steps and reproducible Docker tests in Russian and English. Portainer-managed installations continue to update through Portainer.
+
 ## 0.5.2 - 2026-11-13
 
 - Separate user lists, settings and their backups into `/etc/bird/config`, with a dedicated configuration volume. Keep routes, cache and runtime data in `/etc/bird/generated` and preserve explicit legacy path overrides.
