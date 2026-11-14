@@ -28,7 +28,7 @@ URL sources may include a name: `Name | https://example.org/list.txt`.
 Use plain domain names without `https://`, paths, or `*.`.
 Downloaded domain lists must also contain plain names; Adblock and hosts formats are not supported.
 The application adds resolved IPv4 addresses; it does not discover every subdomain of a site.
-Use **Tools** to check a specific IP or domain.
+Use **Check IP / domain** in the main menu to check a target.
 
 Default lists are created on first startup.
 Save your changes through the panel; they are retained when updating the application.
@@ -45,6 +45,41 @@ The application uses cached data up to 7 days old. Without a usable cache:
 
 If new routes cannot be prepared or applied, the previous working set stays active.
 On first startup, no previous set exists; source and DNS access are required.
+
+## Route preview and explanations
+
+**Validate changes** prepares a separate route snapshot and shows prefixes added
+and removed compared with the last applied set. Search accepts prefix text or an IP inside a prefix;
+each column shows 100 entries per page. **Apply this snapshot** applies the exact
+reviewed result without downloading sources again. A preview expires after one
+hour and becomes invalid if lists, settings or active routes change.
+Scheduled updates continue normally.
+
+**Check IP / domain** uses the BIRD-confirmed snapshot and its recorded sources,
+domain addresses and exclusions. Cache refreshes and failed generations cannot
+rewrite that history. Older snapshots without provenance show an explanation;
+apply an update to record it. A matching route does not verify the VPN gateway
+or MikroTik forwarding rules. **Network**, **Routes** and **Logs** are main-menu
+pages. The dashboard operation log opens manually. Application updates are
+accessed through the small header button; a dot indicates an available update.
+
+## Backups and restoration in the panel
+
+**Backups** exports JSON containing all user lists and application settings.
+Uploading a backup validates its format, supported keys and settings, then shows
+differences. Only **Restore reviewed configuration** replaces data. Editing the
+configuration after review invalidates the import. Before replacing files, the
+application saves another copy in `config/config-backups/` and restores original
+files if a write fails.
+
+**List history** lets you select a list and revision, inspect differences and
+restore it. The current content is backed up as well. Restoration does not apply
+routes automatically: prepare a preview. Restart the container for restored BGP
+settings marked as requiring restart.
+
+Panel JSON excludes the server `.env`, Compose files, routes, cache and arbitrary
+local `file://` source files. Use the full directory and deployment-file backup
+below to migrate a complete installation.
 
 ## Settings
 
@@ -120,7 +155,7 @@ writable project mount at `/workspace` and the Docker socket. Unpinned local
 builds, multiple Compose files and the README/Portainer stack do not support
 web installation; the Updates tab displays the reason.
 
-Back up `config/`, `generated/` and `.env`, then open **Tools → Updates**,
+Back up `config/`, `generated/` and `.env`, then open the small download button in the header before refresh and logout,
 check the release and click **Update now**. The panel installs the latest
 stable GitHub release. Connectivity drops during restart and you may need
 to log in again afterwards.
@@ -264,3 +299,10 @@ Diagnostic files are in `/etc/bird/generated` inside the container:
 `status.json` holds source and update results, `runtime.json` tracks progress,
 `network-status.json` lists server addresses, and `metrics.prom` contains metrics.
 `routes.last-good.conf` retains the confirmed route set until a new set is successfully applied.
+
+The confirmed route set is stored in `routes.last-good.conf`; its source history,
+exclusions and application time are in `routes.last-good.json`. Back them up
+together. Authenticated `/api/metrics` remains available without a panel page:
+`bgp_antifilter_generation_success` reports generation,
+`bgp_antifilter_apply_success` reports BIRD application, and
+`bgp_antifilter_last_successful_apply_timestamp_seconds` records the last successful application.

@@ -13,6 +13,7 @@ from .runtime_state import PROGRESS_STEPS, write_runtime_progress
 from .route_builder import cleanup_paths, parse_and_build_routes, subtract_networks, unsafe_broad_routes
 from .route_output import build_status, write_json, write_metrics, write_routes, write_text
 from .sources import collect_sources, parse_named_url_list, read_list
+from .route_snapshot import make_snapshot
 
 # Retain helper imports for callers of the former single-module updater.
 # Implementations and their dependencies now live in the owning modules.
@@ -39,6 +40,7 @@ def main(argv=None):
     parser.add_argument("--metrics", default=os.environ.get("METRICS_FILE", "/etc/bird/generated/metrics.prom"))
     parser.add_argument("--dry-run", action="store_true", help="Validate and summarize routes without writing routes, status or metrics files.")
     parser.add_argument("--check-sources", action="store_true", help="Fetch/resolve sources and print their status without building or writing route files.")
+    parser.add_argument("--snapshot", help="Write a self-contained candidate snapshot for later application.")
     parser.add_argument("--allow-broad-routes", action="store_true", default=os.environ.get("ALLOW_BROAD_ROUTES", "0") == "1")
     parser.add_argument("--min-prefix-length", type=int, default=int(os.environ.get("MIN_PREFIX_LENGTH", DEFAULT_MIN_PREFIX_LENGTH)))
     args = parser.parse_args(argv)
@@ -63,6 +65,7 @@ def main(argv=None):
         "exclude_rules_applied": 0,
         "invalid": 0,
     }
+    networks = []
 
     source_failed, sources, errors, base_text, include_text, exclude_text = collect_sources(
         cache_dir, cache_max_age, include_google
@@ -113,6 +116,10 @@ def main(argv=None):
 
     success = not source_failed
     status = build_status(success, started_at, sources, routes, errors, cache_max_age, dry_run=args.dry_run)
+    status["generation_success"] = success
+    status["apply_success"] = None
+    if args.snapshot and success:
+        write_json(Path(args.snapshot), make_snapshot(networks, status, sources))
 
     if args.dry_run:
         write_runtime_progress("completed", "Dry run complete", active=False, items_done=len(sources), items_total=len(sources))
@@ -135,3 +142,7 @@ def main(argv=None):
     )
 
     return 0 if success else 1
+
+
+if __name__ == "__main__":
+    raise SystemExit(main())

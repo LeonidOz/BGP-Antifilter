@@ -51,6 +51,7 @@ function runtimeStageLabel(stage) {
     "collecting-sources": t("stageCollectingSources"),
     "building-routes": t("stageBuildingRoutes"),
     "writing-routes": t("stageWritingRoutes"),
+    "applying-routes": t("stageApplyingRoutes"),
     "writing-status": t("stageWritingStatus"),
     "completed": t("stageCompleted"),
   };

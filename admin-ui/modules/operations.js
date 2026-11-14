@@ -42,7 +42,7 @@ function renderCompletedReloadOperation(payload) {
         <span class="chip">${escapeHtml(runReason)}</span>
       </div>
       <div class="kv-grid">
-        <div class="kv"><span>${t("lastUpdateFinished")}</span><strong>${escapeHtml(formatDateTime(finishedAt || updatedAt) || t("unknownTime"))}</strong></div>
+        <div class="kv"><span>${t("lastUpdateFinished")}</span><strong>${escapeHtml(formatDateTime((finishedAt || updatedAt) * 1000) || t("unknownTime"))}</strong></div>
         <div class="kv"><span>${t("duration")}</span><strong>${escapeHtml(formatSecondsShort(status.duration_seconds))}</strong></div>
         <div class="kv"><span>${t("sources")}</span><strong>${escapeHtml(`${sources.length}`)}</strong></div>
       </div>

@@ -7,6 +7,7 @@ start_log_stream "scheduler"
 load_settings_env
 export_runtime_env
 export RUNTIME_PRESERVE_STATE=1
+python3 -m bgp_antifilter.route_transaction confirm-startup
 
 if [ -f "$STARTUP_REFRESH_FLAG" ]; then
   echo "startup refresh requested"

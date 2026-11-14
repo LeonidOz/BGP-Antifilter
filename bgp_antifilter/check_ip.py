@@ -1,6 +1,7 @@
 import argparse
 import ipaddress
 import json
+import os
 import re
 from pathlib import Path
 import sys
@@ -159,7 +160,7 @@ def build_result(address, route_matches, source_results):
 def main(argv=None):
     parser = argparse.ArgumentParser(description="Check whether an IPv4 address is present in generated BIRD routes.")
     parser.add_argument("ip", help="IPv4 address to check")
-    parser.add_argument("--routes", default="/etc/bird/generated/routes.conf")
+    parser.add_argument("--routes", default=os.environ.get("LAST_GOOD_ROUTES_FILE", "/etc/bird/generated/routes.last-good.conf"))
     parser.add_argument("--status", default="/etc/bird/generated/status.json")
     parser.add_argument("--json", action="store_true", help="Print machine-readable JSON output.")
     args = parser.parse_args(argv)
@@ -174,14 +175,31 @@ def main(argv=None):
         print("Only IPv4 addresses are supported by this project", file=sys.stderr)
         return 2
 
+    from .route_snapshot import explain, read_confirmed
+    snapshot = read_confirmed(Path(args.routes))
+    if snapshot:
+        result = explain(address, snapshot)
+        if args.json:
+            print(json.dumps(result, indent=2, ensure_ascii=False))
+        else:
+            print(render_result(address, matching_networks(address, [ipaddress.ip_network(p) for p in snapshot['prefixes']]),
+                                [(source, [ipaddress.ip_network(p) for p in source['matches']]) for source in result['sources']]))
+        return 0 if result['matched'] else 1
     routes = read_networks(Path(args.routes), extract=True)
     route_matches = matching_networks(address, routes)
-    status = load_status(Path(args.status))
-    source_results = find_sources(address, status)
+    # A legacy snapshot can establish membership, but mutable caches cannot
+    # establish which source produced the confirmed route set.
+    source_results = []
 
     if args.json:
-        print(json.dumps(build_result(address, route_matches, source_results), indent=2, ensure_ascii=False))
+        result = build_result(address, route_matches, source_results)
+        result.update(confirmed=False, exclusions=[], decision="included" if route_matches else "absent")
+        print(json.dumps(result, indent=2, ensure_ascii=False))
     else:
         print(render_result(address, route_matches, source_results))
 
     return 0 if route_matches else 1
+
+
+if __name__ == "__main__":
+    raise SystemExit(main())

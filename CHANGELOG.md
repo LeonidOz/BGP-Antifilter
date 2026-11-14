@@ -1,5 +1,15 @@
 # Changelog
 
+## 6.0.0 - 2026-11-15
+
+- Update the image to Debian 13, BIRD 3.4.0 from CZ.NIC, Python 3.15.2, Docker CLI 29.9.3 and Compose 5.7.1; update Supervisor to 4.3.0, pip to 26.3, curl to 8.23.0 and bundled Lucide to 1.73.0.
+- Publish successful route status and metrics only after BIRD accepts the snapshot; preserve confirmed routes and source history on failed generation or application.
+- Add searchable, paginated route previews that apply the exact reviewed snapshot and reject expired or stale previews.
+- Explain IP membership using confirmed sources, domain resolutions and exclusion rules independent of mutable caches.
+- Add list revision comparison and restoration, unique backup names, and validated configuration export/import with review and rollback on write failures.
+- Move diagnostics, routes, logs and backups into the main menu, replace the updates dashboard notice with a compact header button, and keep the operation log collapsed until opened manually.
+- Add desktop/mobile browser workflows in CI and regression coverage for route transactions, provenance and configuration restoration.
+
 ## 0.5.3 - 2026-11-15
 
 - Run web-triggered image updates in an independent temporary container that survives application replacement and preserves the Compose project name and host workspace paths.

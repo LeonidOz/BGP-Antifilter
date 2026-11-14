@@ -86,6 +86,7 @@ def resolve_domain(kind, domain, cache_file, now, max_age, dns_nameservers=None,
         record["cache_age_seconds"] = 0
         record["routes"] = len(lines)
         progress("resolved domain", kind=kind, name=domain, routes=len(lines))
+        record["_text"] = text
         return text, record, True
     except (socket.gaierror, OSError, RuntimeError) as exc:
         text, age = read_cache(cache_file, now, max_age)
@@ -96,6 +97,7 @@ def resolve_domain(kind, domain, cache_file, now, max_age, dns_nameservers=None,
             record["error"] = str(exc)
             record["routes"] = len([line for line in text.splitlines() if line.strip()])
             progress("using cached domain", kind=kind, name=domain, status="cache", cache_age_seconds=age)
+            record["_text"] = text
             return text, record, True
 
         record["status"] = "failed"
@@ -148,6 +150,7 @@ def collect_domain_list_sources(ctx, domain_list_sources):
             record["domains"] = len(domains)
             record["invalid_lines"] = invalid_lines
             resolved_routes = []
+            record["_domain_addresses"] = {}
             skipped_domains = []
 
             for domain_index, domain in enumerate(domains, 1):
@@ -164,6 +167,7 @@ def collect_domain_list_sources(ctx, domain_list_sources):
                     if _domain_record["status"] == "cache":
                         record["cached_domains"] += 1
                     resolved_routes.append(domain_text)
+                    record["_domain_addresses"][domain] = domain_text.splitlines()
                     record["resolved_domains"] += 1
                     record["routes"] += len([line for line in domain_text.splitlines() if line.strip()])
                 else:
@@ -187,6 +191,7 @@ def collect_domain_list_sources(ctx, domain_list_sources):
                 resolved_cache_file = cache_path(ctx.cache_dir, "domain-list-routes", url)
                 resolved_cache_file.write_text("".join(resolved_routes), encoding="utf-8")
                 record["resolved_cache_file"] = str(resolved_cache_file)
+                record["_text"] = "".join(resolved_routes)
                 ctx.include_text.extend(resolved_routes)
             else:
                 ok = False

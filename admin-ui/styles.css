@@ -159,6 +159,14 @@ nav { margin-top: 26px; }
 .nav-item { display: flex; width: 100%; margin-bottom: 12px; text-align: left; justify-content: flex-start; }
 .nav-item .lucide { color: var(--cyan); }
 .nav-item.active { border-color: var(--cyan); background: rgba(61, 214, 255, .12); }
+.icon-button.update-available { position: relative; border-color: var(--amber); color: var(--amber); }
+.icon-button.update-available::after { content: ""; position: absolute; right: 5px; top: 5px; width: 6px; height: 6px; border-radius: 50%; background: var(--amber); }
+.diff-grid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 18px; }
+.diff-view { max-height: 420px; overflow: auto; white-space: pre-wrap; overflow-wrap: anywhere; padding: 14px; background: var(--bg); border-radius: 8px; }
+.history-versions { display: flex; flex-wrap: wrap; gap: 8px; margin-top: 14px; max-height: 240px; overflow: auto; }
+select { max-width: 100%; background: var(--panel-2); color: var(--text); border: 1px solid var(--line); border-radius: 8px; padding: 10px; }
+#config-upload { max-width: 220px; }
+@media (max-width: 640px) { .diff-grid { grid-template-columns: 1fr; } }
 .language { display: flex; gap: 8px; margin-left: 58px; }
 .language button.active { border-color: var(--cyan); color: var(--cyan); }
 
@@ -242,22 +250,6 @@ main { padding: 24px 32px; position: relative; z-index: 1; min-width: 0; width: 
 .update-panel {
   display: grid;
   gap: 14px;
-}
-.update-notice {
-  display: grid;
-  gap: 12px;
-  border-color: rgba(243, 189, 77, .38);
-  background: linear-gradient(145deg, rgba(243, 189, 77, .10), rgba(16, 26, 35, .90) 58%);
-}
-.update-notice-head {
-  display: flex;
-  align-items: flex-start;
-  justify-content: space-between;
-  gap: 12px;
-  flex-wrap: wrap;
-}
-.update-notice-head h2 {
-  margin-bottom: 6px;
 }
 .update-panel-head {
   display: flex;
@@ -343,12 +335,6 @@ main { padding: 24px 32px; position: relative; z-index: 1; min-width: 0; width: 
   min-width: 0;
 }
 .subtools { margin-bottom: 14px; }
-.tool-panel {
-  border-top-left-radius: 0;
-}
-.tool-tab {
-  min-width: 0;
-}
 .ip-result-list {
   display: grid;
   gap: 12px;

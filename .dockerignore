@@ -10,3 +10,9 @@ tmp/
 __pycache__/
 *.py[cod]
 .pytest_cache/
+**/node_modules/
+**/test-results/
+**/playwright-report/
+admin-ui/e2e/
+admin-ui/playwright.config.js
+admin-ui/package-lock.json

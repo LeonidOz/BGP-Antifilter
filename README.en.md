@@ -1,8 +1,8 @@
 # BGP Antifilter
 
 ![Python](https://img.shields.io/badge/python-3.x-blue)
-![Debian](https://img.shields.io/badge/debian-bookworm-a81d33)
-![BIRD](https://img.shields.io/badge/BIRD-2.x-green)
+![Debian](https://img.shields.io/badge/debian-trixie-a81d33)
+![BIRD](https://img.shields.io/badge/BIRD-3.x-green)
 ![RouterOS](https://img.shields.io/badge/RouterOS-7-blue)
 ![IPv4](https://img.shields.io/badge/IP-IPv4-blueviolet)
 
@@ -46,7 +46,7 @@ nano .env
 Paste these settings and replace the addresses and password:
 
 ```dotenv
-BGP_ANTIFILTER_VERSION=0.5.3
+BGP_ANTIFILTER_VERSION=6.0.0
 BGP_ANTIFILTER_IMAGE=ghcr.io/leonidoz/bgp-antifilter:${BGP_ANTIFILTER_VERSION}
 MT_IP=192.168.55.1
 BIRD_IP=192.168.55.5

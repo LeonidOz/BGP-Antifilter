@@ -104,6 +104,8 @@ class CheckIpTests(unittest.TestCase):
             self.assertEqual(exit_code, 0)
             self.assertTrue(data["matched"])
             self.assertEqual(data["routes"], ["192.0.2.0/24"])
+            self.assertFalse(data["confirmed"])
+            self.assertEqual(data["sources"], [])
 
 
 if __name__ == "__main__":

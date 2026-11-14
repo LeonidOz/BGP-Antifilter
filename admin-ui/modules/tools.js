@@ -1,11 +1,9 @@
-// Network/IP diagnostics, metrics, routes and logs tabs.
+// Network/IP diagnostics, routes and logs pages.
 import { api } from "./api.js";
-import { dashboardState } from "./dashboard.js";
 import { $, escapeHtml, renderIcons } from "./dom.js";
-import { formatDateTime, formatDurationSeconds, formatSecondsShort, yesNo } from "./format.js";
-import { locale, t } from "./i18n.js";
+import { formatDateTime, yesNo } from "./format.js";
+import { t } from "./i18n.js";
 import { renderCommandResult, renderDataTree, renderErrorView, renderRows } from "./results.js";
-import { runtimeDegradedSummary, runtimeStartupRefreshSummary } from "./runtime.js";
 import { loadUpdateStatus, renderUpdateStatus, updateState } from "./updates.js";
 
 const toolState = {
@@ -34,6 +32,10 @@ function renderCheckIpResult(result) {
       <div class="route-list">${routes || "—"}</div>
       <h3>${t("sources")}</h3>
       <div class="kv-grid">${sources || `<div class="kv"><strong>—</strong></div>`}</div>
+      <p class="muted">${result.confirmed ? `${t("confirmedSnapshot")}: ${formatDateTime((result.snapshot_applied_at_unix || 0) * 1000)}` : t("provenanceUnavailable")}</p>
+      <p>${t("routeDecision")}: ${t({included: "decisionIncluded", excluded: "decisionExcluded", absent: "decisionAbsent"}[result.decision] || "decisionAbsent")}</p>
+      ${(result.sources || []).some(source => source.domains?.length) ? `<h3>${t("domains")}</h3><div class="route-list">${result.sources.flatMap(source => source.domains || []).map(domain => `<span class="route-pill">${escapeHtml(domain)}</span>`).join("")}</div>` : ""}
+      ${(result.exclusions || []).length ? `<h3>${t("exclusions")}</h3>${result.exclusions.map(source => `<p>${escapeHtml(source.name)}: ${source.matches.map(escapeHtml).join(", ")}</p>`).join("")}` : ""}
       <details><summary>${t("rawDetails")}</summary>${renderDataTree(result)}</details>
     </div>`;
 }
@@ -122,72 +124,6 @@ function renderNetworkView(data) {
     </div>`;
 }
 
-function renderMetricsView(text) {
-  const labels = {
-    bgp_antifilter_routes_total: locale.lang === "ru" ? "Активные маршруты" : "Active routes",
-    bgp_antifilter_last_update_timestamp_seconds: locale.lang === "ru" ? "Время последнего обновления" : "Last update time",
-    bgp_antifilter_update_success: locale.lang === "ru" ? "Последняя генерация успешна" : "Last update success",
-    bgp_antifilter_update_duration_seconds: locale.lang === "ru" ? "Время генерации" : "Update duration",
-    bgp_antifilter_invalid_entries_total: locale.lang === "ru" ? "Невалидные записи" : "Invalid entries",
-    bgp_antifilter_exclude_rules_applied_total: locale.lang === "ru" ? "Срабатывания исключений" : "Exclusion rule hits",
-    bgp_antifilter_source_status_total: locale.lang === "ru" ? "Источники по статусам" : "Sources by status",
-    bgp_antifilter_source_cache_age_seconds: locale.lang === "ru" ? "Возраст использованного кеша" : "Used cache age",
-  };
-  const rows = String(text || "").split(/\r?\n/)
-    .filter(line => line.trim() && !line.startsWith("#"))
-    .map(line => {
-      const match = line.match(/^([^{\s]+)(?:\{([^}]*)\})?\s+(.+)$/);
-      if (!match) return {name: line, label: line, tags: "", value: ""};
-      const value = Number(match[3]);
-      const rawValue = Number.isFinite(value) ? value : match[3];
-      return {
-        name: match[1],
-        label: labels[match[1]] || match[1].replace(/^bgp_antifilter_/, "").replaceAll("_", " "),
-        tags: match[2] || "",
-        rawValue,
-        value: formatMetricValue(match[1], rawValue),
-      };
-    })
-    .filter(row => row.rawValue !== 0);
-  const runtime = dashboardState.lastStatusPayload?.runtime || {};
-  const status = dashboardState.lastStatusPayload?.status || {};
-  const snapshotSummary = runtime?.startup_snapshot_used
-    ? `${t("startupSnapshot")}: ${formatSecondsShort(runtime.startup_snapshot_age_seconds)}`
-    : "";
-  const runtimeSummary = runtimeStartupRefreshSummary(runtime);
-  const degradedSummary = runtimeDegradedSummary(runtime, status);
-  const extraSummary = [snapshotSummary, runtimeSummary, degradedSummary].filter(Boolean);
-  return `
-    <div class="result-card">
-      <div class="result-head"><span class="status-pill ok">${rows.length} ${locale.lang === "ru" ? "значимых метрик" : "non-zero metrics"}</span></div>
-      ${extraSummary.length ? `
-        <div class="muted-box">${extraSummary.map(item => escapeHtml(item)).join("<br>")}</div>
-      ` : ""}
-      <div class="data-table">
-        ${rows.map(row => `
-          <div class="data-table-row">
-            <strong>${escapeHtml(row.label)}</strong>
-            <span>${escapeHtml(row.tags || "—")}</span>
-            <code>${escapeHtml(row.value)}</code>
-          </div>
-        `).join("") || "—"}
-      </div>
-    </div>`;
-}
-
-function formatMetricValue(name, value) {
-  if (name === "bgp_antifilter_update_success") {
-    return value === 1 ? (locale.lang === "ru" ? "да" : "yes") : (locale.lang === "ru" ? "нет" : "no");
-  }
-  if (name === "bgp_antifilter_update_duration_seconds" || name === "bgp_antifilter_source_cache_age_seconds") {
-    return formatDurationSeconds(value);
-  }
-  if (name === "bgp_antifilter_last_update_timestamp_seconds") {
-    return formatDateTime(Number(value) * 1000);
-  }
-  return value;
-}
-
 function renderRoutesView(text) {
   const routes = String(text || "").split(/\r?\n/).map(line => line.trim()).filter(Boolean);
   return `
@@ -227,25 +163,12 @@ async function loadToolTab(tabName) {
     } else {
       renderUpdateStatus(updateState.updateStatusPayload);
     }
-  } else if (tabName === "metrics") {
-    $("metrics-view").innerHTML = renderMetricsView(await api("/api/metrics", {headers: {"Content-Type": "text/plain"}}));
   } else if (tabName === "routes") {
     $("routes-view").innerHTML = renderRoutesView(await api("/api/routes", {headers: {"Content-Type": "text/plain"}}));
     renderIcons();
   } else if (tabName === "logs") {
     $("logs-view").innerHTML = renderLogsView(await api("/api/logs", {headers: {"Content-Type": "text/plain"}}));
   }
-}
-
-function switchToolTab(tabName) {
-  document.querySelectorAll("[data-tool-tab]").forEach(button => {
-    button.classList.toggle("active", button.dataset.toolTab === tabName);
-  });
-  document.querySelectorAll(".tool-tab").forEach(panel => panel.classList.add("hidden"));
-  $(`tool-${tabName}`).classList.remove("hidden");
-  loadToolTab(tabName).catch(err => {
-    $(`tool-${tabName}`).querySelector(".result-view").innerHTML = renderErrorView(err);
-  });
 }
 
 function bindToolsEvents() {
@@ -278,11 +201,7 @@ function bindToolsEvents() {
       renderIcons();
     }
   });
-  $("tool-tabs").addEventListener("click", event => {
-    const tabName = event.target.closest("[data-tool-tab]")?.dataset.toolTab;
-    if (tabName) switchToolTab(tabName);
-  });
   $("load-logs-btn").addEventListener("click", () => loadToolTab("logs"));
 }
 
-export { bindToolsEvents, switchToolTab };
+export { bindToolsEvents, loadToolTab };

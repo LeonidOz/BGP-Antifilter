@@ -34,7 +34,9 @@ import {
   settingsFormValues,
   settingsState
 } from "./modules/settings.js";
-import { bindToolsEvents, switchToolTab } from "./modules/tools.js";
+import { bindToolsEvents, loadToolTab } from "./modules/tools.js";
+import { bindPreviewEvents, preparePreview } from "./modules/preview.js";
+import { bindBackupEvents, loadHistory } from "./modules/backups.js";
 import { bindUpdatesEvents, loadUpdateStatus, renderUpdateStatus, updateState } from "./modules/updates.js";
 
 const STATUS_POLL_INTERVAL_MS = 2000;
@@ -52,6 +54,11 @@ function hasUnsavedChanges() {
 function applyLang() {
   document.documentElement.lang = locale.lang;
   document.querySelectorAll("[data-i18n]").forEach(el => el.textContent = t(el.dataset.i18n));
+  document.querySelectorAll("[data-placeholder]").forEach(el => el.placeholder = t(el.dataset.placeholder));
+  for (const [id, key] of [["refresh-btn", "refresh"], ["logout-btn", "logout"], ["open-updates-btn", "updateStatus"]]) {
+    $(id).title = t(key);
+    $(id).setAttribute("aria-label", t(key));
+  }
   $("lang-ru").classList.toggle("active", locale.lang === "ru");
   $("lang-en").classList.toggle("active", locale.lang === "en");
   if (settingsState.settingsPayload && !$("settings").classList.contains("hidden")) {
@@ -96,11 +103,11 @@ function applyActionStatus(status) {
 async function runAction(action) {
   const buttons = document.querySelectorAll("button");
   buttons.forEach(button => button.disabled = true);
-  $("operation-log-details").open = true;
+
   $("operation-log").innerHTML = `<span class="chip">Running ${escapeHtml(action)}...</span>`;
   try {
     const result = await api(`/api/actions/${action}`, {method: "POST", body: "{}"});
-    $("operation-log-details").open = true;
+
     if (action === "reload" && result.accepted) {
       operationState.pendingReloadOperation = true;
       operationState.pendingReloadStartedAtUnix = Math.floor(Date.now() / 1000);
@@ -114,7 +121,7 @@ async function runAction(action) {
     }
     await loadStatus();
   } catch (err) {
-    $("operation-log-details").open = true;
+
     $("operation-log").innerHTML = renderErrorView(err);
   } finally {
     buttons.forEach(button => button.disabled = false);
@@ -131,7 +138,16 @@ function switchView(view) {
   document.querySelectorAll(".view").forEach(el => el.classList.add("hidden"));
   $(view).classList.remove("hidden");
   document.querySelectorAll(".nav-item").forEach(button => button.classList.toggle("active", button.dataset.view === view));
-  $("view-title").textContent = t(view);
+  const titleKey = {check: "checkTarget", routes: "routeMenu", updates: "updateStatus"}[view] || view;
+  $("view-title").dataset.i18n = titleKey;
+  $("view-title").textContent = t(titleKey);
+  if (["check", "network", "routes", "logs", "updates"].includes(view)) {
+    loadToolTab(view).catch(err => {
+      const result = $(view).querySelector(".result-view");
+      if (result) result.innerHTML = renderErrorView(err);
+    });
+  }
+  if (view === "backups") loadHistory().catch(() => {});
   if (view === "lists") {
     renderListTiles();
     if (!dashboardState.lastStatusPayload) {
@@ -221,6 +237,8 @@ bindSettingsEvents();
 bindToolsEvents();
 bindUpdatesEvents();
 bindDashboardEvents();
+bindPreviewEvents();
+bindBackupEvents();
 
 $("login-form").addEventListener("submit", async event => {
   event.preventDefault();
@@ -241,11 +259,16 @@ $("logout-btn").addEventListener("click", async () => {
   if (updateStatusTimer) clearInterval(updateStatusTimer);
   showLogin();
 });
-$("refresh-btn").addEventListener("click", () => loadStatus());
-$("open-updates-tab-btn").addEventListener("click", () => {
-  switchView("tools");
-  switchToolTab("updates");
+$("refresh-btn").addEventListener("click", () => {
+  loadStatus().catch(() => {});
+  const view = document.querySelector(".view:not(.hidden)")?.id;
+  if (["network", "routes", "logs", "updates"].includes(view)) loadToolTab(view).catch(() => {});
 });
+$("open-updates-btn").addEventListener("click", () => switchView("updates"));
+document.querySelectorAll("[data-preview-routes]").forEach(button => button.addEventListener("click", () => {
+  switchView("preview");
+  if (!$("preview").classList.contains("hidden")) preparePreview();
+}));
 document.querySelectorAll("[data-action]").forEach(button => {
   button.addEventListener("click", () => runAction(button.dataset.action));
 });
@@ -255,6 +278,9 @@ document.querySelectorAll(".nav-item").forEach(button => {
 $("lang-ru").addEventListener("click", () => { locale.lang = "ru"; localStorage.setItem("lang", locale.lang); applyLang(); });
 $("lang-en").addEventListener("click", () => { locale.lang = "en"; localStorage.setItem("lang", locale.lang); applyLang(); });
 $("apply-settings-btn").addEventListener("click", applySettingsNow);
+window.addEventListener("configuration-restored", () => {
+  Promise.all([loadList(listState.currentList), loadSettings()]).catch(() => {});
+});
 $("list-source-settings").addEventListener("change", event => {
   const countryCheckbox = event.target.closest("[data-country-code]");
   if (countryCheckbox && listState.currentList === "countries") {

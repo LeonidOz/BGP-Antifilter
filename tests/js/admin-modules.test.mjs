@@ -134,6 +134,7 @@ function installUpdateDom(context) {
   function get(id) {
     if (!nodes.has(id)) nodes.set(id, {textContent: "", disabled: false, href: "", className: "",
       classList: {values: new Set(), toggle(name, enabled) { enabled ? this.values.add(name) : this.values.delete(name); }},
+      setAttribute(name, value) { this[name] = value; },
       querySelector() { return this.span ||= {textContent: ""}; }});
     return nodes.get(id);
   }

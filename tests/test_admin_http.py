@@ -186,6 +186,31 @@ class AdminHttpTests(unittest.TestCase):
         for method in ("GET", "POST", "PUT"):
             self.assertEqual(self.request(method, "/api/unknown", cookie=cookie)[0], 404)
 
+    def test_new_preview_and_backup_routes_require_authentication(self):
+        for method, path in (("GET", "/api/routes/preview?id=bad"), ("POST", "/api/routes/preview"),
+                             ("POST", "/api/routes/apply-preview"), ("GET", "/api/backups/export"),
+                             ("GET", "/api/backups/lists?name=urls"), ("POST", "/api/backups/preview"),
+                             ("POST", "/api/backups/restore"), ("POST", "/api/backups/list/restore")):
+            with self.subTest(method=method, path=path):
+                self.assertEqual(self.request(method, path, {"id": "bad"} if method == "POST" else None)[0], 401)
+
+    def test_configuration_backup_http_review_and_validation(self):
+        cookie = self.login()
+        code, headers, body = self.request("GET", "/api/backups/export", cookie=cookie)
+        self.assertEqual(code, 200)
+        self.assertIn("attachment", headers["Content-Disposition"])
+        backup = json.loads(body)
+        backup["settings"]["FETCH_TIMEOUT"] = "45"
+        code, _headers, preview = self.request("POST", "/api/backups/preview", {"backup": backup}, cookie)
+        self.assertEqual(code, 200)
+        self.assertEqual(preview["settings"]["FETCH_TIMEOUT"]["after"], "45")
+        self.assertEqual(self.app.settings.effective_settings()["FETCH_TIMEOUT"], "30")
+        self.assertEqual(self.request("POST", "/api/backups/restore", {"id": preview["id"]}, cookie)[0], 200)
+        self.assertEqual(self.app.settings.effective_settings()["FETCH_TIMEOUT"], "45")
+        backup["settings"]["MT_IP"] = "bad"
+        self.assertEqual(self.request("POST", "/api/backups/preview", {"backup": backup}, cookie)[0], 400)
+        self.assertEqual(self.request("GET", "/api/routes/preview?id=../../secret", cookie=cookie)[0], 409)
+
     def test_main_keeps_disabled_and_missing_password_startup_guards(self):
         with mock.patch.object(admin_http, "AdminHTTPServer") as server:
             with mock.patch.dict(os.environ, {"ADMIN_ENABLED": "0"}):

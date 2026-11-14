@@ -9,6 +9,7 @@ from urllib.parse import parse_qs, urlparse
 
 from .. import __version__, updater_server
 from ..export_address_list import DEFAULT_LIST_NAME
+from ..route_transaction import RouteManager
 from .application import AdminApplication
 from .auth import cookie_header, get_cookie
 from .lists import ListWriteError, SnapshotUnavailable, UnknownListError
@@ -58,6 +59,8 @@ class AdminHandler(BaseHTTPRequestHandler):
 
     def read_json(self):
         length = int(self.headers.get("Content-Length", "0"))
+        if length < 0 or length > 8_000_000:
+            raise ValueError("request too large")
         if length <= 0:
             return {}
         body = self.rfile.read(length).decode("utf-8")
@@ -174,6 +177,25 @@ class AdminHandler(BaseHTTPRequestHandler):
                 self.send_json({"error": str(exc)}, HTTPStatus.SERVICE_UNAVAILABLE)
                 return
             self.send_file_text(script, f"{name}.rsc")
+        elif path == "/api/routes/preview":
+            query = parse_qs(parsed.query, keep_blank_values=True)
+            try:
+                payload = self.route_manager().preview(query.get("id", [""])[0], query.get("search", [""])[0], query.get("offset", ["0"])[0])
+            except ValueError as exc:
+                self.send_json({"error": str(exc)}, HTTPStatus.CONFLICT)
+                return
+            self.send_json(payload)
+        elif path == "/api/backups/export":
+            self.send_file_text(json.dumps(self.app.backups.export(), ensure_ascii=False, indent=2), "bgp-antifilter-config.json")
+        elif path in {"/api/backups/lists", "/api/backups/list"}:
+            query = parse_qs(parsed.query, keep_blank_values=True)
+            name = query.get("name", [""])[0]
+            try:
+                payload = self.app.lists.history(name) if path.endswith("/lists") else self.app.lists.history_version(name, query.get("version", [""])[0])
+            except (ValueError, UnknownListError) as exc:
+                self.send_json({"error": str(exc)}, HTTPStatus.BAD_REQUEST)
+                return
+            self.send_json(payload)
         elif path == "/api/logs":
             self.send_text(self.app.status.logs())
         elif path == "/api/settings":
@@ -215,7 +237,33 @@ class AdminHandler(BaseHTTPRequestHandler):
             return
         if not self.require_auth():
             return
-        if path in {"/api/actions/dry-run", "/api/actions/check-sources"}:
+        if path in {"/api/routes/preview", "/api/routes/apply-preview", "/api/backups/preview", "/api/backups/restore", "/api/backups/list/restore"}:
+            data = self.read_json_or_error()
+            if data is None:
+                return
+            try:
+                if path == "/api/routes/preview":
+                    payload = self.route_manager().create_preview()
+                elif path == "/api/routes/apply-preview":
+                    self.route_manager().read_preview(data.get("id"))
+                    payload = self.app.actions.start_reload(data["id"])
+                elif path == "/api/backups/preview":
+                    payload = self.app.backups.preview(data.get("backup"))
+                elif path == "/api/backups/restore":
+                    payload = self.app.backups.restore(data.get("id"))
+                else:
+                    payload = self.app.lists.restore(data.get("name"), data.get("version"), data.get("current_sha256"))
+            except (ValueError, UnknownListError) as exc:
+                self.send_json({"error": str(exc)}, HTTPStatus.BAD_REQUEST)
+                return
+            except RuntimeError as exc:
+                self.send_json({"error": str(exc)}, HTTPStatus.CONFLICT)
+                return
+            except (OSError, TimeoutError) as exc:
+                self.send_json({"error": str(exc)}, HTTPStatus.INTERNAL_SERVER_ERROR)
+                return
+            self.send_json(payload, HTTPStatus.ACCEPTED if path == "/api/routes/apply-preview" else HTTPStatus.OK)
+        elif path in {"/api/actions/dry-run", "/api/actions/check-sources"}:
             self.send_json(self.app.actions.run_route_check("--" + path.rsplit("/", 1)[-1]))
         elif path == "/api/actions/reload":
             try:
@@ -256,6 +304,9 @@ class AdminHandler(BaseHTTPRequestHandler):
         else:
             self.send_json({"error": "not found"}, HTTPStatus.NOT_FOUND)
 
+    def route_manager(self):
+        return RouteManager(self.app.config, self.app.settings.command_environment())
+
     def handle_api_put(self, path):
         if not self.require_auth():
             return
@@ -294,7 +345,7 @@ class AdminHandler(BaseHTTPRequestHandler):
         except ValueError as exc:
             self.send_json({"error": str(exc)}, HTTPStatus.BAD_REQUEST)
             return
-        except ListWriteError as exc:
+        except (ListWriteError, OSError) as exc:
             self.send_json({"error": str(exc)}, HTTPStatus.INTERNAL_SERVER_ERROR)
             return
         self.send_json(payload)

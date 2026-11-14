@@ -79,7 +79,7 @@ Keep imports explicit and avoid circular dependencies when adding modules.
 
 ## Checks
 
-Python 3.11 from the Debian image works for Python checks; use Node.js 22 for JavaScript, matching CI.
+Python 3.15.2 from the Debian image works for Python checks; use Node.js 22 for JavaScript, matching CI.
 From the repository root:
 
 ```bash
@@ -142,3 +142,37 @@ Commands placing variables before the executable use Linux shell syntax.
 CI runs Python/JavaScript tests, Compose validation, image builds, web updates/rollback, volume migration,
 Docker smoke tests and ShellCheck; see the [workflow](../.github/workflows/ci.yml).
 Release instructions are in [AGENTS.md](../AGENTS.md).
+
+## Runtime components and browser checks
+
+The image uses Debian 13 (Trixie), BIRD 3.4.0 from the signed CZ.NIC `bird3`
+repository, Python 3.15.2, Supervisor 4.3.0, pip 26.3 and curl 8.23.0. Python comes from
+the official image; curl is built from a SHA-256-verified upstream archive.
+Python packages are pinned with hashes. CA certificates and system libraries
+are updated from Debian repositories. Docker CLI 29.9.3 and Compose 5.7.1 are copied from a digest-pinned
+official Docker CLI image. `BIRD_VERSION` pins the upstream package build.
+
+`route_transaction.py` serializes generation, preview and application and publishes
+successful status/metrics only after BIRD acceptance. `route_snapshot.py` stores
+self-contained provenance. Preview IDs are opaque, expire after one hour and are
+bound to configuration and the active route baseline. The first startup confirms
+prepared routes after BIRD starts, before persisting the last-good snapshot.
+
+Browser dependencies are development-only; the shipped UI still requires no build:
+
+```bash
+cd admin-ui
+npm ci
+PLAYWRIGHT_BROWSERS_PATH=../.cache/ms-playwright npx playwright install --with-deps chromium
+npm run test:e2e
+```
+
+On Windows, use `npm.cmd`/`npx.cmd` and set
+`$env:PLAYWRIGHT_BROWSERS_PATH = 'C:\projects\BGP-Antifilter\.cache\ms-playwright'`
+before browser installation. The test config uses the same repository cache by default.
+Tests cover desktop/mobile navigation, collapsed operation logs, exact preview
+application, IP explanations, list history, validated configuration import and
+update connection/session failures. They use a temporary real admin server bound
+to loopback; BIRD/Docker and release discovery are fixtures. Real BIRD and image
+replacement are checked by the Docker tests. Browser traces and screenshots are
+retained on failures; CI uploads them as artifacts.

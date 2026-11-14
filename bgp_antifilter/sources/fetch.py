@@ -169,6 +169,7 @@ def fetch_text_source(kind, name, url, cache_file, now, max_age, progress_callba
         record["routes"] = count_source_routes(text)
         record["cache_age_seconds"] = 0
         progress("fetched source", kind=kind, name=name, status="fresh")
+        record["_text"] = text
         return text, record, True
     except RuntimeError as exc:
         text, age = read_cache(cache_file, now, max_age)
@@ -180,6 +181,7 @@ def fetch_text_source(kind, name, url, cache_file, now, max_age, progress_callba
             record["bytes"] = len(text.encode("utf-8"))
             record["routes"] = count_source_routes(text)
             progress("using cached source", kind=kind, name=name, status="cache", cache_age_seconds=age)
+            record["_text"] = text
             return text, record, True
 
         record["status"] = "failed"

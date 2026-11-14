@@ -224,6 +224,8 @@ class DockerSmokeTests(unittest.TestCase):
                 self.wait_until(lambda: "198.51.100.10/32" in self.compose("exec", "-T", "bgp-antifilter", "birdc", "show", "route", check=False).stdout,
                                 60, "Domain-list address did not reach BIRD")
                 self.wait_until(login, 30, "Portainer admin did not start")
+                self.wait_until(lambda: api("/api/status")["status"].get("apply_success") is True,
+                                30, "Initial routes were not confirmed by BIRD")
                 self.assertIn("Test domains", api("/api/lists/domain-list-urls")["content"])
                 with opener.open(f"http://127.0.0.1:{admin_port}/api/routes/address-list.rsc?list=smoke-vpn", timeout=5) as export:
                     self.assertIn('filename="smoke-vpn.rsc"', export.headers["Content-Disposition"])
@@ -314,6 +316,13 @@ class DockerSmokeTests(unittest.TestCase):
             lambda: status_file.exists() and self.read_json(status_file)["success"] is True,
             timeout=15,
             message="Background refresh did not finish successfully",
+        )
+        self.wait_until(
+            lambda: self.read_json(runtime_file).get("last_update_reason") == "startup"
+            and self.read_json(runtime_file).get("last_update_success") is True
+            and not self.read_json(runtime_file).get("generation_active"),
+            timeout=15,
+            message="Background refresh did not publish its completed runtime state",
         )
         runtime = self.read_json(runtime_file)
         self.assertFalse(runtime.get("generation_active"))

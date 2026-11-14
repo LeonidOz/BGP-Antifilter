@@ -18,7 +18,7 @@
 
 | Переменная | Пример | Назначение |
 | --- | --- | --- |
-| `BGP_ANTIFILTER_IMAGE` | `ghcr.io/leonidoz/bgp-antifilter:0.5.3` | Готовый образ приложения |
+| `BGP_ANTIFILTER_IMAGE` | `ghcr.io/leonidoz/bgp-antifilter:6.0.0` | Готовый образ приложения |
 | `ADMIN_PASSWORD` | Ваш пароль | Вход в веб-панель |
 | `MT_IP` | `192.168.55.1` | Адрес MikroTik |
 | `BIRD_IP` | `192.168.55.5` | Существующий адрес Linux-сервера |

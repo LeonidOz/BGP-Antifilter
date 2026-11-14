@@ -6,6 +6,33 @@ on:
   pull_request:
 
 jobs:
+  browser:
+    name: Browser workflows (desktop and mobile)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v6
+      - uses: actions/setup-python@v6
+        with:
+          python-version: "3.15"
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+          cache: npm
+          cache-dependency-path: admin-ui/package-lock.json
+      - run: npm ci
+        working-directory: admin-ui
+      - run: npx playwright install --with-deps chromium
+        working-directory: admin-ui
+        env:
+          PLAYWRIGHT_BROWSERS_PATH: ${{ github.workspace }}/.cache/ms-playwright
+      - run: npm run test:e2e
+        working-directory: admin-ui
+      - uses: actions/upload-artifact@v4
+        if: failure()
+        with:
+          name: browser-test-results
+          path: admin-ui/test-results
+
   javascript:
     name: JavaScript modules
     runs-on: ubuntu-latest
@@ -47,6 +74,9 @@ jobs:
 
       - name: Test web application update and rollback
         run: RUN_DOCKER_WEB_UPDATE=1 WEB_UPDATE_TEST_IMAGE=ghcr.io/leonidoz/bgp-antifilter:dev python -m unittest tests.test_web_update_docker -v
+
+      - name: Verify BIRD 3 BGP export and reconfiguration
+        run: RUN_DOCKER_BGP=1 BGP_TEST_IMAGE=ghcr.io/leonidoz/bgp-antifilter:dev python -m unittest tests.test_bgp_docker -v
 
       - name: Test persistent config volume migration
         run: RUN_DOCKER_CONFIG_MIGRATION=1 CONFIG_MIGRATION_IMAGE=ghcr.io/leonidoz/bgp-antifilter:dev python -m unittest tests.test_config_volume -v

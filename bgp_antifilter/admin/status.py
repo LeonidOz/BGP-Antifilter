@@ -47,7 +47,7 @@ class StatusService:
         self.started_at = int(time.time())
 
     def routes(self):
-        return text_load(self.config.routes_file)
+        return text_load(self.config.last_good_routes_file)
 
     def metrics(self):
         return text_load(self.config.metrics_file)

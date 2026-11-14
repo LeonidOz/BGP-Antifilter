@@ -194,7 +194,7 @@ function renderStatus(data) {
   renderRuntimeBanner(data);
   renderPipeline(data);
   if (runtimeState) {
-    $("operation-log-details").open = true;
+
     replaceHtmlPreservingState($("operation-log"), renderActiveOperationLog(data));
   } else if (operationState.pendingReloadOperation) {
     const completedReload = renderCompletedReloadOperation(data);
@@ -202,7 +202,7 @@ function renderStatus(data) {
     if (storedReload) {
       operationState.pendingReloadOperation = false;
       operationState.pendingReloadStartedAtUnix = 0;
-      $("operation-log-details").open = true;
+
       replaceHtmlPreservingState($("operation-log"), storedReload);
     }
   }

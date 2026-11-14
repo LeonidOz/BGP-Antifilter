@@ -74,17 +74,7 @@ update_routes() {
     return $?
   fi
 
-  if /update-routes.py --output "$ROUTES" --status "$STATUS_FILE" --metrics "$METRICS_FILE"; then
-    if [ ! -s "$ROUTES" ]; then
-      echo "Generated route list is empty, restoring previous routes" >&2
-      return 1
-    fi
-
-    echo "Routes prepared before BIRD startup"
-  else
-    echo "Route updater failed" >&2
-    return 1
-  fi
+  python3 -m bgp_antifilter.route_transaction prepare
 }
 
 write_runtime() {

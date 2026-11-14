@@ -18,7 +18,7 @@ Add these under **Environment variables**:
 
 | Variable | Example | Purpose |
 | --- | --- | --- |
-| `BGP_ANTIFILTER_IMAGE` | `ghcr.io/leonidoz/bgp-antifilter:0.5.3` | Application image |
+| `BGP_ANTIFILTER_IMAGE` | `ghcr.io/leonidoz/bgp-antifilter:6.0.0` | Application image |
 | `ADMIN_PASSWORD` | Your password | Web panel login |
 | `MT_IP` | `192.168.55.1` | MikroTik address |
 | `BIRD_IP` | `192.168.55.5` | Existing Linux server address |

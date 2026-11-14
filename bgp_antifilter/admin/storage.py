@@ -23,14 +23,14 @@ def text_load(path):
 def write_text_atomic(path, text):
     path.parent.mkdir(parents=True, exist_ok=True)
     tmp = path.with_suffix(path.suffix + ".tmp")
-    tmp.write_text(text, encoding="utf-8")
+    tmp.write_text(text, encoding="utf-8", newline="\n")
     try:
         tmp.replace(path)
     except OSError as exc:
         if exc.errno not in (errno.EBUSY, errno.EACCES, errno.EPERM):
             raise
         tmp.unlink(missing_ok=True)
-        with path.open("w", encoding="utf-8") as file:
+        with path.open("w", encoding="utf-8", newline="\n") as file:
             file.write(text)
 
 

@@ -11,7 +11,7 @@ from .state_store import write_state
 def write_text(path, text):
     path.parent.mkdir(parents=True, exist_ok=True)
     tmp = path.with_suffix(path.suffix + ".tmp")
-    tmp.write_text(text, encoding="utf-8")
+    tmp.write_text(text, encoding="utf-8", newline="\n")
     tmp.replace(path)
 
 
@@ -38,7 +38,16 @@ def write_metrics(path, status):
         f"bgp_antifilter_last_update_timestamp_seconds {status['updated_at_unix']}",
         "# HELP bgp_antifilter_update_success Whether the last route update succeeded.",
         "# TYPE bgp_antifilter_update_success gauge",
-        f"bgp_antifilter_update_success {1 if status['success'] else 0}",
+        f"bgp_antifilter_update_success {1 if status.get('apply_success', status['success']) else 0}",
+        "# HELP bgp_antifilter_generation_success Whether the last generation succeeded.",
+        "# TYPE bgp_antifilter_generation_success gauge",
+        f"bgp_antifilter_generation_success {1 if status.get('generation_success', status['success']) else 0}",
+        "# HELP bgp_antifilter_apply_success Whether the last BIRD application succeeded.",
+        "# TYPE bgp_antifilter_apply_success gauge",
+        f"bgp_antifilter_apply_success {1 if status.get('apply_success') else 0}",
+        "# HELP bgp_antifilter_last_successful_apply_timestamp_seconds Last confirmed BIRD application timestamp.",
+        "# TYPE bgp_antifilter_last_successful_apply_timestamp_seconds gauge",
+        f"bgp_antifilter_last_successful_apply_timestamp_seconds {status.get('last_successful_apply_timestamp_seconds', 0)}",
         "# HELP bgp_antifilter_update_duration_seconds Last update duration in seconds.",
         "# TYPE bgp_antifilter_update_duration_seconds gauge",
         f"bgp_antifilter_update_duration_seconds {status['duration_seconds']}",
@@ -90,7 +99,7 @@ def build_status(success, started_at, sources, routes, errors, cache_max_age, dr
         "duration_seconds": round(time.time() - started_at, 3),
         "cache_max_age_seconds": cache_max_age,
         "routes": routes,
-        "sources": sources,
-        "errors": errors,
+        "sources": [{key: value for key, value in source.items() if not key.startswith("_")} for source in sources],
+        "errors": [{key: value for key, value in error.items() if not key.startswith("_")} for error in errors],
         "network": network,
     }

@@ -8,6 +8,7 @@ from .lists import ListService
 from .settings import SettingsService
 from .status import StatusService
 from .updates import UpdatesService
+from .backups import BackupService
 
 
 class AdminApplication:
@@ -18,5 +19,6 @@ class AdminApplication:
         self.actions = ActionsService(self.config, self.settings)
         self.diagnostics = DiagnosticsService(self.settings)
         self.lists = ListService(self.config)
+        self.backups = BackupService(self.config, self.settings, self.lists)
         self.status = StatusService(self.config, self.settings, self.actions)
         self.updates = UpdatesService()

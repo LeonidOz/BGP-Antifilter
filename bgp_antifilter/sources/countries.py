@@ -188,6 +188,7 @@ def collect_country_sources(ctx, country_sources):
         ctx.sources.append(record)
         if ok:
             country_text = "\n".join(str(network) for network in networks)
+            record["_text"] = country_text
             if country_text:
                 ctx.base_text.append(country_text + "\n")
             progress(

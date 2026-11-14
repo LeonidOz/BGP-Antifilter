@@ -2,4 +2,4 @@
 set -eu
 
 /init-config.sh
-exec /usr/bin/supervisord -n -c /etc/supervisor/conf.d/bgp-antifilter.conf
+exec supervisord -n -c /etc/supervisor/conf.d/bgp-antifilter.conf

@@ -2,12 +2,14 @@
 
 import ipaddress
 import json
+import math
 import os
 import shlex
 import time
 
 from .. import dns_resolver
 from .storage import json_load, write_text_atomic
+from ..state_store import state_lock
 
 
 SETTINGS_SECTIONS = [
@@ -87,6 +89,8 @@ def validate_setting(key, value):
             number = float(raw)
         except ValueError as exc:
             raise ValueError(f"{key} must be a number") from exc
+        if not math.isfinite(number):
+            raise ValueError(f"{key} must be a finite number")
         if "min" in spec and number < spec["min"]:
             raise ValueError(f"{key} must be at least {spec['min']}")
         if "max" in spec and number > spec["max"]:
@@ -157,6 +161,10 @@ class SettingsService:
         return env
 
     def save_settings(self, values):
+        with state_lock(self.config.config_dir / ".configuration"):
+            return self._save_settings(values)
+
+    def _save_settings(self, values):
         normalized = {}
         for key, value in values.items():
             if key not in SETTINGS_BY_KEY:

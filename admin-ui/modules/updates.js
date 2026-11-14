@@ -79,16 +79,12 @@ function renderUpdateStatus(data) {
     ? `${t("applyUpdate")} ${data.latest_tag}`
     : t("applyUpdate");
   $("check-updates-btn").disabled = Boolean(runtime.active);
-  const noticeVisible = Boolean(runtime.active) || Boolean(data?.update_available);
-  $("update-notice").classList.toggle("hidden", !noticeVisible);
-  $("update-notice-pill").textContent = runtime.active
-    ? t("updateApplying")
-    : data?.latest_tag || t("updateAvailableShort");
-  $("update-notice-summary").textContent = runtime.active
-    ? summary
-    : data?.latest_tag
-    ? `${t("latestReleaseAvailable")} ${data.latest_tag}`
-    : t("latestReleaseAvailable");
+  const button = $("open-updates-btn");
+  button?.classList.toggle("update-available", Boolean(runtime.active || data?.update_available));
+  if (button) {
+    button.title = runtime.active ? t("updateApplying") : data?.update_available ? `${t("updateAvailableShort")} ${data.latest_tag || ""}` : t("updateStatus");
+    button.setAttribute("aria-label", button.title);
+  }
 }
 
 async function loadUpdateStatus(force = false) {

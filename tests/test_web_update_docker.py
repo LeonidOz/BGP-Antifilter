@@ -79,7 +79,7 @@ class WebUpdateDockerTests(unittest.TestCase):
         self.repository = f"127.0.0.1:{self.registry_port}/{self.project}"
         # The admin uses the real application, with deterministic release metadata.
         (self.root / "admin-fixture.py").write_text(
-            "#!/usr/bin/python3\nfrom pathlib import Path\n"
+            "#!/usr/bin/env python3\nfrom pathlib import Path\n"
             "from bgp_antifilter.admin import updates\n"
             "from bgp_antifilter.admin.server import main\n"
             "def latest():\n"

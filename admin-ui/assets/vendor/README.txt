@@ -1,4 +1,4 @@
-Lucide 1.66.0
-Source: https://registry.npmjs.org/lucide/-/lucide-1.66.0.tgz
-Integrity: sha512-Ngq8coV3XJ9S/DLTNnIWk9lmdJusoSnuuoO1rK7C0H9/VaV93LoWkv/u5GyUAJhL+rFesAd4gL3YG544bnH6gQ==
+Lucide 1.73.0
+Source: https://registry.npmjs.org/lucide/-/lucide-1.73.0.tgz
+Integrity: sha512-qiNin5j7qEflnAdLG/9Yb4d5N9qnnP8TOMdn6e66399fgX25Y0eYEPS3PUPWGIPLloOj4X+xLTdF2lk9gSgWpA==
 Bundled locally so the admin UI works without external CDN access.

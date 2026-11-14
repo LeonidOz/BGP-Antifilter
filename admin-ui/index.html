@@ -34,7 +34,11 @@
         <nav>
           <button class="nav-item active" data-view="dashboard"><i data-lucide="gauge"></i><span data-i18n="dashboard">Dashboard</span></button>
           <button class="nav-item" data-view="lists"><i data-lucide="list-tree"></i><span data-i18n="lists">Lists</span></button>
-          <button class="nav-item" data-view="tools"><i data-lucide="wrench"></i><span data-i18n="tools">Tools</span></button>
+          <button class="nav-item" data-view="check"><i data-lucide="search"></i><span data-i18n="checkTarget">checkTarget</span></button>
+          <button class="nav-item" data-view="network"><i data-lucide="globe"></i><span data-i18n="network">network</span></button>
+          <button class="nav-item" data-view="routes"><i data-lucide="route"></i><span data-i18n="routeMenu">routeMenu</span></button>
+          <button class="nav-item" data-view="logs"><i data-lucide="scroll-text"></i><span data-i18n="logs">logs</span></button>
+          <button class="nav-item" data-view="backups"><i data-lucide="archive-restore"></i><span data-i18n="backups">backups</span></button>
           <button class="nav-item" data-view="settings"><i data-lucide="sliders-horizontal"></i><span data-i18n="settings">Settings</span></button>
         </nav>
       </div>
@@ -81,6 +85,7 @@
             </div>
           </div>
           <div class="top-actions">
+            <button id="open-updates-btn" class="icon-button" title="Updates" aria-label="Updates"><i data-lucide="download"></i></button>
             <button id="refresh-btn" class="icon-button" title="Refresh" aria-label="Refresh">
               <i data-lucide="refresh-cw"></i>
             </button>
@@ -110,25 +115,12 @@
             </article>
           </div>
 
-          <article class="panel update-notice hidden" id="update-notice">
-            <div class="update-notice-head">
-              <div>
-                <h2 data-i18n="updateAvailableShort">Update available</h2>
-                <p id="update-notice-summary" class="muted">-</p>
-              </div>
-              <span class="status-pill warn" id="update-notice-pill">-</span>
-            </div>
-            <div class="button-row update-actions">
-              <button type="button" id="open-updates-tab-btn"><i data-lucide="arrow-right-circle"></i><span data-i18n="openUpdatesTab">Open updates</span></button>
-            </div>
-          </article>
-
           <article id="runtime-banner" class="runtime-banner hidden"></article>
 
           <article class="panel actions-panel">
             <h2 data-i18n="actions">Actions</h2>
             <div class="button-row">
-              <button data-action="dry-run"><i data-lucide="flask-conical"></i><span data-i18n="dryRun">Dry run</span></button>
+              <button data-preview-routes><i data-lucide="flask-conical"></i><span data-i18n="dryRun">Dry run</span></button>
               <button data-action="check-sources"><i data-lucide="radar"></i><span data-i18n="checkSources">Check sources</span></button>
               <button data-action="reload" class="danger"><i data-lucide="refresh-cw"></i><span data-i18n="reload">Reload routes</span></button>
             </div>
@@ -174,7 +166,7 @@
             </form>
             <div id="list-tiles" class="list-tiles"></div>
             <div class="list-actions">
-              <button id="dry-after-save-btn" data-action="dry-run"><i data-lucide="flask-conical"></i><span data-i18n="dryRun">Dry run</span></button>
+              <button id="dry-after-save-btn" data-preview-routes><i data-lucide="flask-conical"></i><span data-i18n="dryRun">Dry run</span></button>
             </div>
             <details class="raw-list-editor">
               <summary data-i18n="rawEditor">Raw editor</summary>
@@ -187,28 +179,25 @@
           </article>
         </section>
 
-        <section class="view view-stack hidden" id="tools">
-          <div class="tabs" id="tool-tabs">
-            <button class="active" data-tool-tab="check"><i data-lucide="search"></i><span data-i18n="checkTarget">Check IP / domain</span></button>
-            <button data-tool-tab="network"><i data-lucide="globe"></i><span data-i18n="network">Network</span></button>
-            <button data-tool-tab="updates"><i data-lucide="download"></i><span data-i18n="updateStatus">Updates</span></button>
-            <button data-tool-tab="metrics"><i data-lucide="activity"></i><span data-i18n="loadMetrics">Load metrics</span></button>
-            <button data-tool-tab="routes"><i data-lucide="route"></i><span data-i18n="loadRoutes">Load routes</span></button>
-            <button data-tool-tab="logs"><i data-lucide="scroll-text"></i><span data-i18n="logs">Logs</span></button>
-          </div>
+        <section class="view view-stack hidden" id="check">
           <article class="panel tool-panel">
-            <div class="tool-tab" id="tool-check">
               <h2 data-i18n="checkTarget">Check IP / domain</h2>
               <form id="check-ip-form" class="inline-form">
                 <input id="check-ip-input" placeholder="1.2.3.4 / example.com">
                 <button type="submit" id="check-ip-submit"><i data-lucide="search"></i><span data-i18n="check">Check</span></button>
               </form>
               <div id="check-ip-result" class="result-view"></div>
-            </div>
-            <div class="tool-tab hidden" id="tool-network">
+          </article>
+        </section>
+
+        <section class="view view-stack hidden" id="network">
+          <article class="panel tool-panel">
               <div id="network-view" class="result-view"></div>
-            </div>
-            <div class="tool-tab hidden" id="tool-updates">
+          </article>
+        </section>
+
+        <section class="view view-stack hidden" id="updates">
+          <article class="panel tool-panel">
               <article class="update-panel" id="update-panel">
                 <div class="update-panel-head">
                   <div>
@@ -241,19 +230,50 @@
                   <a id="open-release-link" class="button-link hidden" href="https://github.com/LeonidOz/BGP-Antifilter" target="_blank" rel="noreferrer noopener"><i data-lucide="external-link"></i><span data-i18n="openRelease">Open release</span></a>
                 </div>
               </article>
-            </div>
-            <div class="tool-tab hidden" id="tool-metrics">
-              <div id="metrics-view" class="result-view"></div>
-            </div>
-            <div class="tool-tab hidden" id="tool-routes">
+          </article>
+        </section>
+
+        <section class="view view-stack hidden" id="routes">
+          <article class="panel tool-panel">
               <div id="routes-view" class="result-view"></div>
-            </div>
-            <div class="tool-tab hidden" id="tool-logs">
+          </article>
+        </section>
+
+        <section class="view view-stack hidden" id="logs">
+          <article class="panel tool-panel">
               <div class="button-row subtools">
                 <button id="load-logs-btn"><i data-lucide="refresh-cw"></i><span data-i18n="refresh">Refresh</span></button>
               </div>
               <div id="logs-view" class="result-view"></div>
-            </div>
+          </article>
+        </section>
+
+        <section class="view view-stack hidden" id="preview">
+          <article class="panel">
+            <div class="button-row"><button id="prepare-preview-btn"><i data-lucide="scan-eye"></i><span data-i18n="preparePreview">Prepare preview</span></button><button id="apply-preview-btn" class="danger hidden" data-i18n="applyPreview">Apply this snapshot</button></div>
+            <p data-i18n="previewHint">The reviewed snapshot is applied without downloading sources again.</p>
+            <div id="preview-summary" role="status"></div>
+            <form id="preview-search-form" class="inline-form hidden"><input id="preview-search" data-placeholder="searchRoutes" placeholder="Search routes"><button type="submit" data-i18n="check">Search</button></form>
+            <div id="preview-diff" class="diff-grid"></div>
+            <div id="preview-pages" class="button-row hidden"><button id="preview-prev" data-i18n="previousPage">Previous</button><span id="preview-page"></span><button id="preview-next" data-i18n="nextPage">Next</button></div>
+          </article>
+        </section>
+
+        <section class="view view-stack hidden" id="backups">
+          <article class="panel">
+            <h2 data-i18n="configurationBackup">Configuration backup</h2>
+            <p data-i18n="backupHint">Export lists and settings. Upload a backup to review changes before restoring.</p>
+            <div class="button-row"><a class="button-link" href="/api/backups/export" download="bgp-antifilter-config.json" data-i18n="exportConfig">Export configuration</a><label class="button-link"><span data-i18n="importConfig">Import configuration</span><input id="config-upload" type="file" accept="application/json,.json"></label></div>
+            <div id="config-import-review" class="result-view"></div>
+            <button id="restore-config-btn" class="danger hidden" data-i18n="restoreConfig">Restore reviewed configuration</button>
+            <p id="backup-status" role="status"></p>
+          </article>
+          <article class="panel">
+            <h2 data-i18n="listHistory">List history</h2>
+            <div class="inline-form"><select id="history-list" aria-label="List"></select><button id="load-history-btn" data-i18n="refresh">Refresh</button></div>
+            <div id="history-versions" class="history-versions"></div>
+            <div id="history-review" class="result-view"></div>
+            <button id="restore-list-btn" class="danger hidden" data-i18n="restoreList">Restore this version</button>
           </article>
         </section>
 

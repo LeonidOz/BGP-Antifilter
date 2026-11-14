@@ -90,9 +90,12 @@ class ActionsService:
             self.config.runtime_file, runtime, lambda: self.reload_thread_active() or self.reload_lock_active(),
         )
 
-    def apply_reload(self):
+    def apply_reload(self, preview_id=None):
         started_at = int(time.time())
-        result = self.run_command(["/reload-routes.sh"], timeout=600)
+        command = ["/reload-routes.sh"]
+        if preview_id:
+            command.extend(["--preview-id", preview_id])
+        result = self.run_command(command, timeout=660)
         finished_at = int(time.time())
         payload = {
             "active": False,
@@ -122,7 +125,7 @@ class ActionsService:
         except OSError:
             pass
 
-    def start_reload(self):
+    def start_reload(self, preview_id=None):
         with self.reload_lock:
             if self.reload_runtime_active() or (self.reload_thread is not None and self.reload_thread.is_alive()):
                 raise RuntimeError("reload already running")
@@ -140,7 +143,7 @@ class ActionsService:
                 })
             except OSError:
                 pass
-            self.reload_thread = threading.Thread(target=self.apply_reload, daemon=True)
+            self.reload_thread = threading.Thread(target=self.apply_reload, args=(preview_id,), daemon=True)
             self.reload_thread.start()
         return {
             "ok": True,
@@ -175,7 +178,7 @@ class ActionsService:
         results = []
         ok = True
         for address in addresses:
-            result = self.run_command(["/check-ip.py", address, "--json"], timeout=30)
+            result = self.run_command(["/check-ip.py", address, "--json", "--routes", str(self.config.last_good_routes_file)], timeout=30)
             parsed = None
             if result["stdout"]:
                 try:
