@@ -78,7 +78,6 @@ function applyLang() {
   refreshListDirtyState();
   refreshToolLanguage();
   document.querySelectorAll("[data-list]").forEach(button => button.querySelector("span").textContent = t(button.dataset.list));
-  $("list-title").textContent = t(listState.currentList);
   if (dashboardState.lastStatusPayload) renderStatus(dashboardState.lastStatusPayload);
   if (!$("backups").classList.contains("hidden")) loadHistory();
   renderUpdateStatus(updateState.updateStatusPayload);
@@ -300,7 +299,7 @@ $("apply-settings-btn").addEventListener("click", applySettingsNow);
 window.addEventListener("configuration-restored", () => {
   Promise.all([loadList(listState.currentList), loadSettings()]).catch(() => {});
 });
-$("list-source-settings").addEventListener("change", event => {
+$("list-tiles").addEventListener("change", event => {
   const countryCheckbox = event.target.closest("[data-country-code]");
   if (countryCheckbox && listState.currentList === "countries") {
     toggleCountry(countryCheckbox.dataset.countryCode, countryCheckbox.checked);

@@ -169,6 +169,51 @@ test("Google controls stay separate and all localized list tabs fit phones", asy
   expect((await page.locator("#add-list-input").boundingBox()).width).toBeGreaterThan(200);
 });
 
+test("all list tabs keep one panel and shorten display paths without losing country controls", async ({page}) => {
+  const files = {urls: "lists.txt", asns: "include-asns.txt", countries: "include-countries.txt", "include-domains": "include-domains.txt", "exclude-domains": "exclude-domains.txt", "domain-list-urls": "domain-list-urls.txt"};
+  await page.route("**/api/lists/*", async route => {
+    if (route.request().method() !== "GET") return route.continue();
+    const response = await route.fetch();
+    const data = await response.json();
+    const name = new URL(route.request().url()).pathname.split("/").pop();
+    await route.fulfill({response, json: {...data, path: `/etc/bird/config/${files[name]}`}});
+  });
+  await navigate(page, "lists");
+  for (const lang of ["ru", "en"]) {
+    await language(page, lang);
+    for (const name of [...Object.keys(files).filter(name => name !== "domain-list-urls"), "google-ranges"]) {
+      await page.locator(`[data-list="${name}"]`).click();
+      const panel = page.locator("#lists > .editor-panel");
+      await expect(panel).toBeVisible();
+      await expect(page.locator("#lists .panel:visible")).toHaveCount(1);
+      if (name !== "google-ranges") {
+        await expect(panel.locator("#list-title")).toHaveText(`/config/${files[name]}`);
+        await expect(panel.locator("#list-filters")).toBeVisible();
+        await expect(panel.locator("#dry-after-save-btn")).toBeVisible();
+      } else {
+        await expect(panel.locator("#list-include-google-ranges")).toBeAttached();
+        await expect(panel.locator("#add-list-form")).toBeHidden();
+        await expect(panel.locator("#dry-after-save-btn")).toBeHidden();
+      }
+      if (name === "countries") await expect(panel.locator(".country-card")).toHaveCount(24);
+      if (name === "include-domains") await expect(panel.locator(".domain-list-source-head h2")).toHaveText("/config/domain-list-urls.txt");
+      const layout = await panel.evaluate(panel => {
+        const title = panel.querySelector("#list-title").getBoundingClientRect();
+        const styles = getComputedStyle(panel);
+        return {titleInset: title.top - panel.getBoundingClientRect().top, padding: parseFloat(styles.paddingTop), border: parseFloat(styles.borderTopWidth), width: document.documentElement.scrollWidth, viewport: innerWidth};
+      });
+      expect(layout.titleInset).toBeCloseTo(layout.padding + layout.border, 0);
+      expect(layout.width).toBeLessThanOrEqual(layout.viewport);
+    }
+  }
+  await page.locator('[data-list="countries"]').click();
+  await page.locator('.country-card:has([data-country-code="RU"])').click();
+  await expect.poll(async () => (await (await page.request.get("/api/lists/countries")).json()).content).toContain("RU");
+  await page.locator("#country-selected").check();
+  await expect(page.locator(".country-card:visible")).toHaveCount(1);
+  await expect(page.locator("#list-count")).toContainText("1 / 24");
+});
+
 test("preview applies the reviewed snapshot even when the source later changes", async ({page, request}) => {
   await request.post("/__test/source", {data: {content: "198.51.100.0/24\n"}});
   await page.locator("[data-preview-routes]").first().click();

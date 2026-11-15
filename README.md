@@ -14,6 +14,15 @@ BGP Antifilter собирает списки IPv4-адресов и переда
 
 **VPN должен быть настроен заранее.** Приложение обновляет маршруты; подключение к VPN настраивается отдельно.
 
+## Возможности
+
+- Сбор IPv4-маршрутов из URL-списков, ASN, стран, доменов и диапазонов Google с исключением Google Cloud.
+- Передача маршрутов по BGP с community; примеры настройки для MikroTik и FRRouting, экспорт MikroTik Address List.
+- Веб-панель на русском и английском: редактирование списков, настройки, ручные и плановые обновления.
+- Предпросмотр изменений перед применением, кеш источников и сохранение последнего рабочего набора при ошибках генерации или применения.
+- Проверка IP и доменов с объяснением источников, поиск маршрутов, логи и метрики Prometheus.
+- История списков, импорт и экспорт конфигурации, обновление приложения из панели с автоматическим откатом при сбое; для Portainer — обновление через стек.
+
 ![Веб-панель BGP Antifilter: вход, панель и списки](docs/assets/admin-preview-ru.gif)
 
 Скриншоты без анимации: [вход](docs/assets/admin-login.png) · [панель](docs/assets/admin-dashboard.png) · [списки](docs/assets/admin-lists.png) · [страны](docs/assets/admin-countries.png).
@@ -50,7 +59,7 @@ nano .env
 Вставьте настройки и замените адреса и пароль на свои:
 
 ```dotenv
-BGP_ANTIFILTER_VERSION=1.0.1
+BGP_ANTIFILTER_VERSION=1.0.2
 BGP_ANTIFILTER_IMAGE=ghcr.io/leonidoz/bgp-antifilter:${BGP_ANTIFILTER_VERSION}
 PEER_IP=192.168.55.1
 BIRD_IP=192.168.55.5
@@ -123,3 +132,4 @@ docker compose exec bgp-antifilter birdc show protocols
 - [Экспортировать MikroTik Address List вместо BGP](docs/mikrotik.md#address-list-вместо-bgp).
 - [Собрать из исходников, посмотреть структуру кода и запустить проверки](docs/development.md).
 - [История изменений](CHANGELOG.md).
+- [Возможные доработки](docs/roadmap.md).

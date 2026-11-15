@@ -70,14 +70,19 @@ function listUnsavedLabel() {
   return t("unsavedChanges");
 }
 
+function displayListPath(path) {
+  return String(path || "").replace(/^\/etc\/bird(?=\/|$)/, "");
+}
+
 function refreshListDirtyState(message = "", tone = "") {
+  $("list-title").textContent = displayListPath(listState.listSavedPath) || t(listState.currentList);
   $("save-list-btn").disabled = !listState.listDirty;
   if (message) {
     $("list-save-status").textContent = message;
     setStatusTone($("list-save-status"), tone);
     return;
   }
-  $("list-save-status").textContent = listState.listDirty ? listUnsavedLabel() : listState.listSavedPath;
+  $("list-save-status").textContent = listState.listDirty ? listUnsavedLabel() : "";
   setStatusTone($("list-save-status"), listState.listDirty ? "warn" : "");
 }
 
@@ -111,11 +116,11 @@ async function loadList(name) {
   $("list-status-filter").value = "all";
   $("country-selected").checked = false;
   const special = isSpecialList(name);
-  const showHintPanel = special || name === "asns" || name === "include-domains";
   $("add-list-form").classList.toggle("hidden", special);
-  $("list-source-settings").classList.toggle("hidden", !showHintPanel);
+  $("list-source-settings").classList.toggle("hidden", name !== "include-domains");
+  if (name !== "include-domains") $("list-source-settings").innerHTML = "";
   $("list-tiles").classList.toggle("hidden", false);
-  $("dry-after-save-btn").closest(".list-actions").classList.toggle("hidden", name === "google-ranges");
+  $("dry-after-save-btn").classList.toggle("hidden", name === "google-ranges");
   $("list-editor").closest(".raw-list-editor").classList.toggle("hidden", special);
   if (name === "google-ranges") {
     listState.listSavedContent = "";
@@ -124,7 +129,6 @@ async function loadList(name) {
     $("add-list-input").value = "";
     markListDirty(false);
     renderListTiles();
-    refreshListDirtyState(listState.listSavedPath);
     return;
   }
   const data = await api(`/api/lists/${name}`);
@@ -148,7 +152,7 @@ async function loadList(name) {
     listState.domainListUrlSavedPath = "";
     listState.domainListUrlDirty = false;
   }
-  renderListHint(name);
+  if (name === "include-domains") renderDomainListSourcesPanel();
   renderListTiles();
 }
 
@@ -214,10 +218,6 @@ function isSpecialList(name) {
 }
 
 function renderListHint(name) {
-  if (name === "include-domains") {
-    renderDomainListSourcesPanel();
-    return;
-  }
   const key = name === "asns"
     ? "listHintAsns"
     : name === "countries"
@@ -225,16 +225,8 @@ function renderListHint(name) {
       : name === "google-ranges"
         ? "listHintGoogleRanges"
         : "";
-  if (!key) {
-    $("list-source-settings").innerHTML = "";
-    return;
-  }
-  $("list-source-settings").innerHTML = `
-    <article class="panel settings-section">
-      <h2>${escapeHtml(t(name))}</h2>
-      <p class="muted">${escapeHtml(t(key))}</p>
-    </article>
-  `;
+  $("list-hint").textContent = key ? t(key) : "";
+  $("list-hint").classList.toggle("hidden", !key);
 }
 
 function listSourceRecord(listName, value) {
@@ -294,10 +286,7 @@ function renderGoogleRangesTab() {
   const record = listSourceRecord("google-ranges", "");
   const level = record ? eventLevel(record) : (enabled ? "warn" : "");
   const statusCard = record ? `<div class="list-card ${level} google-ranges-status-card">${renderListSourceStats(record)}</div>` : "";
-  $("list-source-settings").innerHTML = `
-    <article class="panel settings-section">
-      <h2>${escapeHtml(t("googleRangesSourceTitle"))}</h2>
-      <p class="muted">${escapeHtml(t("listHintGoogleRanges"))}</p>
+  $("list-tiles").innerHTML = `
       <div class="google-ranges-layout">
         <div class="google-ranges-left">
           <label class="setting-card google-ranges-toggle-card">
@@ -319,7 +308,6 @@ function renderGoogleRangesTab() {
           ${statusCard}
         </div>
       </div>
-    </article>
   `;
 }
 
@@ -343,21 +331,11 @@ function renderCountriesTab() {
             <span></span>
           </span>
         </span>
-        <span class="country-card-body">
-          ${record || selected.has(option.code) ? renderListSourceStats(record) : ""}
-        </span>
+        ${record || selected.has(option.code) ? `<span class="country-card-body">${renderListSourceStats(record)}</span>` : ""}
       </label>`;
   }).join("");
 
-  $("list-source-settings").innerHTML = `
-    <article class="panel settings-section">
-      <h2>${escapeHtml(t("countries"))}</h2>
-      <p class="muted">${escapeHtml(t("listHintCountries"))}</p>
-      <div class="country-grid">
-        ${cards}
-      </div>
-    </article>
-  `;
+  $("list-tiles").innerHTML = cards;
 }
 
 function deriveUrlSourceName(url) {
@@ -415,9 +393,10 @@ function domainListSourceCardsHtml(content = currentDomainListUrlContent()) {
     return `
       <article class="list-card ${level}" data-entry="${escapeHtml(`${entry.name} ${entry.url}`)}" data-problem="${!record || !["fresh", "disabled"].includes(record.status)}">
         <div class="list-card-head domain-list-card-head">
-          <div class="named-url-card-copy">
+          <div class="list-card-copy named-url-card-copy">
             <strong>${escapeHtml(entry.name)}</strong>
             ${urlDetails(entry.url)}
+            ${renderListSourceStats(record)}
           </div>
           <div class="list-card-actions">
             ${copyControl(entry.url)}
@@ -429,7 +408,6 @@ function domainListSourceCardsHtml(content = currentDomainListUrlContent()) {
             </button>
           </div>
         </div>
-        ${renderListSourceStats(record)}
       </article>`;
   }).join("") : `<div class="muted-box">${t("domainListEmpty")}</div>`;
 }
@@ -447,13 +425,12 @@ function renderDomainListSourcesPanel() {
   listState.domainListUrlDraftContent = content;
 
   $("list-source-settings").innerHTML = `
-    <article class="panel settings-section domain-list-source-panel">
+    <section class="domain-list-source-panel">
       <div class="domain-list-source-head">
         <div>
-          <h2>${escapeHtml(t("domainListSources"))}</h2>
+          <h2>${escapeHtml(displayListPath(listState.domainListUrlSavedPath) || t("domainListSources"))}</h2>
           <p class="muted">${escapeHtml(t("listHintDomainListUrls"))}</p>
         </div>
-        <span class="chip">URL → domains → DNS → /32</span>
       </div>
       <form id="domain-list-url-form" class="inline-form domain-list-url-form">
         <input id="domain-list-name-input" type="text" autocomplete="off" placeholder="${escapeHtml(t("domainListName"))} (${escapeHtml(t("optional"))})">
@@ -476,8 +453,8 @@ function renderDomainListSourcesPanel() {
           </button>
         </div>
       </details>
-      <p id="domain-list-url-status" class="${listState.domainListUrlDirty ? "status-warn" : ""}">${escapeHtml(listState.domainListUrlDirty ? t("unsavedChanges") : listState.domainListUrlSavedPath)}</p>
-    </article>`;
+      <p id="domain-list-url-status" role="status" class="${listState.domainListUrlDirty ? "status-warn" : ""}">${escapeHtml(listState.domainListUrlDirty ? t("unsavedChanges") : "")}</p>
+    </section>`;
   const rawEditor = document.querySelector(".domain-list-url-raw");
   if (rawEditor && wasOpen) rawEditor.open = true;
   renderIcons();
@@ -611,26 +588,25 @@ function applyListFilters() {
 function renderListTiles() {
   $("list-filters").classList.toggle("hidden", listState.currentList === "google-ranges");
   $("country-selected-filter").classList.toggle("hidden", listState.currentList !== "countries");
-  $("list-title").textContent = t(listState.currentList);
+  $("list-title").textContent = displayListPath(listState.listSavedPath) || t(listState.currentList);
+  renderListHint(listState.currentList);
+  $("list-tiles").classList.toggle("url-source-tiles", listState.currentList === "urls");
+  $("list-tiles").classList.toggle("country-grid", listState.currentList === "countries");
+  $("list-tiles").classList.toggle("google-ranges-tiles", listState.currentList === "google-ranges");
   if (listState.currentList === "include-domains") {
     refreshDomainListSourceCards();
   }
   if (listState.currentList === "google-ranges") {
-    $("list-tiles").classList.remove("url-source-tiles");
-    $("list-tiles").innerHTML = "";
     renderGoogleRangesTab();
     renderIcons();
     return;
   }
   if (listState.currentList === "countries") {
-    $("list-tiles").classList.remove("url-source-tiles");
-    $("list-tiles").innerHTML = "";
     renderCountriesTab();
     applyListFilters();
     renderIcons();
     return;
   }
-  $("list-tiles").classList.toggle("url-source-tiles", listState.currentList === "urls");
   const lines = parseListLines($("list-editor").value);
   const active = lines.filter(line => line.active);
   const comments = lines.filter(line => line.comment);
@@ -643,9 +619,10 @@ function renderListTiles() {
     return `
       <article class="list-card ${level}" data-entry="${escapeHtml(`${title} ${subtitle}`)}" data-problem="${!record || !["fresh", "disabled"].includes(record.status)}">
         <div class="list-card-head">
-          <div class="${namedUrl ? "named-url-card-copy" : ""}">
+          <div class="list-card-copy${namedUrl ? " named-url-card-copy" : ""}">
             <strong>${escapeHtml(title)}</strong>
             ${subtitle ? urlDetails(subtitle) : ""}
+            ${renderListSourceStats(record)}
           </div>
           <div class="list-card-actions">
             ${namedUrl ? copyControl(subtitle) : ""}
@@ -658,7 +635,6 @@ function renderListTiles() {
             </button>
           </div>
         </div>
-        ${renderListSourceStats(record)}
       </article>`;
   }).join("") : `<div class="muted-box">${t("emptyList")}</div>`;
   replaceHtmlPreservingState($("list-tiles"), html);
@@ -792,7 +768,7 @@ function bindListsEvents() {
       if (button) button.disabled = !listState.domainListUrlDirty;
       const status = $("domain-list-url-status");
       if (status) {
-        status.textContent = listState.domainListUrlDirty ? t("unsavedChanges") : listState.domainListUrlSavedPath;
+        status.textContent = listState.domainListUrlDirty ? t("unsavedChanges") : "";
         setStatusTone(status, listState.domainListUrlDirty ? "warn" : "");
       }
     }

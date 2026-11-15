@@ -102,7 +102,6 @@ button.danger { border-color: rgba(255, 107, 122, .6); color: #ffd9de; }
 .sidebar-inner {
   position: sticky;
   top: 0;
-  min-height: 100vh;
 }
 .brand { display: flex; align-items: center; gap: 14px; margin-bottom: 14px; }
 .brand span { display: block; color: var(--muted); font-size: 13px; margin-top: 3px; }
@@ -641,6 +640,17 @@ pre {
   color: var(--cyan);
 }
 .editor-toolbar { display: flex; justify-content: space-between; align-items: center; gap: 12px; }
+.editor-panel { display: grid; gap: 14px; }
+.editor-panel > .editor-toolbar h2,
+#list-hint { margin: 0; }
+.editor-panel > .filter-toolbar { padding: 0; }
+.editor-panel > .list-add-form,
+.editor-panel > .raw-list-editor,
+.editor-panel > .list-actions,
+.editor-panel > .country-grid { margin: 0; }
+.list-tiles.google-ranges-tiles { grid-template-columns: minmax(0, 1fr); }
+.google-ranges-tiles > .google-ranges-layout { margin-top: 0; }
+#list-title { overflow-wrap: anywhere; }
 .editor-actions {
   display: flex;
   justify-content: flex-end;
@@ -1083,6 +1093,7 @@ details pre { margin-top: 12px; max-height: 360px; overflow: auto; }
 .list-tiles {
   display: grid;
   grid-template-columns: repeat(auto-fit, minmax(420px, 1fr));
+  align-items: start;
   gap: 8px;
 }
 .list-card {
@@ -1113,6 +1124,12 @@ details pre { margin-top: 12px; max-height: 360px; overflow: auto; }
   line-height: 1.25;
   font-size: 12px;
 }
+.list-card-copy {
+  display: grid;
+  gap: 8px;
+  min-width: 0;
+}
+.list-card-copy > .list-card-stats { margin-top: 0; }
 .list-remove-btn {
   width: 32px;
   height: 32px;
@@ -1141,12 +1158,18 @@ details pre { margin-top: 12px; max-height: 360px; overflow: auto; }
 }
 .list-actions {
   display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 12px;
   justify-content: flex-end;
   margin-top: 12px;
 }
+.list-actions:has(> #list-save-status:empty):has(> button.hidden) { display: none; }
+#list-save-status { flex: 1 1 180px; min-width: 0; margin: 0; overflow-wrap: anywhere; }
+#list-save-status:empty { display: none; }
 .country-grid {
   display: grid;
-  grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
+  grid-template-columns: repeat(auto-fit, minmax(280px, 1fr));
   gap: 12px;
   margin-top: 14px;
 }
@@ -1533,6 +1556,8 @@ details pre { margin-top: 12px; max-height: 360px; overflow: auto; }
 .domain-list-source-panel {
   display: grid;
   gap: 14px;
+  border-top: 1px solid var(--line);
+  padding-top: 14px;
 }
 .domain-list-source-head {
   display: flex;
@@ -1542,8 +1567,13 @@ details pre { margin-top: 12px; max-height: 360px; overflow: auto; }
   flex-wrap: wrap;
 }
 .domain-list-source-head h2 {
-  margin-bottom: 6px;
+  margin: 0;
+  overflow-wrap: anywhere;
 }
+.domain-list-source-head p { margin: 14px 0 0; }
+.domain-list-source-panel > .raw-list-editor { margin: 0; }
+#domain-list-url-status { margin: 0; overflow-wrap: anywhere; }
+#domain-list-url-status:empty { display: none; }
 .domain-list-url-cards {
   grid-template-columns: repeat(auto-fit, minmax(360px, 1fr));
 }
@@ -1615,12 +1645,20 @@ details pre { margin-top: 12px; max-height: 360px; overflow: auto; }
 .url-source-tiles,
 .domain-list-url-cards {
   grid-template-columns: repeat(auto-fit, minmax(560px, 1fr));
+  align-items: start;
 }
 
 /* Name + URL + action buttons must stay inside the panel at desktop widths. */
 .list-add-form.named-url-form,
 .domain-list-url-form {
-  grid-template-columns: minmax(180px, 280px) minmax(0, 1fr) max-content max-content;
+  grid-template-columns: minmax(180px, 280px) minmax(0, 1fr) max-content;
+}
+
+@media (min-width: 1101px) {
+  .list-add-form.named-url-form:has(> #cancel-list-edit-btn:not(.hidden)),
+  .domain-list-url-form:has(> #cancel-domain-list-edit-btn:not(.hidden)) {
+    grid-template-columns: minmax(180px, 280px) minmax(0, 1fr) max-content max-content;
+  }
 }
 
 .list-add-form.named-url-form input,

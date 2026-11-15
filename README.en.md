@@ -14,6 +14,15 @@ Manage lists and route updates in the web panel.
 
 **Set up your VPN first.** The application updates routes; VPN connectivity is configured separately.
 
+## Features
+
+- Collect IPv4 routes from URL lists, ASNs, countries, domains, and Google ranges excluding Google Cloud.
+- Publish routes over BGP with a community; MikroTik and FRRouting setup examples and MikroTik Address List export.
+- Russian and English web panel for list editing, settings, and manual or scheduled route updates.
+- Preview changes before applying them, cache sources, and retain the last working routes after generation or application failures.
+- Check IPs and domains with source explanations; search routes, inspect logs, and export Prometheus metrics.
+- List history, configuration import/export, and in-panel application updates with automatic rollback on failure; Portainer installations update through their stack.
+
 ![BGP Antifilter web interface: sign-in and dashboard](docs/assets/admin-preview-en.gif)
 
 Still screenshots: [sign-in](docs/assets/admin-login-en.png) · [dashboard](docs/assets/admin-dashboard-en.png).
@@ -50,7 +59,7 @@ nano .env
 Paste these settings and replace the addresses and password:
 
 ```dotenv
-BGP_ANTIFILTER_VERSION=1.0.1
+BGP_ANTIFILTER_VERSION=1.0.2
 BGP_ANTIFILTER_IMAGE=ghcr.io/leonidoz/bgp-antifilter:${BGP_ANTIFILTER_VERSION}
 PEER_IP=192.168.55.1
 BIRD_IP=192.168.55.5

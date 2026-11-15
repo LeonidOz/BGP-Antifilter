@@ -1,5 +1,12 @@
 # Changelog
 
+## 1.0.2 - 2026-11-15
+
+- Consolidate each list tab into one editor panel, keeping filters, entries, raw editing and actions together; use compact hints and shorten displayed configuration paths.
+- Improve source-card alignment, country-card spacing and mobile layout; preserve country selection after moving controls into the shared list panel.
+- Add desktop/mobile browser coverage for the unified list layout, displayed paths, localized tabs and country selection.
+- Add concise feature summaries to the Russian and English READMEs and document future optional DNS-proxy and IPv6 work. These features are planned, not enabled by this release.
+
 ## 1.0.1 - 2026-11-15
 
 This release consolidates the work previously published under the mistaken versions 6.0.0–6.0.2 and the subsequent improvements. The project now uses the 1.x release series. Old image tags remain available for rollback.
