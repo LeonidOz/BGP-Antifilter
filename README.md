@@ -14,7 +14,9 @@ BGP Antifilter собирает списки IP-адресов и передаё
 
 **VPN должен быть настроен заранее.** Приложение обновляет маршруты; подключение к VPN настраивается отдельно.
 
-![Экран входа BGP Antifilter](docs/assets/admin-login.png)
+![Веб-панель BGP Antifilter: вход, панель и списки](docs/assets/admin-preview-ru.gif)
+
+Скриншоты без анимации: [вход](docs/assets/admin-login.png) · [панель](docs/assets/admin-dashboard.png) · [списки](docs/assets/admin-lists.png).
 
 ## Что понадобится
 
@@ -117,5 +119,3 @@ docker compose exec bgp-antifilter birdc show protocols
 - [Использовать Address List вместо BGP](docs/mikrotik.md#address-list-вместо-bgp).
 - [Собрать из исходников, посмотреть структуру кода и запустить проверки](docs/development.md).
 - [История изменений](CHANGELOG.md).
-
-![Панель BGP Antifilter](docs/assets/admin-dashboard.png)

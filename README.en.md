@@ -14,7 +14,9 @@ Manage lists and route updates in the web panel.
 
 **Set up your VPN first.** The application updates routes; VPN connectivity is configured separately.
 
-![BGP Antifilter login screen](docs/assets/admin-login-en.png)
+![BGP Antifilter web interface: sign-in and dashboard](docs/assets/admin-preview-en.gif)
+
+Still screenshots: [sign-in](docs/assets/admin-login-en.png) · [dashboard](docs/assets/admin-dashboard-en.png).
 
 ## Requirements
 
@@ -117,5 +119,3 @@ From a device behind MikroTik, check access to a listed resource and confirm its
 - [Use an Address List instead of BGP](docs/mikrotik.en.md#address-list-instead-of-bgp).
 - [Build from source, explore the code structure, and run checks](docs/development.en.md).
 - [Changelog](CHANGELOG.md).
-
-![BGP Antifilter dashboard](docs/assets/admin-dashboard-en.png)
