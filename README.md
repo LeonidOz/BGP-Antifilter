@@ -16,7 +16,7 @@ BGP Antifilter собирает списки IP-адресов и передаё
 
 ![Веб-панель BGP Antifilter: вход, панель и списки](docs/assets/admin-preview-ru.gif)
 
-Скриншоты без анимации: [вход](docs/assets/admin-login.png) · [панель](docs/assets/admin-dashboard.png) · [списки](docs/assets/admin-lists.png).
+Скриншоты без анимации: [вход](docs/assets/admin-login.png) · [панель](docs/assets/admin-dashboard.png) · [списки](docs/assets/admin-lists.png) · [страны](docs/assets/admin-countries.png).
 
 ## Что понадобится
 
