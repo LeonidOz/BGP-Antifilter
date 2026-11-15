@@ -76,6 +76,7 @@ function applyLang() {
     renderListTiles();
   }
   refreshListDirtyState();
+  if (!$("backups").classList.contains("hidden")) loadHistory();
   renderUpdateStatus(updateState.updateStatusPayload);
   renderIcons();
 }

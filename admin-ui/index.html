@@ -260,18 +260,34 @@
         </section>
 
         <section class="view view-stack hidden" id="backups">
-          <article class="panel">
+          <article class="panel configuration-backup">
             <h2 data-i18n="configurationBackup">Configuration backup</h2>
-            <p data-i18n="backupHint">Export lists and settings. Upload a backup to review changes before restoring.</p>
-            <div class="button-row"><a class="button-link" href="/api/backups/export" download="bgp-antifilter-config.json" data-i18n="exportConfig">Export configuration</a><label class="button-link"><span data-i18n="importConfig">Import configuration</span><input id="config-upload" type="file" accept="application/json,.json"></label></div>
+            <p class="muted" data-i18n="backupHint">All lists and application settings in one file.</p>
+            <div class="backup-transfer-grid">
+              <section class="backup-transfer">
+                <div class="backup-transfer-head"><i data-lucide="download" aria-hidden="true"></i><h3 data-i18n="saveBackup">Save a copy</h3></div>
+                <p class="muted" data-i18n="exportBackupHint">Download a JSON file to keep your current configuration.</p>
+                <a class="button-link" href="/api/backups/export" download="bgp-antifilter-config.json"><i data-lucide="download" aria-hidden="true"></i><span data-i18n="exportConfig">Export configuration</span></a>
+              </section>
+              <section class="backup-transfer">
+                <div class="backup-transfer-head"><i data-lucide="archive-restore" aria-hidden="true"></i><h3 data-i18n="restoreBackup">Restore a copy</h3></div>
+                <p class="muted" data-i18n="importBackupHint">Choose a backup to review its changes before restoring.</p>
+                <button id="choose-config-btn" type="button" aria-controls="config-upload"><i data-lucide="file-up" aria-hidden="true"></i><span data-i18n="chooseBackupFile">Choose a file</span></button>
+                <input id="config-upload" type="file" accept="application/json,.json" hidden>
+                <span class="backup-file-format muted" data-i18n="backupFileFormat">JSON · up to 7 MB</span>
+                <span id="config-file-name" class="backup-file-name" aria-live="polite"></span>
+              </section>
+            </div>
+            <p class="backup-scope muted"><i data-lucide="info" aria-hidden="true"></i><span data-i18n="backupScope">Server .env, Docker files, routes and cache are backed up separately.</span></p>
             <div id="config-import-review" class="result-view"></div>
             <button id="restore-config-btn" class="danger hidden" data-i18n="restoreConfig">Restore reviewed configuration</button>
             <p id="backup-status" role="status"></p>
           </article>
           <article class="panel">
             <h2 data-i18n="listHistory">List history</h2>
-            <div class="inline-form"><select id="history-list" aria-label="List"></select><button id="load-history-btn" data-i18n="refresh">Refresh</button></div>
-            <div id="history-versions" class="history-versions"></div>
+            <p class="muted" data-i18n="listHistoryHint">Before saving edits in Lists, the previous version is saved automatically. Refresh only reloads this history.</p>
+            <div class="inline-form"><select id="history-list" aria-label="List"></select><button id="load-history-btn" data-i18n="refreshHistory">Refresh history</button></div>
+            <div id="history-versions" class="history-versions" aria-live="polite"></div>
             <div id="history-review" class="result-view"></div>
             <button id="restore-list-btn" class="danger hidden" data-i18n="restoreList">Restore this version</button>
           </article>

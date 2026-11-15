@@ -1,5 +1,13 @@
 # Changelog
 
+## 6.0.2 - 2026-11-15
+
+- Replace spaced sidebar buttons with full-width square rows, grouped backgrounds and separators; use a two-column menu on phones.
+- Redesign configuration backups as separate download and restore areas with a custom file chooser, selected filename, validation status and reviewed changes.
+- Explain when list revisions are created, translate list names, hide empty review placeholders and display history loading errors in place.
+- Prevent outdated import previews from replacing the review of a newly selected backup file.
+- Fix narrow-screen clipping of page headers, backup controls and history selectors; extend desktop/mobile browser coverage and isolate backup history between test scenarios.
+
 ## 6.0.1 - 2026-11-15
 
 - Detect the running application container from Docker mount/cgroup metadata instead of treating its hostname as a Docker object name. Support custom hostnames, overridden HOSTNAME variables and private cgroup namespaces.

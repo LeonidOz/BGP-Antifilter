@@ -79,11 +79,70 @@ test("list edits have reviewable history and can be restored", async ({page}) =>
   await expect(page.locator("#list-editor")).toHaveValue(previous);
 });
 
+test("empty history explains when copies are created and loading errors stay visible", async ({page}) => {
+  await page.locator('[data-view="backups"]').click();
+  await page.locator("#history-list").selectOption("exclude-domains");
+  await expect(page.locator("#history-versions")).toContainText("This list has no saved versions yet");
+  await expect(page.locator('[data-i18n="listHistoryHint"]')).toContainText("previous version is saved automatically");
+  await expect(page.locator("#history-review")).toBeHidden();
+  await page.route("**/api/backups/lists?*", route => route.fulfill({status: 500, json: {error: "History storage unavailable"}}));
+  await page.locator("#load-history-btn").click();
+  await expect(page.locator("#history-versions")).toContainText("History storage unavailable");
+  await expect(page.locator("#history-versions")).not.toContainText("no saved versions");
+  await expect(page.locator("#restore-list-btn")).toBeHidden();
+  await page.unroute("**/api/backups/lists?*");
+  await page.locator("#load-history-btn").click();
+  await expect(page.locator("#history-versions")).toContainText("This list has no saved versions yet");
+  await page.locator("#lang-ru").click();
+  await expect(page.locator("#history-list option:checked")).toHaveText("Исключаемые домены");
+  await expect(page.locator("#history-versions")).toContainText("Для этого списка");
+});
+
+test("sectioned navigation fills the sidebar and fits narrow phones", async ({page}, testInfo) => {
+  await page.locator("#lang-ru").click();
+  for (const width of testInfo.project.name === "mobile" ? [390, 320] : [1366, 901]) {
+    await page.setViewportSize({width, height: 1000});
+    const layout = await page.locator("#sidebar").evaluate(sidebar => {
+      const nav=sidebar.querySelector("nav");
+      const rows=[...nav.querySelectorAll(".nav-item")].map(button => {
+        const box=button.getBoundingClientRect(), style=getComputedStyle(button);
+        return {left:box.left,right:box.right,top:box.top,bottom:box.bottom,height:box.height,radius:style.borderRadius,overflow:button.scrollWidth>button.clientWidth};
+      });
+      return {sidebar:sidebar.getBoundingClientRect().toJSON(), nav:nav.getBoundingClientRect().toJSON(), rows, overflow:document.documentElement.scrollWidth>innerWidth};
+    });
+    expect(layout.overflow).toBe(false);
+    expect(layout.nav.left).toBeCloseTo(layout.sidebar.left, 0);
+    expect(layout.nav.right).toBeCloseTo(layout.sidebar.right - (width>900 ? 1 : 0), 0);
+    for (const row of layout.rows) {
+      expect(row.radius).toBe("0px");
+      expect(row.height).toBeGreaterThanOrEqual(44);
+      expect(row.overflow).toBe(false);
+    }
+    const columns=width>900 ? 1 : 2;
+    for(let index=columns;index<layout.rows.length;index++) expect(layout.rows[index].top).toBeCloseTo(layout.rows[index-columns].bottom, 0);
+    if(columns===2) expect(layout.rows[1].left).toBeCloseTo(layout.rows[0].right,0);
+  }
+  await page.locator('[data-view="backups"]').click();
+  await page.locator("#history-list").selectOption("exclude-domains");
+  await expect(page.locator("#history-versions")).toContainText("Для этого списка");
+  const clipped=await page.locator(".topbar h1, .top-actions button, #backups .button-link, .backup-transfer, #choose-config-btn, #history-list, #load-history-btn").evaluateAll(elements=>elements.filter(element=>{
+    const box=element.getBoundingClientRect();
+    return box.left<0 || box.right>innerWidth || element.scrollWidth>element.clientWidth+1;
+  }).map(element=>element.id||element.className||element.tagName));
+  expect(clipped).toEqual([]);
+  await page.screenshot({path:testInfo.outputPath("sections-and-history.png"), fullPage:true});
+});
+
 test("configuration import requires review and invalid uploads preserve settings", async ({page}) => {
   await page.locator('[data-view="backups"]').click();
   const exported = await (await page.request.get("/api/backups/export")).json();
   exported.settings.FETCH_TIMEOUT = "45";
-  const upload = async backup => page.locator("#config-upload").setInputFiles({name: "config.json", mimeType: "application/json", buffer: Buffer.from(JSON.stringify(backup))});
+  const upload = async backup => {
+    const choosing = page.waitForEvent("filechooser");
+    await page.locator("#choose-config-btn").click();
+    await (await choosing).setFiles({name: "config.json", mimeType: "application/json", buffer: Buffer.from(JSON.stringify(backup))});
+    await expect(page.locator("#config-file-name")).toHaveText("config.json");
+  };
   await upload(exported);
   await expect(page.locator("#config-import-review")).toContainText("FETCH_TIMEOUT");
   await expect(page.locator("#restore-config-btn")).toBeVisible();

@@ -47,6 +47,8 @@ def main():
         def reset():
             app.auth.sessions.clear()
             app.auth.login_attempts.clear()
+            for backup in app.config.list_backup_dir.glob("*.bak"):
+                backup.unlink()
             source.write_text("192.0.2.0/24\n", encoding="utf-8")
             for path in app.config.list_files.values():
                 path.write_text("", encoding="utf-8")
