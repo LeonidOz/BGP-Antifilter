@@ -1,5 +1,12 @@
 # Changelog
 
+## 6.0.1 - 2026-11-15
+
+- Detect the running application container from Docker mount/cgroup metadata instead of treating its hostname as a Docker object name. Support custom hostnames, overridden HOSTNAME variables and private cgroup namespaces.
+- Refuse ambiguous container identity rather than selecting an unrelated container by a shared hostname or service label.
+- Cover container identity parsing and real image updates/rollback with both a custom kernel hostname and an intentionally incorrect HOSTNAME environment variable.
+
+
 ## 6.0.0 - 2026-11-15
 
 - Update the image to Debian 13, BIRD 3.4.0 from CZ.NIC, Python 3.15.2, Docker CLI 29.9.3 and Compose 5.7.1; update Supervisor to 4.3.0, pip to 26.3, curl to 8.23.0 and bundled Lucide to 1.73.0.

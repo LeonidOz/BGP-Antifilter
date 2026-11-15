@@ -109,10 +109,12 @@ class WebUpdateDockerTests(unittest.TestCase):
         self.marker = (config / "include-domains.txt").read_bytes()
         (self.root / "compose.yaml").write_text(
             f"services:\n  bgp-antifilter:\n    image: '{self.repository}:${{BGP_ANTIFILTER_VERSION}}'\n"
+            "    hostname: custom-updater-host\n"
             "    ports: ['127.0.0.1::8080']\n"
             "    volumes:\n      - './:/workspace'\n      - './config:/etc/bird/config'\n"
             "      - './generated:/etc/bird/generated'\n      - '/var/run/docker.sock:/var/run/docker.sock'\n"
             "    environment:\n      ADMIN_ENABLED: '1'\n      ADMIN_PASSWORD: test-password\n"
+            "      HOSTNAME: deliberately-wrong-hostname\n"
             "      HEALTHCHECK_REQUIRE_BGP: '0'\n      INCLUDE_GOOGLE_RANGES: '0'\n"
             "      BIRD_IP: '127.0.0.1'\n      ROUTER_ID: '127.0.0.1'\n      UPDATE_INTERVAL: '86400'\n"
             "      COMPOSE_FILE: /workspace/compose.yaml\n      UPDATER_HEALTH_TIMEOUT: '8'\n"

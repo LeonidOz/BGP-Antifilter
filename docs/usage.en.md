@@ -306,3 +306,9 @@ together. Authenticated `/api/metrics` remains available without a panel page:
 `bgp_antifilter_generation_success` reports generation,
 `bgp_antifilter_apply_success` reports BIRD application, and
 `bgp_antifilter_last_successful_apply_timestamp_seconds` records the last successful application.
+
+Older versions may disable self-update with `No such object: <hostname>` when the
+container hostname differs from its Docker name. Container identity detection is
+fixed in 6.0.1. Upgrading an affected older version requires a one-time updater
+repair or the manual Compose image update documented above. The server hostname
+and BGP settings do not need to change.

@@ -46,7 +46,7 @@ nano .env
 Paste these settings and replace the addresses and password:
 
 ```dotenv
-BGP_ANTIFILTER_VERSION=6.0.0
+BGP_ANTIFILTER_VERSION=6.0.1
 BGP_ANTIFILTER_IMAGE=ghcr.io/leonidoz/bgp-antifilter:${BGP_ANTIFILTER_VERSION}
 MT_IP=192.168.55.1
 BIRD_IP=192.168.55.5

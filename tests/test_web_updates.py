@@ -244,6 +244,12 @@ class UpdateTransactionTests(unittest.TestCase):
 
 
 class DeploymentContextTests(unittest.TestCase):
+    def setUp(self):
+        for patch in (mock.patch.object(updater, "self_container_id", return_value=""),
+                      mock.patch.object(updater.socket, "gethostname", return_value="a" * 12)):
+            patch.start()
+            self.addCleanup(patch.stop)
+
     def info(self):
         return {"Id": "self-id", "Image": "sha256:immutable", "Config": {"Labels": {
             "com.docker.compose.project": "custom-project", "com.docker.compose.service": "bgp-antifilter",
@@ -255,6 +261,21 @@ class DeploymentContextTests(unittest.TestCase):
             self.assertEqual(updater.deployment_context(), {
                 "container": "self-id", "image": "sha256:immutable", "project": "custom-project",
                 "directory": "/srv/custom", "worker": "custom-project-image-updater"})
+
+    def test_custom_hostname_uses_proc_identity_instead_of_hostname_or_other_container(self):
+        identifier = "b" * 64
+        with mock.patch.object(updater, "self_container_id", return_value=identifier), \
+             mock.patch.object(updater.socket, "gethostname", return_value="ozhomeserv"), \
+             mock.patch.dict(updater.os.environ, {"HOSTNAME": "another-container"}), \
+             mock.patch.object(updater, "inspect_container", return_value=self.info()) as inspect:
+            self.assertEqual(updater.deployment_context()["container"], "self-id")
+        inspect.assert_called_once_with(identifier)
+
+    def test_custom_hostname_without_reliable_identity_is_rejected_before_docker_inspect(self):
+        with mock.patch.object(updater.socket, "gethostname", return_value="ozhomeserv"), \
+             mock.patch.object(updater, "inspect_container") as inspect, self.assertRaisesRegex(RuntimeError, "container ID"):
+            updater.deployment_context()
+        inspect.assert_not_called()
 
     def test_rejects_unsupported_deployments_before_replacing_application(self):
         for kind in ("portainer", "overrides", "readonly", "volume", "windows"):
@@ -272,6 +293,42 @@ class DeploymentContextTests(unittest.TestCase):
             with self.subTest(kind=kind), mock.patch.object(updater, "inspect_container", return_value=info), \
                  self.assertRaises(RuntimeError):
                 updater.deployment_context()
+
+
+class ContainerIdentityTests(unittest.TestCase):
+    def read_proc(self, mountinfo="", cgroup=""):
+        def read(path, **kwargs):
+            if path.as_posix() == "/proc/self/mountinfo":
+                return mountinfo
+            if path.as_posix() == "/proc/self/cgroup":
+                return cgroup
+            raise FileNotFoundError(str(path))
+        return mock.patch.object(Path, "read_text", autospec=True, side_effect=read)
+
+    def test_hostname_mount_identifies_self_with_custom_hostname_and_private_cgroup_namespace(self):
+        identifier = "4" * 64
+        with self.read_proc(f"1 2 8:1 /var/lib/docker/containers/{identifier}/hostname /etc/hostname rw - ext4 /dev/sda rw\n", "0::/\n"):
+            self.assertEqual(updater.self_container_id(), identifier)
+
+    def test_unrelated_container_paths_and_malformed_lines_are_ignored(self):
+        identifier = "5" * 64
+        with self.read_proc(f"bad line\n1 2 8:1 /containers/{identifier}/hostname /other/path rw - ext4 /dev/sda rw\n", "0::/\n"):
+            self.assertEqual(updater.self_container_id(), "")
+
+    def test_docker_and_systemd_cgroups_are_supported(self):
+        identifier = "6" * 64
+        for path in (f"0::/docker/{identifier}\n", f"0::/system.slice/docker-{identifier}.scope\n"):
+            with self.subTest(path=path), self.read_proc("", path):
+                self.assertEqual(updater.self_container_id(), identifier)
+
+    def test_conflicting_mount_identities_fail_closed(self):
+        text = "\n".join(f"1 2 8:1 /containers/{digit * 64}/hostname /etc/hostname rw" for digit in ("7", "8"))
+        with self.read_proc(text), self.assertRaisesRegex(RuntimeError, "ambiguous"):
+            updater.self_container_id()
+
+    def test_missing_proc_files_allow_only_kernel_id_fallback(self):
+        with mock.patch.object(Path, "read_text", side_effect=FileNotFoundError):
+            self.assertEqual(updater.self_container_id(), "")
 
 
 if __name__ == "__main__":

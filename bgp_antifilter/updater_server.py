@@ -4,6 +4,7 @@ import os
 from pathlib import Path
 import re
 import shutil
+import socket
 import subprocess
 import tempfile
 import threading
@@ -209,8 +210,44 @@ def inspect_container(name):
     return json.loads(run_docker("inspect", name))[0]
 
 
+def self_container_id():
+    """Find our Docker ID without assuming hostname equals container identity.
+
+    Docker mounts its per-container hostname file even with a custom hostname
+    and a private cgroup namespace (where /proc/self/cgroup only shows '/').
+    Never select another container by a service label or a shared hostname.
+    """
+    try:
+        mountinfo = Path("/proc/self/mountinfo").read_text(encoding="utf-8")
+    except OSError:
+        mountinfo = ""
+    identifiers = set()
+    for line in mountinfo.splitlines():
+        fields = line.split()
+        if len(fields) < 5 or fields[4] != "/etc/hostname":
+            continue
+        match = re.search(r"/containers/([0-9a-f]{64})/hostname$", fields[3])
+        if match:
+            identifiers.add(match.group(1))
+    if not identifiers:
+        try:
+            cgroup = Path("/proc/self/cgroup").read_text(encoding="utf-8")
+        except OSError:
+            cgroup = ""
+        identifiers.update(re.findall(r"(?:/docker/|/docker-)([0-9a-f]{64})(?:\.scope)?(?=/|$)", cgroup, re.MULTILINE))
+    if len(identifiers) > 1:
+        raise RuntimeError("ambiguous current Docker container identity")
+    return next(iter(identifiers), "")
+
+
 def deployment_context():
-    info = inspect_container(os.environ.get("HOSTNAME", ""))
+    identity = self_container_id()
+    if not identity:
+        hostname = socket.gethostname()
+        if not re.fullmatch(r"[0-9a-f]{12,64}", hostname):
+            raise RuntimeError("cannot determine current Docker container ID: /proc metadata is unavailable and the kernel hostname is customized")
+        identity = hostname
+    info = inspect_container(identity)
     labels = info.get("Config", {}).get("Labels") or {}
     project = labels.get("com.docker.compose.project", "")
     files = labels.get("com.docker.compose.project.config_files", "").split(",")
