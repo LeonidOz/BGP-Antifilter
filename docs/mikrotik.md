@@ -1,6 +1,6 @@
 # Подключение MikroTik
 
-[Установка приложения](../README.md) | [English](mikrotik.en.md)
+[Общая схема BGP](bgp.md) | [Установка приложения](../README.md) | [English](mikrotik.en.md)
 
 Выберите один способ: **BGP** автоматически передаёт обновлённые маршруты на роутер;
 **Address List** позволяет вручную скачать и импортировать список для своих правил.
@@ -87,8 +87,8 @@ add name=antifilter-bird as=65455 router-id=192.168.55.1 routing-table=main \
 ## Address List вместо BGP
 
 1. В настройках приложения задайте `HEALTHCHECK_REQUIRE_BGP=0` и примените настройки.
-2. Откройте **Инструменты → Показать маршруты** в панели.
-3. Укажите имя списка, например `bgp-antifilter`, и нажмите **Скачать Address List .rsc**.
+2. Откройте **Маршруты** в основном меню панели.
+3. Укажите имя списка, например `bgp-antifilter`, и нажмите **MikroTik Address List .rsc**.
 4. Загрузите файл в **Files** на MikroTik и выполните:
 
 ```routeros

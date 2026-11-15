@@ -10,9 +10,11 @@ const { escapeHtml } = await import(new URL("dom.js", modulesUrl));
 const { formatDurationSeconds } = await import(new URL("format.js", modulesUrl));
 const { buildStages } = await import(new URL("dashboard.js", modulesUrl));
 const { runtimeGenerationState } = await import(new URL("runtime.js", modulesUrl));
+const { ipv4Range, matchingRoutes, groupLogLines, logSeverity } = await import(new URL("tools.js", modulesUrl));
+const { settingsFormValues, applySettingsFormValues } = await import(new URL("settings.js", modulesUrl));
 const { parseListLines, parseNamedUrlSourceLine, serializeNamedUrlSource } = await import(new URL("lists.js", modulesUrl));
 const { operationState, renderStoredReloadResult } = await import(new URL("operations.js", modulesUrl));
-const { applyUpdate, loadUpdateStatus, renderUpdateStatus, updateState } = await import(new URL("updates.js", modulesUrl));
+const { applyUpdate, loadUpdateStatus, renderUpdateStatus, updateState, releaseExcerpt } = await import(new URL("updates.js", modulesUrl));
 
 test("all feature modules resolve and their import graph has no cycles", async () => {
   const graph = new Map();
@@ -99,7 +101,7 @@ test("runtime stages retain elapsed time, counts and initial startup state", con
   const stages = buildStages(payload);
   assert.equal(stages.generator.level, "warn");
   assert.equal(stages.bird.level, "warn");
-  assert.equal(stages.mikrotik.level, "warn");
+  assert.equal(stages.peer.level, "warn");
 });
 
 test("pipeline stages preserve source failures and BGP establishment", () => {
@@ -110,7 +112,7 @@ test("pipeline stages preserve source failures and BGP establishment", () => {
   assert.equal(stages.cache.level, "fail");
   assert.equal(stages.generator.level, "ok");
   assert.equal(stages.bird.level, "ok");
-  assert.equal(stages.mikrotik.level, "ok");
+  assert.equal(stages.peer.level, "ok");
 });
 
 test("an old or active reload result cannot replace a pending operation", () => {
@@ -127,6 +129,50 @@ test("an old or active reload result cannot replace a pending operation", () => 
 
 test("rendered text escapes HTML and attribute delimiters", () => {
   assert.equal(escapeHtml('<img src="x"> &'), "&lt;img src=&quot;x&quot;&gt; &amp;");
+});
+
+test("IPv4 filtering includes containing and overlapping networks at address boundaries", () => {
+  const routes = ["route 0.0.0.0/0 blackhole;", "route 192.0.2.0/24 blackhole;", "route 192.0.2.255/32 blackhole;", "route 198.51.100.0/24 blackhole;"];
+  assert.equal(matchingRoutes(routes, "192.0.2.255").length, 3);
+  assert.equal(matchingRoutes(routes, "192.0.3.0").length, 1);
+  assert.equal(matchingRoutes(routes, "192.0.2.128/25").length, 3);
+  assert.deepEqual(ipv4Range("255.255.255.255"), [4294967295, 4294967295]);
+  assert.deepEqual(ipv4Range("1.2.3.4/0"), [0, 4294967295]);
+  for (const invalid of ["256.0.0.1", "1.2.3", "-1.2.3.4", "1.2.3.4/33", "foo"]) assert.equal(ipv4Range(invalid), null);
+});
+
+test("log grouping keeps chronology, first and last timestamps and only merges adjacent repeats", () => {
+  const lines = ["bird: 2026-11-15 08:01:01.123 [0001] <ERR> bind failed", "bird: 2026-11-15 08:01:03.999 [0001] <ERR> bind failed", "started", "bird: 2026-11-15 08:01:04.999 [0001] <ERR> bind failed"];
+  const groups = groupLogLines(lines);
+  assert.equal(groups.length, 3);
+  assert.equal(groups[0].count, 2);
+  assert.equal(groups[0].first, lines[0]);
+  assert.equal(groups[0].last, lines[1]);
+  assert.equal(groups[0].level, "error");
+  assert.equal(groups[2].count, 1);
+});
+
+test("log filters do not treat successful counters or structured info messages as errors", () => {
+  assert.equal(logSeverity("Source statuses: fresh=47 cache=0 skipped=0 failed=0"), "info");
+  assert.equal(logSeverity('{"level":"info","message":"failed sources: 0"}'), "info");
+  assert.equal(logSeverity('{"level":"error","message":"fetch failed"}'), "error");
+  assert.equal(logSeverity("fetch failed"), "error");
+});
+
+test("release summary shows the latest changelog entry without older releases", () => {
+  assert.equal(releaseExcerpt("# Changelog\n\n## 1.2.0\n\n- New feature\n\n## 1.1.0\n- Old feature"), "## 1.2.0\n\n- New feature");
+});
+
+test("friendly time inputs round trip seconds without changing API values", context => {
+  const inputs = [{dataset: {settingKey: "UPDATE_INTERVAL", multiplier: "60"}, value: "30"}, {dataset: {settingKey: "CACHE_MAX_AGE", multiplier: "86400"}, value: "7"}, {dataset: {settingKey: "FETCH_TIMEOUT"}, value: "30"}];
+  const previous = globalThis.document;
+  globalThis.document = {querySelectorAll: () => inputs};
+  context.after(() => { globalThis.document = previous; });
+  assert.deepEqual(settingsFormValues(), {UPDATE_INTERVAL: "1800", CACHE_MAX_AGE: "604800", FETCH_TIMEOUT: "30"});
+  applySettingsFormValues({UPDATE_INTERVAL: "3600", CACHE_MAX_AGE: "172800", FETCH_TIMEOUT: "45"});
+  assert.equal(inputs[0].value, 60);
+  assert.equal(inputs[1].value, 2);
+  assert.equal(settingsFormValues().UPDATE_INTERVAL, "3600");
 });
 
 function installUpdateDom(context) {

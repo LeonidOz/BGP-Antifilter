@@ -8,6 +8,7 @@ import shlex
 import time
 
 from .. import dns_resolver
+from ..bgp_config import ALIASES, canonical_settings, peer_environment, peer_base_environment
 from .storage import json_load, write_text_atomic
 from ..state_store import state_lock
 
@@ -41,12 +42,12 @@ SETTINGS_SECTIONS = [
         "title": "BIRD / BGP",
         "items": [
             {"key": "MY_AS", "type": "asn", "default": "64500", "requires_restart": True},
-            {"key": "MT_AS", "type": "asn", "default": "65455", "requires_restart": True},
-            {"key": "MT_IP", "type": "ipv4", "default": "192.168.55.1", "requires_restart": True},
+            {"key": "PEER_AS", "type": "asn", "default": "65455", "requires_restart": True},
+            {"key": "PEER_IP", "type": "ipv4", "default": "192.168.55.1", "requires_restart": True},
             {"key": "BIRD_IP", "type": "ipv4", "default": "192.168.55.5", "requires_restart": True},
             {"key": "ROUTER_ID", "type": "ipv4", "default": "192.168.55.5", "requires_restart": True},
             {"key": "BGP_COMMUNITY", "type": "community", "default": "65432,500", "requires_restart": True},
-            {"key": "BGP_PROTOCOL", "type": "string", "default": "mikrotik"},
+            {"key": "BGP_PROTOCOL", "type": "string", "default": "mikrotik", "requires_restart": True},
             {"key": "HEALTHCHECK_REQUIRE_BGP", "type": "bool", "default": "1"},
         ],
     },
@@ -57,7 +58,7 @@ SETTINGS_BY_KEY = {item["key"]: item for section in SETTINGS_SECTIONS for item i
 
 
 def validate_setting(key, value):
-    spec = SETTINGS_BY_KEY.get(key)
+    spec = SETTINGS_BY_KEY.get(ALIASES.get(key, key))
     if not spec:
         raise ValueError(f"unknown setting: {key}")
     raw = str(value).strip()
@@ -141,35 +142,42 @@ class SettingsService:
         values = data.get("values", data)
         if not isinstance(values, dict):
             return {}
-        return {key: str(value) for key, value in values.items() if key in SETTINGS_BY_KEY}
+        return canonical_settings({key: str(value) for key, value in values.items() if key in SETTINGS_BY_KEY or key in ALIASES})
 
     def effective_settings(self):
         overrides = self.settings_overrides()
         result = {}
+        environment = peer_base_environment(os.environ)
         for key, spec in SETTINGS_BY_KEY.items():
-            base = os.environ.get(key, spec["default"])
+            base = environment.get(key, spec["default"])
             result[key] = overrides.get(key, str(base))
         return result
 
     def base_setting_value(self, key):
         spec = SETTINGS_BY_KEY[key]
-        return validate_setting(key, os.environ.get(key, spec["default"]))
+        return validate_setting(key, peer_base_environment(os.environ).get(key, spec["default"]))
 
     def command_environment(self):
         env = os.environ.copy()
         env.update(self.effective_settings())
-        return env
+        return peer_environment(env)
 
     def save_settings(self, values):
         with state_lock(self.config.config_dir / ".configuration"):
             return self._save_settings(values)
 
+    def update_settings(self, values):
+        with state_lock(self.config.config_dir / ".configuration"):
+            changes = canonical_settings({
+                key: validate_setting(key, value)
+                for key, value in values.items() if key in SETTINGS_BY_KEY or key in ALIASES
+            }, reject_conflicts=True)
+            return self._save_settings({**self.settings_overrides(), **changes})
+
     def _save_settings(self, values):
+        validated = {key: validate_setting(key, value) for key, value in values.items() if key in SETTINGS_BY_KEY or key in ALIASES}
         normalized = {}
-        for key, value in values.items():
-            if key not in SETTINGS_BY_KEY:
-                continue
-            setting_value = validate_setting(key, value)
+        for key, setting_value in canonical_settings(validated, reject_conflicts=True).items():
             if setting_value != self.base_setting_value(key):
                 normalized[key] = setting_value
         payload = {

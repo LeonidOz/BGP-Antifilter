@@ -81,9 +81,9 @@ class StatusService:
         metrics = parse_metrics(text_load(self.config.metrics_file))
         bird = self.actions.run_command(["birdc", "show", "status"], timeout=5)
         bgp_protocol = self.settings.effective_settings().get("BGP_PROTOCOL", "mikrotik")
-        bgp = self.actions.run_command(["birdc", "show", "protocols", bgp_protocol], timeout=5)
+        bgp = self.actions.run_command(["birdc", "show", "protocols", f"'{bgp_protocol}'"], timeout=5)
         return {
-            "version": __version__, "status": status, "runtime": runtime, "metrics": metrics,
+            "version": __version__, "status": status, "runtime": runtime, "metrics": metrics, "bgp_protocol": bgp_protocol,
             "routes_file_count": self.route_count_from_file(), "bird": bird, "bgp": bgp,
             "reload_result": reload_result,
         }

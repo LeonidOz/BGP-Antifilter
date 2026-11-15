@@ -1,7 +1,7 @@
 // Command output, source records, route statistics and error rendering.
 import { escapeHtml } from "./dom.js";
 import { formatBytes, formatSecondsShort } from "./format.js";
-import { t } from "./i18n.js";
+import { t, sourceStatus } from "./i18n.js";
 import { sourceCacheFact } from "./runtime.js";
 
 function renderCommandResult(action, result) {
@@ -218,23 +218,27 @@ function renderCommandDetails(raw) {
   return `
     <div class="command-details">
       ${renderRows(metaRows)}
-      ${birdRows.length ? `<h3>BIRD status</h3>${renderRows(birdRows)}` : ""}
+      ${birdRows.length ? `<h3>${t("birdStatus")}</h3>${renderRows(birdRows)}` : ""}
       ${table ? `<h3>${t("stdout")}</h3>${renderOutputTable(table)}` : ""}
       ${!birdRows.length && !table && stdout ? `<h3>${t("stdout")}</h3>${renderTextLines(stdout)}` : ""}
       ${raw.stderr ? renderErrorBlock(raw.stderr) : ""}
     </div>`;
 }
 
-function renderStageOutput(stage) {
+function renderStageOutput(stage, stageId = "bird") {
   const raw = stage.raw;
   if (!raw || typeof raw !== "object" || !("stdout" in raw || "stderr" in raw || "returncode" in raw)) {
     return "";
   }
-  const stdout = raw.stdout || "";
-  const birdRows = parseBirdStatus(stdout);
+  // birdc prefixes protocol output with its version banner as well.
+  // Keep daemon details in the BIRD stage, and protocol output in the peer stage.
+  const stdout = stageId === "peer"
+    ? String(raw.stdout || "").replace(/^BIRD[^\r\n]*\bready\.?\s*(?:\r?\n|$)/im, "")
+    : raw.stdout || "";
+  const birdRows = stageId === "bird" ? parseBirdStatus(stdout) : [];
   const table = birdRows.length ? null : parseWhitespaceTable(stdout);
   if (birdRows.length) {
-    return `<h3>BIRD status</h3>${renderRows(birdRows)}`;
+    return `<h3>${t("birdStatus")}</h3>${renderRows(birdRows)}`;
   }
   if (table) {
     return `<h3>${t("stdout")}</h3>${renderOutputTable(table)}`;
@@ -343,7 +347,7 @@ function renderSourceDetails(sources = []) {
             <div class="timeline-main">
               <div class="timeline-title">
                 <strong>${escapeHtml(source.name || source.url || source.kind || "source")}</strong>
-                <span class="chip ${escapeHtml(source.status || "")}">${escapeHtml(source.status || "unknown")}</span>
+                <span class="chip ${escapeHtml(source.status || "")}">${escapeHtml(sourceStatus(source.status))}</span>
                 ${source.required === false ? `<span class="chip warn">optional</span>` : ""}
               </div>
               <div class="timeline-meta">${escapeHtml(facts)}</div>

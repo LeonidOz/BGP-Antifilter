@@ -35,8 +35,8 @@ for name in ('domain-list-urls.txt', 'include-asns.txt', 'include-countries.txt'
 (c / 'lists.txt').write_text('file:///etc/bird/generated/source.txt\\n')
 (p / 'source.txt').write_text('192.0.2.0/24\\n')
 (p / 'routes.last-good.conf').write_text('    route 192.0.2.0/24 blackhole;\\n')
-(p / 'settings.json').write_text(json.dumps({'values': {'UPDATE_INTERVAL': '86400', 'INCLUDE_GOOGLE_RANGES': '0', 'FETCH_TIMEOUT': '11'}}))
-(p / 'settings.env').write_text('UPDATE_INTERVAL=86400\\nINCLUDE_GOOGLE_RANGES=0\\nFETCH_TIMEOUT=11\\n')
+(p / 'settings.json').write_text(json.dumps({'values': {'UPDATE_INTERVAL': '86400', 'INCLUDE_GOOGLE_RANGES': '0', 'FETCH_TIMEOUT': '11', 'MT_IP': '127.0.0.3', 'MT_AS': '64599'}}))
+(p / 'settings.env').write_text('UPDATE_INTERVAL=86400\\nINCLUDE_GOOGLE_RANGES=0\\nFETCH_TIMEOUT=11\\nMT_IP=127.0.0.3\\nMT_AS=64599\\n')
 (p / 'list-backups').mkdir()
 (p / 'list-backups/lists.txt.old.bak').write_text('old backup\\n')
 (p / 'cache').mkdir()
@@ -141,6 +141,8 @@ with opener.open(request, timeout=5) as response:
         self.assertEqual(runtime["update_interval_seconds"], 86400)
         self.assertEqual(runtime["last_update_reason"], "startup")
         self.assertEqual(self.api("/api/settings")["values"]["FETCH_TIMEOUT"], "11")
+        self.assertEqual(self.api("/api/settings")["values"]["PEER_IP"], "127.0.0.3")
+        self.assertEqual(self.api("/api/settings")["values"]["PEER_AS"], "64599")
         for name in ("settings.json", "settings.env"):
             self.assertEqual(self.read("/etc/bird/config/" + name), self.read("/etc/bird/generated/" + name))
         self.assertEqual(self.read("/etc/bird/config/list-backups/lists.txt.old.bak"), "old backup\n")
@@ -165,6 +167,8 @@ with opener.open(request, timeout=5) as response:
         self.start(self.data)
         self.assertEqual(self.api("/api/lists/urls")["content"], content)
         self.assertEqual(self.api("/api/settings")["values"]["FETCH_TIMEOUT"], "15")
+        self.assertEqual(self.api("/api/settings")["values"]["PEER_IP"], "127.0.0.3")
+        self.assertEqual(self.api("/api/settings")["values"]["PEER_AS"], "64599")
         self.assertIn("198.51.100.0/24", self.read("/etc/bird/generated/routes.last-good.conf"))
         self.remove_container()
 

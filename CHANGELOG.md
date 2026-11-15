@@ -1,22 +1,34 @@
 # Changelog
 
-## 6.0.2 - 2026-11-15
+## 1.0.1 - 2026-11-15
 
+This release consolidates the work previously published under the mistaken versions 6.0.0–6.0.2 and the subsequent improvements. The project now uses the 1.x release series. Old image tags remain available for rollback.
+
+- Consolidate release numbering under 1.0.1, allow the explicit transition from installed 6.0.0–6.0.2 builds, and prevent obsolete misnumbered tags from being offered again.
+- Describe the application as an IPv4 BGP route publisher for compatible routers, with common setup guidance and separate FRRouting and MikroTik examples.
+- Introduce PEER_IP/PEER_AS across settings, diagnostics and Compose while preserving MT_IP/MT_AS in environments, saved overrides, custom BIRD templates and configuration backups. Keep the historic session name for existing scripts and healthchecks.
+- Add a pinned FRR 10.7.1 integration test covering the documented community filter, default-route rejection, VPN next-hop rewriting into the Linux FIB, route replacement/withdrawal and rejected BIRD configuration retention.
+- Preserve unrelated and hidden setting overrides when toggling a source or saving settings; keep full replacement for configuration restores.
+- Support copy controls on ordinary LAN HTTP addresses without the Clipboard API, restoring keyboard focus after copying.
+- Clear previous IP-check results before a new request so a language change cannot restore stale success after an error; keep the check button translated.
+- Add a compact collapsible menu and a vertical, labelled processing pipeline on mobile; fix clipped stage labels, overlapping Google controls, oversized DNS fields and narrow URL/export forms.
+- Add localized list tabs, entry counts, source search/status filters and a selected-countries filter, with locally served SVG flags for all 24 available countries.
+- Collapse long source URLs with full-text expansion and copy controls; add address copying to network diagnostics and distinguish runtime addresses from the panel address.
+- Add IPv4/CIDR route search and pagination while preserving complete routes.conf and MikroTik Address List exports.
+- Add log search, severity filters, grouping of repeated BIRD messages, navigation to the latest events and raw-log downloads.
+- Show time settings in minutes or days where appropriate, preserve seconds in the API, shorten the DNS editor and explain source requirements, generation safeguards and save/apply/restart behavior.
+- Present route membership decisions before diagnostic details, distinguish IP and full-response details, and keep BIRD daemon information in its own pipeline stage.
+- Replace the expandable action explanation with individual hover/focus tooltips; remove duplicate dashboard status badges and the duplicate sidebar update entry.
+- Record configuration-download time in the current browser, clarify backup contents and scope, and display a bounded summary of the latest release notes.
+- Improve text contrast, keyboard focus indicators and touch targets; extend desktop/mobile browser checks and cover route filtering, log grouping, time conversion and release-note handling.
 - Replace spaced sidebar buttons with full-width square rows, grouped backgrounds and separators; use a two-column menu on phones.
 - Redesign configuration backups as separate download and restore areas with a custom file chooser, selected filename, validation status and reviewed changes.
 - Explain when list revisions are created, translate list names, hide empty review placeholders and display history loading errors in place.
 - Prevent outdated import previews from replacing the review of a newly selected backup file.
 - Fix narrow-screen clipping of page headers, backup controls and history selectors; extend desktop/mobile browser coverage and isolate backup history between test scenarios.
-
-## 6.0.1 - 2026-11-15
-
 - Detect the running application container from Docker mount/cgroup metadata instead of treating its hostname as a Docker object name. Support custom hostnames, overridden HOSTNAME variables and private cgroup namespaces.
 - Refuse ambiguous container identity rather than selecting an unrelated container by a shared hostname or service label.
 - Cover container identity parsing and real image updates/rollback with both a custom kernel hostname and an intentionally incorrect HOSTNAME environment variable.
-
-
-## 6.0.0 - 2026-11-15
-
 - Update the image to Debian 13, BIRD 3.4.0 from CZ.NIC, Python 3.15.2, Docker CLI 29.9.3 and Compose 5.7.1; update Supervisor to 4.3.0, pip to 26.3, curl to 8.23.0 and bundled Lucide to 1.73.0.
 - Publish successful route status and metrics only after BIRD accepts the snapshot; preserve confirmed routes and source history on failed generation or application.
 - Add searchable, paginated route previews that apply the exact reviewed snapshot and reject expired or stale previews.

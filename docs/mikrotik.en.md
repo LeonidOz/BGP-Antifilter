@@ -1,6 +1,6 @@
 # Connecting MikroTik
 
-[Application installation](../README.en.md) | [Русский](mikrotik.md)
+[General BGP guide](bgp.en.md) | [Application installation](../README.en.md) | [Русский](mikrotik.md)
 
 Choose one method: **BGP** sends route updates to the router automatically;
 **Address List** lets you download and import a list manually for your own rules.
@@ -87,8 +87,8 @@ The project's automated tests do not apply these commands on real RouterOS.
 ## Address List instead of BGP
 
 1. Set `HEALTHCHECK_REQUIRE_BGP=0` in the application's settings and apply it.
-2. Open **Tools → Load routes** in the panel.
-3. Enter a list name, such as `bgp-antifilter`, and click **Download Address List .rsc**.
+2. Open **Routes** in the panel's main menu.
+3. Enter a list name, such as `bgp-antifilter`, and click **MikroTik Address List .rsc**.
 4. Upload the file to MikroTik **Files** and run:
 
 ```routeros

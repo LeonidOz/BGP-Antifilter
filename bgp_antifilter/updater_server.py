@@ -106,6 +106,19 @@ def validate_version(value):
     return raw
 
 
+def is_newer_version(target, current):
+    """Allow the three misnumbered builds to move to the canonical 1.x series."""
+    target = validate_version(target)
+    current = validate_version(current)
+    misnumbered = {"6.0.0", "6.0.1", "6.0.2"}
+    if target in misnumbered:
+        return False
+    target_parts = tuple(map(int, target.split(".")))
+    if current in misnumbered:
+        return target_parts >= (1, 0, 1)
+    return target_parts > tuple(map(int, current.split(".")))
+
+
 def runtime_payload():
     return read_state(UPDATE_RUNTIME_FILE)
 
@@ -524,7 +537,7 @@ def start_update(version):
         if reconcile_runtime(configured_version()).get("active"):
             raise RuntimeError("update already running")
         previous_version = configured_version()
-        if tuple(map(int, target_version.split("."))) <= tuple(map(int, validate_version(previous_version).split("."))):
+        if not is_newer_version(target_version, previous_version):
             raise ValueError("target version must be newer than the configured version")
         context = deployment_context()
         # A deterministic Docker name also prevents duplicate workers across restarts.

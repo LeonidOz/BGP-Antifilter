@@ -32,7 +32,7 @@ const dict = {
     commandOk: "Command completed", commandFailed: "Command failed", returnCode: "Return code",
     stdout: "Output", stderr: "Errors", matched: "Matched", notMatched: "Not matched",
     generatedRoutes: "Generated routes", sources: "Sources", rawDetails: "Details",
-    cache: "Cache", generator: "Generator", bird: "BIRD", mikrotik: "MikroTik",
+    cache: "Cache", generator: "Generator", bird: "BIRD", peer: "BGP peer",
     statusOk: "OK", statusWarn: "Warning", statusFail: "Failed", lastGeneration: "Last generation", birdUptime: "BIRD uptime",
     cacheHits: "Used from cache", cachedCount: "From cache", freshDownloads: "Fresh downloads", skippedSources: "Skipped sources", cacheTtl: "Cache TTL",
     noCacheUsed: "All sources were freshly loaded", cacheUsed: "Sources served from cache",
@@ -46,7 +46,7 @@ const dict = {
     addItem: "Add", editItem: "Edit", cancel: "Cancel", rawEditor: "Raw editor", remove: "Remove", notSeen: "No status yet",
     comments: "Comments", emptyList: "No entries yet", itemPlaceholder: "New entry",
     logs: "Logs", containerLogs: "Container logs", checkedAddresses: "Checked addresses",
-    downloadRoutes: "Download routes.conf", downloadAddressList: "Download Address List .rsc", addressListName: "Address List name", restartRequired: "restart", overridden: "changed",
+    downloadRoutes: "Download routes.conf", downloadAddressList: "MikroTik Address List .rsc", addressListName: "Address List name", restartRequired: "restart", overridden: "changed",
     updateSettings: "Update", securitySettings: "Generation safety", birdSettings: "BIRD / BGP",
     applySettings: "Apply now", applying: "Applying...", unsavedChanges: "Unsaved changes",
     noChanges: "No changes", backupSaved: "Backup", discardListChanges: "Discard unsaved list changes?",
@@ -62,7 +62,7 @@ const dict = {
     refreshGenerationBanner: "Route update is running. Dashboard metrics may still show the previous completed run until this update finishes.",
     elapsed: "Elapsed", startedAt: "Started", afterStartup: "after startup", afterCurrentRun: "after current run",
     generatorBusy: "Building the final route set", birdWaitingInitial: "BIRD will start after the initial route build",
-    mikrotikWaitingInitial: "BGP session will appear after BIRD startup", progress: "Progress",
+    peerWaitingInitial: "BGP session will appear after BIRD startup", progress: "Progress",
     stageBootstrap: "Preparing update", stageCollectingSources: "Collecting sources", stageBuildingRoutes: "Building routes",
     stageWritingRoutes: "Writing routes.conf", stageWritingStatus: "Writing status and metrics", stageCompleted: "Completed"
     ,currentSource: "Current source", sourceUrl: "URL", sourceDomainListUrl: "Domain list URL", sourceAsn: "ASN", sourceGoogle: "Google ranges",
@@ -122,7 +122,7 @@ const dict = {
     commandOk: "Команда выполнена", commandFailed: "Команда завершилась с ошибкой", returnCode: "Код возврата",
     stdout: "Вывод", stderr: "Ошибки", matched: "Найден", notMatched: "Не найден",
     generatedRoutes: "Маршруты", sources: "Источники", rawDetails: "Детали",
-    cache: "Кеш", generator: "Генератор", bird: "BIRD", mikrotik: "MikroTik",
+    cache: "Кеш", generator: "Генератор", bird: "BIRD", peer: "BGP peer",
     statusOk: "OK", statusWarn: "Внимание", statusFail: "Ошибка", lastGeneration: "Последняя генерация", birdUptime: "Аптайм BIRD",
     cacheHits: "Использовано из кеша", cachedCount: "Из кеша", freshDownloads: "Свежие загрузки", skippedSources: "Пропущено источников", cacheTtl: "Время жизни кеша",
     noCacheUsed: "Все источники загружены свежими", cacheUsed: "Источники отданы из кеша",
@@ -136,7 +136,7 @@ const dict = {
     addItem: "Добавить", editItem: "Редактировать", cancel: "Отмена", rawEditor: "Текстовый редактор", remove: "Удалить", notSeen: "Статуса пока нет",
     comments: "Комментарии", emptyList: "Записей пока нет", itemPlaceholder: "Новая запись",
     logs: "Логи", containerLogs: "Логи контейнера", checkedAddresses: "Проверенные адреса",
-    downloadRoutes: "Скачать routes.conf", downloadAddressList: "Скачать Address List .rsc", addressListName: "Имя Address List", restartRequired: "перезапуск", overridden: "изменено",
+    downloadRoutes: "Скачать routes.conf", downloadAddressList: "MikroTik Address List .rsc", addressListName: "Имя Address List", restartRequired: "перезапуск", overridden: "изменено",
     updateSettings: "Обновление", securitySettings: "Безопасность генерации", birdSettings: "BIRD / BGP",
     applySettings: "Применить сейчас", applying: "Применяем...", unsavedChanges: "Есть несохраненные изменения",
     noChanges: "Изменений нет", backupSaved: "Бэкап", discardListChanges: "Отбросить несохраненные изменения списка?",
@@ -152,7 +152,7 @@ const dict = {
     refreshGenerationBanner: "Сейчас идет обновление маршрутов. Пока оно не завершится, панель может показывать данные предыдущего успешного запуска.",
     elapsed: "Прошло", startedAt: "Запущено", afterStartup: "после запуска", afterCurrentRun: "после текущего обновления",
     generatorBusy: "Собираем итоговый набор маршрутов", birdWaitingInitial: "BIRD запустится после завершения первой генерации",
-    mikrotikWaitingInitial: "BGP-сессия появится после запуска BIRD", progress: "Прогресс",
+    peerWaitingInitial: "BGP-сессия появится после запуска BIRD", progress: "Прогресс",
     stageBootstrap: "Подготовка обновления", stageCollectingSources: "Сбор источников", stageBuildingRoutes: "Сборка маршрутов",
     stageWritingRoutes: "Запись routes.conf", stageWritingStatus: "Запись status и metrics", stageCompleted: "Завершено"
     ,currentSource: "Текущий источник", sourceUrl: "URL", sourceDomainListUrl: "URL списка доменов", sourceAsn: "ASN", sourceGoogle: "Google ranges",
@@ -189,6 +189,54 @@ const dict = {
   }
 };
 
-function t(key) { return dict[locale.lang][key] || dict.en[key] || key; }
+Object.assign(dict.en, {
+  bgpHelp: "BGP connection help",
+  menu: "Menu", searchEntries: "Search entries", sourceFilter: "Source status", allEntries: "All entries", problemSources: "Needs attention", selectedOnly: "Selected only", shown: "Shown", noMatches: "No matches",
+  urls: "IP list URLs", asns: "ASNs", countries: "Countries", "google-ranges": "Google ranges", "include-domains": "Included domains", "exclude-domains": "Excluded domains",
+  copy: "Copy", copied: "Copied", copyFailed: "Could not copy", fullUrl: "Full URL", cacheStatus: "Cached", disabledSource: "Disabled", unknownStatus: "Unknown",
+  lastResult: "Route generation", generated: "Generated", birdReady: "Running", birdFailed: "Unavailable", bgpConnected: "Connected", bgpDisconnected: "Not connected",
+  bgpHint: "Routes are generated separately from BGP delivery. If BGP is needed, check the local BIRD IP and peer settings. On Docker Desktop this instance can be used for generation and export without a BGP session.",
+  previewActionHint: "Prepares a route snapshot for review without applying it.",
+  sourcesActionHint: "Checks source downloads without applying routes.",
+  reloadActionHint: "Downloads sources and applies a new route set.",
+  protocol: "Protocol", birdStatus: "BIRD status", finalRouteCount: "Final routes", birdStatusOk: "BIRD responds", birdStatusFailed: "BIRD does not respond",
+  ipDetails: "IP diagnostic data", lookupDetails: "Full lookup response", endpointAddress: "Panel address", primaryAddress: "Runtime IPv4", configuredBirdIp: "Configured BIRD IP", networkScope: "Runtime addresses belong to the server/container network namespace. The panel address is the address used by this browser.",
+  networkIpWarning: "The configured BIRD IP is not assigned in this network namespace. BGP cannot bind to it. Check networking if BGP is required.",
+  routeSearch: "Search IP or CIDR", routeSearchHint: "An IP finds containing networks; a CIDR finds overlapping networks.", invalidRouteSearch: "Enter a valid IPv4 address or CIDR.", search: "Search",
+  logSearch: "Search logs", logLevel: "Level", allLevels: "All levels", errorsOnly: "Errors", warningsOnly: "Warnings", latestEvents: "Latest events", downloadLogs: "Download logs", lines: "lines", repeats: "repeats", events: "events",
+  secondsUnit: "seconds", minutesUnit: "minutes", daysUnit: "days", requireAllSources: "Require every URL source", requireAllSourcesHint: "Stop generation if a required URL source is unavailable and no usable cache remains.",
+  settingsHint: "Save stores settings. Apply now also rebuilds and reloads routes. Fields marked Restart require a container restart; Apply now does not restart it.",
+  dnsHint: "One IPv4 resolver per line. Leave empty to use system DNS.", broadRoutesHint: "Broad prefixes can redirect large networks. Keep disabled unless you intend to include them.", healthcheckHint: "When enabled, container health also requires an established BGP session.",
+  releaseNotes: "Release notes", noReleaseNotes: "No release notes supplied. Open the release for details.",
+  lastBackupDownload: "Last download in this browser", noBackupDownload: "No recorded download in this browser", backupDownloadHint: "The browser download was started; keep the file in a safe place.", backupContents: "Includes: IP list URLs, domain list URLs, ASNs, countries, included/excluded domains and application settings.",
+});
+Object.assign(dict.ru, {
+  bgpHelp: "Почему нет BGP-соединения",
+  menu: "Меню", searchEntries: "Поиск записей", sourceFilter: "Статус источника", allEntries: "Все записи", problemSources: "Требуют внимания", selectedOnly: "Только выбранные", shown: "Показано", noMatches: "Совпадений нет",
+  urls: "URL списков IP", asns: "Автономные системы", countries: "Страны", "google-ranges": "Диапазоны Google", "include-domains": "Добавляемые домены", "exclude-domains": "Исключаемые домены",
+  copy: "Копировать", copied: "Скопировано", copyFailed: "Не удалось скопировать", fullUrl: "Полный URL", cacheStatus: "Из кеша", disabledSource: "Отключён", unknownStatus: "Неизвестно",
+  lastResult: "Генерация маршрутов", generated: "Сформированы", birdReady: "Работает", birdFailed: "Недоступен", bgpConnected: "Подключён", bgpDisconnected: "Нет соединения",
+  bgpHint: "Генерация маршрутов и передача по BGP проверяются отдельно. Если нужен BGP, проверьте локальный IP BIRD и параметры BGP peer. В Docker Desktop эту установку можно использовать для генерации и экспорта без BGP-сессии.",
+  previewActionHint: "Готовит набор маршрутов для просмотра без применения.",
+  sourcesActionHint: "Проверяет загрузку источников без применения маршрутов.",
+  reloadActionHint: "Загружает источники и применяет новый набор маршрутов.",
+  protocol: "Протокол", birdStatus: "Состояние BIRD", finalRouteCount: "Итоговых маршрутов", birdStatusOk: "BIRD отвечает", birdStatusFailed: "BIRD не отвечает",
+  ipDetails: "Данные диагностики IP", lookupDetails: "Полный ответ проверки", endpointAddress: "Адрес панели", primaryAddress: "IPv4 среды запуска", configuredBirdIp: "Настроенный IP BIRD", networkScope: "Адреса среды запуска относятся к сетевому пространству сервера или контейнера. Адрес панели — адрес, по которому подключён этот браузер.",
+  networkIpWarning: "Настроенный IP BIRD отсутствует в сетевом пространстве процесса. BGP не может привязаться к нему. Если нужен BGP, проверьте сетевые настройки.",
+  routeSearch: "Поиск IP или CIDR", routeSearchHint: "Для IP показываются содержащие его сети, для CIDR — пересекающиеся сети.", invalidRouteSearch: "Введите корректный IPv4-адрес или CIDR.", search: "Найти",
+  logSearch: "Поиск в логах", logLevel: "Уровень", allLevels: "Все уровни", errorsOnly: "Ошибки", warningsOnly: "Предупреждения", latestEvents: "Последние события", downloadLogs: "Скачать логи", lines: "строк", repeats: "повторов", events: "событий",
+  secondsUnit: "секунд", minutesUnit: "минут", daysUnit: "дней", requireAllSources: "Требовать все URL-источники", requireAllSourcesHint: "Остановить генерацию, если обязательный URL-источник недоступен и пригодного кеша нет.",
+  settingsHint: "«Сохранить» записывает настройки. «Применить сейчас» также пересобирает и загружает маршруты. Поля с отметкой «Перезапуск» требуют перезапуска контейнера; эта кнопка его не выполняет.",
+  dnsHint: "Один IPv4-адрес DNS в строке. Пустое поле — использовать системный DNS.", broadRoutesHint: "Широкие префиксы могут перенаправить большие сети. Включайте, только если это запланировано.", healthcheckHint: "При включении для здорового состояния контейнера также требуется установленная BGP-сессия.",
+  releaseNotes: "Изменения релиза", noReleaseNotes: "Описание изменений не предоставлено. Подробности доступны на странице релиза.",
+  lastBackupDownload: "Последнее скачивание в этом браузере", noBackupDownload: "В этом браузере скачивания ещё не отмечены", backupDownloadHint: "Скачивание в браузере запущено; сохраните файл в надёжном месте.", backupContents: "Включает: URL списков IP и доменов, ASN, страны, добавляемые и исключаемые домены, настройки приложения.",
+  sourceGoogle: "Диапазоны Google", sourceIncludeDomain: "Добавляемый домен", sourceExcludeDomain: "Исключаемый домен",
+});
 
-export { locale, t };
+function t(key) { return dict[locale.lang]?.[key] || dict.en[key] || key; }
+
+function sourceStatus(status) {
+  return t({fresh: "fresh", cache: "cacheStatus", failed: "failed", skipped: "skipped", disabled: "disabledSource"}[status] || "unknownStatus");
+}
+
+export { locale, t, sourceStatus };

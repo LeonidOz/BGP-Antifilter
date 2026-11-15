@@ -17,12 +17,15 @@ const settingLabels = {
   FETCH_RETRY_DELAY: {ru: "Пауза между попытками", en: "Retry delay"},
   DNS_RESOLVERS: {ru: "Пользовательские DNS", en: "Custom DNS resolvers"},
   DNS_RESOLVE_TIMEOUT: {ru: "Таймаут DNS-запроса", en: "DNS query timeout"},
-  INCLUDE_GOOGLE_RANGES: {ru: "Добавлять Google ranges", en: "Include Google ranges"},
+  INCLUDE_GOOGLE_RANGES: {ru: "Добавлять диапазоны Google", en: "Include Google ranges"},
+  REQUIRE_ALL_URL_SOURCES: {ru: "Требовать все URL-источники", en: "Require every URL source"},
   MIN_PREFIX_LENGTH: {ru: "Минимальная длина префикса", en: "Minimum prefix length"},
   ALLOW_BROAD_ROUTES: {ru: "Разрешить широкие маршруты", en: "Allow broad routes"},
   MY_AS: {ru: "AS контейнера", en: "Local AS"},
-  MT_AS: {ru: "AS MikroTik", en: "MikroTik AS"},
-  MT_IP: {ru: "IP MikroTik", en: "MikroTik IP"},
+  PEER_AS: {ru: "AS BGP peer", en: "BGP peer AS"},
+  PEER_IP: {ru: "IP BGP peer", en: "BGP peer IP"},
+  MT_AS: {ru: "AS BGP peer", en: "BGP peer AS"},
+  MT_IP: {ru: "IP BGP peer", en: "BGP peer IP"},
   BIRD_IP: {ru: "IP BIRD", en: "BIRD IP"},
   ROUTER_ID: {ru: "Router ID", en: "Router ID"},
   BGP_COMMUNITY: {ru: "BGP community", en: "BGP community"},
@@ -45,7 +48,7 @@ function settingsPendingLabel(count) {
 function settingsFormValues() {
   const values = {};
   document.querySelectorAll("[data-setting-key]").forEach(input => {
-    values[input.dataset.settingKey] = input.type === "checkbox" ? (input.checked ? "1" : "0") : input.value;
+    values[input.dataset.settingKey] = input.type === "checkbox" ? (input.checked ? "1" : "0") : input.dataset.multiplier ? String(Math.round(Number(input.value) * Number(input.dataset.multiplier))) : input.value;
   });
   return values;
 }
@@ -57,7 +60,7 @@ function applySettingsFormValues(values) {
     if (input.type === "checkbox") {
       input.checked = value === "1";
     } else {
-      input.value = value;
+      input.value = input.dataset.multiplier ? Number(value) / Number(input.dataset.multiplier) : value;
     }
   });
 }
@@ -91,26 +94,40 @@ function settingLabel(key) {
 
 function renderSettingInput(item) {
   const key = escapeHtml(item.key);
+  const label = `aria-label="${escapeHtml(settingLabel(item.key))}"`;
   if (item.type === "bool") {
     return `
       <span class="toggle">
-        <input type="checkbox" data-setting-key="${key}" ${item.value === "1" ? "checked" : ""}>
+        <input type="checkbox" ${label} data-setting-key="${key}" ${item.value === "1" ? "checked" : ""}>
         <span></span>
       </span>`;
   }
   if (item.type === "dns_list") {
-    return `<textarea data-setting-key="${key}" rows="4" spellcheck="false" placeholder="1.1.1.1&#10;8.8.8.8">${escapeHtml(String(item.value || "").replaceAll(",", "\n"))}</textarea>`;
+    return `<textarea ${label} data-setting-key="${key}" rows="3" spellcheck="false" placeholder="1.1.1.1&#10;8.8.8.8">${escapeHtml(String(item.value || "").replaceAll(",", "\n"))}</textarea>`;
   }
+  const preferred = item.key === "UPDATE_INTERVAL" ? 60 : item.key === "CACHE_MAX_AGE" ? 86400 : 1;
+  const multiplier = Number(item.value) % preferred === 0 ? preferred : 1;
   const inputType = item.type === "int" || item.type === "number" || item.type === "asn" ? "number" : "text";
   const attrs = [
     `type="${inputType}"`,
     `data-setting-key="${key}"`,
-    `value="${escapeHtml(item.value)}"`,
-    item.min != null ? `min="${escapeHtml(item.min)}"` : "",
-    item.max != null ? `max="${escapeHtml(item.max)}"` : "",
-    item.type === "number" ? `step="0.1"` : "",
+    label,
+    multiplier > 1 ? `data-multiplier="${multiplier}"` : "",
+    `value="${escapeHtml(multiplier > 1 ? Number(item.value) / multiplier : item.value)}"`,
+    item.min != null ? `min="${Number(item.min) / multiplier}"` : "",
+    item.max != null ? `max="${Number(item.max) / multiplier}"` : "",
+    multiplier > 1 ? `step="${1 / multiplier}"` : item.type === "number" ? `step="0.1"` : "",
   ].filter(Boolean).join(" ");
   return `<input ${attrs}>`;
+}
+
+function settingUnit(item) {
+  if (!item.unit) return "";
+  if (["sec", "s"].includes(item.unit)) {
+    const factor = item.key === "UPDATE_INTERVAL" ? 60 : item.key === "CACHE_MAX_AGE" ? 86400 : 1;
+    return t(Number(item.value) % factor === 0 && factor > 1 ? (factor === 60 ? "minutesUnit" : "daysUnit") : "secondsUnit");
+  }
+  return item.unit;
 }
 
 function renderSettingCard(item, sectionItems) {
@@ -134,8 +151,9 @@ function renderSettingCard(item, sectionItems) {
       </span>
       <span class="setting-control">
         ${renderSettingInput(item)}
-        ${item.unit ? `<span class="unit">${escapeHtml(item.unit)}</span>` : ""}
+        ${item.unit ? `<span class="unit">${escapeHtml(settingUnit(item))}</span>` : ""}
       </span>
+      ${{REQUIRE_ALL_URL_SOURCES: "requireAllSourcesHint", DNS_RESOLVERS: "dnsHint", ALLOW_BROAD_ROUTES: "broadRoutesHint", HEALTHCHECK_REQUIRE_BGP: "healthcheckHint"}[item.key] ? `<small class="muted setting-hint">${t({REQUIRE_ALL_URL_SOURCES: "requireAllSourcesHint", DNS_RESOLVERS: "dnsHint", ALLOW_BROAD_ROUTES: "broadRoutesHint", HEALTHCHECK_REQUIRE_BGP: "healthcheckHint"}[item.key])}</small>` : ""}
       ${embeddedDnsTimeout ? `
         <span class="setting-head">
           <strong>${escapeHtml(settingLabel(embeddedDnsTimeout.key))}</strong>
@@ -146,7 +164,7 @@ function renderSettingCard(item, sectionItems) {
         </span>
         <span class="setting-control">
           ${renderSettingInput(embeddedDnsTimeout)}
-          ${embeddedDnsTimeout.unit ? `<span class="unit">${escapeHtml(embeddedDnsTimeout.unit)}</span>` : ""}
+          ${embeddedDnsTimeout.unit ? `<span class="unit">${escapeHtml(settingUnit(embeddedDnsTimeout))}</span>` : ""}
         </span>
       ` : ""}
     </label>
@@ -167,6 +185,7 @@ function renderSettings(data) {
       </div>
     </article>
   `).join("");
+  settingsState.settingsSavedValues = settingsFormValues();
   refreshSettingsDirtyState();
 }
 
@@ -176,6 +195,7 @@ async function loadSettings() {
 }
 
 async function saveSettings() {
+  if (!$("settings-form").reportValidity()) return false;
   const values = settingsFormValues();
   if (!settingsState.settingsDirty) {
     refreshSettingsDirtyState(t("noChanges"), "ok");
@@ -201,6 +221,7 @@ async function saveSettings() {
 }
 
 function bindSettingsEvents() {
+  $("settings-form").addEventListener("submit", event => { event.preventDefault(); saveSettings(); });
   $("save-settings-btn").addEventListener("click", saveSettings);
   $("settings-form").addEventListener("input", () => {
     markSettingsDirty();

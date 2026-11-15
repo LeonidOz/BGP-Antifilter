@@ -3,8 +3,8 @@ log stderr all;
 router id ${ROUTER_ID};
 
 define MY_AS = ${MY_AS};
-define MT_AS = ${MT_AS};
-define MT_IP = ${MT_IP};
+define PEER_AS = ${PEER_AS};
+define PEER_IP = ${PEER_IP};
 define BIRD_IP = ${BIRD_IP};
 
 protocol device {
@@ -15,20 +15,20 @@ protocol static static_antifilter {
     include "/etc/bird/generated/routes.conf";
 }
 
-filter export_to_mikrotik {
+filter export_to_peer {
     bgp_community.add((${BGP_COMMUNITY}));
     bgp_next_hop = BIRD_IP;
     accept;
 }
 
-protocol bgp mikrotik {
+protocol bgp '${BGP_PROTOCOL}' {
     local as MY_AS;
-    neighbor MT_IP as MT_AS;
+    neighbor PEER_IP as PEER_AS;
     source address BIRD_IP;
     multihop;
 
     ipv4 {
         import none;
-        export filter export_to_mikrotik;
+        export filter export_to_peer;
     };
 }

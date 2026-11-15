@@ -319,7 +319,7 @@ class AdminHandler(BaseHTTPRequestHandler):
                 self.send_json({"error": "values must be an object"}, HTTPStatus.BAD_REQUEST)
                 return
             try:
-                self.app.settings.save_settings(values)
+                self.app.settings.update_settings(values)
             except ValueError as exc:
                 self.send_json({"error": str(exc)}, HTTPStatus.BAD_REQUEST)
                 return

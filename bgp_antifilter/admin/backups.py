@@ -9,6 +9,7 @@ import uuid
 from ..route_transaction import operation_lock
 from ..state_store import read_state, state_lock, write_state
 from .settings import SETTINGS_BY_KEY, validate_setting
+from ..bgp_config import ALIASES, canonical_settings
 from .storage import text_load, write_text_atomic
 
 
@@ -39,9 +40,11 @@ class BackupService:
         for name, content in lists.items():
             if not isinstance(content, str) or "\x00" in content or len(content.encode()) > 1_000_000:
                 raise ValueError(f"invalid list content: {name}")
-        if not isinstance(settings, dict) or set(settings) != set(SETTINGS_BY_KEY):
+        if not isinstance(settings, dict) or set(settings) - (set(SETTINGS_BY_KEY) | set(ALIASES)):
             raise ValueError("backup must contain all supported settings and no unknown settings")
-        normalized = {key: validate_setting(key, value) for key, value in settings.items()}
+        normalized = canonical_settings({key: validate_setting(key, value) for key, value in settings.items()}, reject_conflicts=True)
+        if set(normalized) != set(SETTINGS_BY_KEY):
+            raise ValueError("backup must contain all supported settings and no unknown settings")
         return {"schema": 1, "lists": lists, "settings": normalized}
 
     def preview(self, data):

@@ -44,6 +44,7 @@ def github_latest_release(timeout=5):
         "html_url": str(payload.get("html_url") or REPOSITORY_URL),
         "published_at": str(payload.get("published_at") or ""),
         "name": str(payload.get("name") or ""),
+        "body": str(payload.get("body") or "")[:12000],
     }
 
 
@@ -71,6 +72,7 @@ class UpdatesService:
             "latest_tag": f"v{current_version}",
             "release_url": REPOSITORY_URL,
             "release_name": "",
+            "release_notes": "",
             "published_at": "",
             "update_available": False,
             "error": "",
@@ -78,13 +80,14 @@ class UpdatesService:
         }
         try:
             latest = github_latest_release()
-            update_available = parse_semver(latest["version"]) > parse_semver(current_version)
+            update_available = updater_server.is_newer_version(latest["version"], current_version)
             payload.update({
                 "ok": True,
                 "latest_version": latest["version"],
                 "latest_tag": latest["tag_name"],
                 "release_url": latest["html_url"],
                 "release_name": latest["name"],
+                "release_notes": latest.get("body", ""),
                 "published_at": latest["published_at"],
                 "update_available": update_available,
             })

@@ -2,7 +2,7 @@
 
 [Terminal installation](../README.en.md) | [Русский](portainer.md)
 
-Use Docker Standalone on Linux. This example uses `192.168.55.1` for MikroTik
+Use Docker Standalone on Linux. This example uses `192.168.55.1` for the BGP peer
 and `192.168.55.5` for the Linux server. Replace both with your addresses.
 
 ## 1. Create a stack
@@ -18,14 +18,14 @@ Add these under **Environment variables**:
 
 | Variable | Example | Purpose |
 | --- | --- | --- |
-| `BGP_ANTIFILTER_IMAGE` | `ghcr.io/leonidoz/bgp-antifilter:6.0.2` | Application image |
+| `BGP_ANTIFILTER_IMAGE` | `ghcr.io/leonidoz/bgp-antifilter:1.0.1` | Application image |
 | `ADMIN_PASSWORD` | Your password | Web panel login |
-| `MT_IP` | `192.168.55.1` | MikroTik address |
+| `PEER_IP` | `192.168.55.1` | BGP peer address |
 | `BIRD_IP` | `192.168.55.5` | Existing Linux server address |
 | `ROUTER_ID` | `192.168.55.5` | Usually the same as `BIRD_IP` |
 | `MY_AS` | `64500` | Application AS |
-| `MT_AS` | `65455` | MikroTik AS |
-| `BGP_COMMUNITY` | `65432,500` | Route label for the MikroTik filter |
+| `PEER_AS` | `65455` | BGP peer AS |
+| `BGP_COMMUNITY` | `65432,500` | Route label for the BGP import filter |
 
 To change the panel port, add `ADMIN_PORT`, for example `8081`.
 The panel port and BGP port (TCP 179) must be available on the Linux server.
@@ -35,9 +35,10 @@ The stack already uses host networking; no separate port mapping is needed.
 
 Click **Deploy the stack** and wait for the first route download.
 Open **http://192.168.55.5:8080** and enter your password.
-Then follow the [MikroTik setup](mikrotik.en.md).
+Then follow the [general BGP guide](bgp.en.md), with examples for [FRR](frr.en.md) and [MikroTik](mikrotik.en.md).
+Legacy `MT_IP` and `MT_AS` variables remain supported.
 
-The container may show `unhealthy` until MikroTik connects because its healthcheck
+The container may show `unhealthy` until the BGP peer connects because its healthcheck
 expects a BGP session. Once configured, expect routes in the panel and BGP state `Established`.
 
 ## Updates and data

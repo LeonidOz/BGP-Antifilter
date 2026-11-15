@@ -77,7 +77,7 @@ function buildStages(payload) {
     generator: stageState(
       runtimeState ? "warn" : status.degraded ? "warn" : status.success === false ? "fail" : routes.invalid ? "warn" : "ok",
       t("generator"),
-      runtimeState ? t("generatorBusy") : status.degraded ? (status.degraded_reason || t("degradedState")) : `${routes.final ?? 0} final routes`,
+      runtimeState ? t("generatorBusy") : status.degraded ? (status.degraded_reason || t("degradedState")) : `${t("finalRouteCount")}: ${routes.final ?? 0}`,
       runtimeState ? [
         [t("elapsed"), formatSecondsShort(runtimeState.elapsedSeconds)],
         [t("startedAt"), runtimeState.startedAt ? formatDateTime(runtimeState.startedAt * 1000) : "-"],
@@ -87,20 +87,20 @@ function buildStages(payload) {
     bird: stageState(
       birdOk ? "ok" : runtimeState?.initial ? "warn" : "fail",
       t("bird"),
-      birdOk ? "birdc show status OK" : runtimeState?.initial ? t("birdWaitingInitial") : "birdc show status failed",
+      birdOk ? t("birdStatusOk") : runtimeState?.initial ? t("birdWaitingInitial") : t("birdStatusFailed"),
       [
-        ["returncode", payload?.bird?.returncode ?? "-"],
-        ["duration", formatSecondsShort(payload?.bird?.duration_seconds)],
+        [t("returnCode"), payload?.bird?.returncode ?? "-"],
+        [t("duration"), formatSecondsShort(payload?.bird?.duration_seconds)],
       ],
       payload?.bird
     ),
-    mikrotik: stageState(
+    peer: stageState(
       bgpOk ? "ok" : runtimeState?.initial ? "warn" : "fail",
-      t("mikrotik"),
-      bgpOk ? "BGP Established" : runtimeState?.initial ? t("mikrotikWaitingInitial") : "BGP not established",
+      t("peer"),
+      bgpOk ? t("bgpConnected") : runtimeState?.initial ? t("peerWaitingInitial") : t("bgpDisconnected"),
       [
-        ["protocol", "mikrotik"],
-        ["returncode", payload?.bgp?.returncode ?? "-"],
+        [t("protocol"), payload?.bgp_protocol || "BGP"],
+        [t("returnCode"), payload?.bgp?.returncode ?? "-"],
       ],
       payload?.bgp
     ),
@@ -116,11 +116,19 @@ function renderPipeline(payload) {
     node.classList.add(stage.level);
     node.classList.toggle("active", node.dataset.stage === dashboardState.selectedStage);
     node.title = stage.subtitle;
+    let stateLabel = node.querySelector(".flow-status");
+    if (!stateLabel) {
+      stateLabel = document.createElement("small");
+      stateLabel.className = "flow-status";
+      node.append(stateLabel);
+    }
+    stateLabel.textContent = t(stage.level === "ok" ? "statusOk" : stage.level === "warn" ? "statusWarn" : "statusFail");
+    node.setAttribute("aria-pressed", String(node.dataset.stage === dashboardState.selectedStage));
   });
-  renderStageDetails(stages[dashboardState.selectedStage] || stages.sources);
+  renderStageDetails(stages[dashboardState.selectedStage] || stages.sources, dashboardState.selectedStage);
 }
 
-function renderStageDetails(stage) {
+function renderStageDetails(stage, stageId) {
   const stageDetails = $("stage-details");
   $("stage-title").textContent = stage.title;
   $("stage-pill").textContent = stage.level === "ok" ? t("statusOk") : stage.level === "warn" ? t("statusWarn") : t("statusFail");
@@ -134,10 +142,11 @@ function renderStageDetails(stage) {
     : `<details><summary>${t("rawDetails")}</summary>${renderDataTree(stage.raw)}</details>`;
   replaceHtmlPreservingState(stageDetails, `
     <p>${escapeHtml(stage.subtitle)}</p>
+    ${stageId === "peer" && stage.level !== "ok" ? `<details><summary>${t("bgpHelp")}</summary><p class="muted">${t("bgpHint")}</p></details>` : ""}
     ${stage.rows.length ? `<div class="${rowsClass}">${stage.rows.map(([key, value]) => `
       <div class="kv ${rowLevel(key)}"><span>${escapeHtml(key)}</span><strong>${escapeHtml(value)}</strong></div>
     `).join("")}</div>` : ""}
-    ${renderStageOutput(stage)}
+    ${renderStageOutput(stage, stageId)}
     ${details}
   `);
 }
@@ -168,7 +177,7 @@ function renderStatus(data) {
     $("last-result").textContent = t("statusWarn");
     resultCard.classList.add("warn");
   } else if (status.success === true) {
-    $("last-result").textContent = "OK";
+    $("last-result").textContent = t("generated");
     resultCard.classList.add("ok");
   } else if (status.success === false) {
     $("last-result").textContent = t("failed");

@@ -1,4 +1,4 @@
-.PHONY: test smoke-test shellcheck compose-config build up down logs ps reload dry-run check-sources check-ip version release-version update
+.PHONY: test smoke-test frr-test shellcheck compose-config build up down logs ps reload dry-run check-sources check-ip version release-version update
 
 IP ?= 1.2.3.4
 VERSION ?= $(shell cat VERSION)
@@ -9,6 +9,9 @@ test:
 
 smoke-test:
 	RUN_DOCKER_SMOKE=1 python -m unittest tests.test_smoke_docker -v
+
+frr-test:
+	RUN_DOCKER_FRR=1 python -m unittest tests.test_frr_docker -v
 
 shellcheck:
 	shellcheck deploy/entrypoint.sh deploy/container-start.sh deploy/init-config.sh deploy/lib.sh deploy/run-admin.sh deploy/run-bird.sh deploy/run-scheduler.sh deploy/healthcheck.sh deploy/reload-routes.sh

@@ -31,6 +31,14 @@ function updateStageLabel(stage) {
   return t(map[stage] || "updateUnknown");
 }
 
+function releaseExcerpt(notes) {
+  const lines = String(notes || "").split(/\r?\n/);
+  const start = lines.findIndex(line => /^##\s+/.test(line));
+  const selected = start >= 0 ? lines.slice(start) : lines;
+  const end = selected.findIndex((line, index) => index > 0 && /^##\s+/.test(line));
+  return (end >= 0 ? selected.slice(0, end) : selected).slice(0, 35).join("\n").trim().slice(0, 4000);
+}
+
 function renderUpdateStatus(data) {
   updateState.updateStatusPayload = data;
   const level = updateStatusLevel(data);
@@ -68,6 +76,7 @@ function renderUpdateStatus(data) {
     summary += ` · ${t("updaterUnavailable")}: ${data.updater_error}`;
   }
   $("update-summary").textContent = summary;
+  $("release-notes-text").textContent = releaseExcerpt(data?.release_notes) || t("noReleaseNotes");
   $("update-release-link").href = data?.repository_url || "https://github.com/LeonidOz/BGP-Antifilter";
   $("open-release-link").href = data?.release_url || data?.repository_url || "https://github.com/LeonidOz/BGP-Antifilter";
   $("open-release-link").classList.toggle("hidden", !data?.ok);
@@ -160,4 +169,4 @@ function bindUpdatesEvents() {
   });
 }
 
-export { applyUpdate, bindUpdatesEvents, loadUpdateStatus, renderUpdateStatus, updateState };
+export { applyUpdate, bindUpdatesEvents, loadUpdateStatus, renderUpdateStatus, updateState, releaseExcerpt };

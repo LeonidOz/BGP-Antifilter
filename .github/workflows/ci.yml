@@ -75,8 +75,14 @@ jobs:
       - name: Test web application update and rollback
         run: RUN_DOCKER_WEB_UPDATE=1 WEB_UPDATE_TEST_IMAGE=ghcr.io/leonidoz/bgp-antifilter:dev python -m unittest tests.test_web_update_docker -v
 
+      - name: Test correction from misnumbered 6.0.2 to 1.0.1
+        run: RUN_DOCKER_WEB_UPDATE=1 WEB_UPDATE_VERSION_CORRECTION=1 WEB_UPDATE_TEST_IMAGE=ghcr.io/leonidoz/bgp-antifilter:dev python -m unittest tests.test_web_update_docker -v
+
       - name: Verify BIRD 3 BGP export and reconfiguration
         run: RUN_DOCKER_BGP=1 BGP_TEST_IMAGE=ghcr.io/leonidoz/bgp-antifilter:dev python -m unittest tests.test_bgp_docker -v
+
+      - name: Verify FRR import policy and VPN next hop
+        run: RUN_DOCKER_FRR=1 BGP_TEST_IMAGE=ghcr.io/leonidoz/bgp-antifilter:dev python -m unittest tests.test_frr_docker -v
 
       - name: Test persistent config volume migration
         run: RUN_DOCKER_CONFIG_MIGRATION=1 CONFIG_MIGRATION_IMAGE=ghcr.io/leonidoz/bgp-antifilter:dev python -m unittest tests.test_config_volume -v

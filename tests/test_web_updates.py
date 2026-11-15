@@ -21,6 +21,29 @@ class ReleaseChecksTests(unittest.TestCase):
     def setUp(self):
         self.service = updates.UpdatesService()
 
+    def test_corrected_release_is_offered_from_each_misnumbered_version(self):
+        for current in ("6.0.0", "6.0.1", "6.0.2"):
+            with self.subTest(current=current), \
+                 mock.patch.object(updates, "__version__", current), \
+                 mock.patch.object(updates, "github_latest_release", return_value=release("1.0.1")), \
+                 mock.patch.object(updater, "reconcile_runtime", return_value={}), \
+                 mock.patch.object(updates, "updater_health", return_value=(True, "")), \
+                 mock.patch.object(updater, "start_update", return_value={"accepted": True}) as start:
+                self.assertTrue(self.service.status_payload(force=True)["apply_available"])
+                self.service.start_update("1.0.1")
+                start.assert_called_once_with("1.0.1")
+
+    def test_version_correction_is_narrow_and_does_not_allow_arbitrary_downgrades(self):
+        for target, current, expected in [
+            ("1.0.1", "6.0.2", True), ("v1.0.1", "v6.0.1", True),
+            ("1.0.2", "6.0.0", True), ("0.5.4", "6.0.2", False), ("1.0.0", "6.0.2", False),
+            ("1.0.1", "1.0.1", False), ("1.0.2", "1.0.1", True),
+            ("1.0.1", "1.0.2", False), ("6.0.2", "1.0.1", False),
+            ("6.0.1", "6.0.0", False), ("1.0.1", "6.1.0", False),
+        ]:
+            with self.subTest(target=target, current=current):
+                self.assertEqual(updater.is_newer_version(target, current), expected)
+
     def test_cache_ttl_force_and_response_mutations(self):
         with mock.patch.object(updates, "github_latest_release", return_value=release()) as fetch, \
              mock.patch.object(updates.time, "time", return_value=1000) as now:
@@ -54,6 +77,17 @@ class ReleaseChecksTests(unittest.TestCase):
                 with mock.patch.object(updates.urllib.request, "urlopen", return_value=response), \
                      self.assertRaises(ValueError):
                     updates.github_latest_release()
+
+    def test_release_description_is_bounded_and_included_in_status(self):
+        response = mock.MagicMock()
+        response.__enter__.return_value.read.return_value = json.dumps({
+            "tag_name": "v9.9.9", "body": "<script>plain release text</script>" + "x" * 13000,
+        }).encode()
+        with mock.patch.object(updates.urllib.request, "urlopen", return_value=response):
+            payload = self.service.update_status_payload(force=True)
+        self.assertTrue(payload["ok"])
+        self.assertEqual(len(payload["release_notes"]), 12000)
+        self.assertTrue(payload["release_notes"].startswith("<script>plain release text</script>"))
 
     def test_runtime_and_updater_availability_are_not_cached_with_github_result(self):
         with mock.patch.object(updates, "github_latest_release", return_value=release()) as fetch, \
@@ -103,6 +137,16 @@ class UpdateTransactionTests(unittest.TestCase):
 
     def ok(self, *args, **kwargs):
         return {"ok": True, "stdout": "", "stderr": ""}
+
+    def test_corrected_numbering_can_launch_without_rewriting_the_old_pin(self):
+        for current in ("6.0.0", "6.0.1", "6.0.2"):
+            self.env.write_text(f"BGP_ANTIFILTER_VERSION={current}\n")
+            original = self.env.read_bytes()
+            with mock.patch.object(updater, "reconcile_runtime", return_value={}), \
+                 mock.patch.object(updater, "run_docker", return_value="worker-id") as docker:
+                self.assertTrue(updater.start_update("1.0.1")["accepted"])
+                self.assertEqual(docker.call_args.args[-1], "1.0.1")
+                self.assertEqual(self.env.read_bytes(), original)
 
     def test_success_is_published_only_after_health_and_version_verification(self):
         def verify(version):

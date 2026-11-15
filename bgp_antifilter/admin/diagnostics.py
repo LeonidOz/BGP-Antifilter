@@ -119,10 +119,12 @@ class DiagnosticsService:
             "bird": {
                 "router_id": settings.get("ROUTER_ID", ""),
                 "bird_ip": settings.get("BIRD_IP", ""),
-                "mikrotik_ip": settings.get("MT_IP", ""),
+                "peer_ip": settings.get("PEER_IP", ""),
+                "mikrotik_ip": settings.get("PEER_IP", ""),
                 "bgp_protocol": settings.get("BGP_PROTOCOL", ""),
                 "my_as": settings.get("MY_AS", ""),
-                "mt_as": settings.get("MT_AS", ""),
+                "peer_as": settings.get("PEER_AS", ""),
+                "mt_as": settings.get("PEER_AS", ""),
                 "bird_ip_check": network_diagnostics.bird_ip_diagnostic(settings.get("BIRD_IP", ""), addresses=addresses),
             },
             "admin": {
@@ -135,7 +137,7 @@ class DiagnosticsService:
     def login_network_payload(self):
         settings = self.settings.effective_settings()
         labels = []
-        for key in ("ROUTER_ID", "BIRD_IP", "MT_IP"):
+        for key in ("ROUTER_ID", "BIRD_IP", "PEER_IP"):
             value = settings.get(key, "").strip()
             if value and value not in labels:
                 labels.append(value)

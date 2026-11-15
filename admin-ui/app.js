@@ -7,7 +7,7 @@ import {
   renderStatus,
   tickCountdown
 } from "./modules/dashboard.js";
-import { $, escapeHtml, renderIcons, setStatusTone } from "./modules/dom.js";
+import { $, escapeHtml, renderIcons, setStatusTone, bindCopyEvents } from "./modules/dom.js";
 import { locale, t } from "./modules/i18n.js";
 import {
   bindListsEvents,
@@ -34,7 +34,7 @@ import {
   settingsFormValues,
   settingsState
 } from "./modules/settings.js";
-import { bindToolsEvents, loadToolTab } from "./modules/tools.js";
+import { bindToolsEvents, loadToolTab, refreshToolLanguage } from "./modules/tools.js";
 import { bindPreviewEvents, preparePreview } from "./modules/preview.js";
 import { bindBackupEvents, loadHistory } from "./modules/backups.js";
 import { bindUpdatesEvents, loadUpdateStatus, renderUpdateStatus, updateState } from "./modules/updates.js";
@@ -76,6 +76,10 @@ function applyLang() {
     renderListTiles();
   }
   refreshListDirtyState();
+  refreshToolLanguage();
+  document.querySelectorAll("[data-list]").forEach(button => button.querySelector("span").textContent = t(button.dataset.list));
+  $("list-title").textContent = t(listState.currentList);
+  if (dashboardState.lastStatusPayload) renderStatus(dashboardState.lastStatusPayload);
   if (!$("backups").classList.contains("hidden")) loadHistory();
   renderUpdateStatus(updateState.updateStatusPayload);
   renderIcons();
@@ -142,6 +146,9 @@ function switchView(view) {
   const titleKey = {check: "checkTarget", routes: "routeMenu", updates: "updateStatus"}[view] || view;
   $("view-title").dataset.i18n = titleKey;
   $("view-title").textContent = t(titleKey);
+  $("sidebar").classList.remove("menu-open");
+  $("menu-toggle").setAttribute("aria-expanded", "false");
+  $("admin-view").scrollIntoView({block: "start"});
   if (["check", "network", "routes", "logs", "updates"].includes(view)) {
     loadToolTab(view).catch(err => {
       const result = $(view).querySelector(".result-view");
@@ -240,6 +247,17 @@ bindUpdatesEvents();
 bindDashboardEvents();
 bindPreviewEvents();
 bindBackupEvents();
+bindCopyEvents();
+$("menu-toggle").addEventListener("click", () => {
+  const open = $("sidebar").classList.toggle("menu-open");
+  $("menu-toggle").setAttribute("aria-expanded", String(open));
+});
+document.addEventListener("keydown", event => {
+  if (event.key === "Escape") {
+    $("sidebar").classList.remove("menu-open");
+    $("menu-toggle").setAttribute("aria-expanded", "false");
+  }
+});
 
 $("login-form").addEventListener("submit", async event => {
   event.preventDefault();

@@ -31,7 +31,8 @@
           <button id="lang-ru">RU</button>
           <button id="lang-en">EN</button>
         </div>
-        <nav>
+        <button id="menu-toggle" class="mobile-menu-toggle" aria-expanded="false" aria-controls="main-nav"><i data-lucide="menu"></i><span data-i18n="menu">Menu</span></button>
+        <nav id="main-nav">
           <button class="nav-item active" data-view="dashboard"><i data-lucide="gauge"></i><span data-i18n="dashboard">Dashboard</span></button>
           <button class="nav-item" data-view="lists"><i data-lucide="list-tree"></i><span data-i18n="lists">Lists</span></button>
           <button class="nav-item" data-view="check"><i data-lucide="search"></i><span data-i18n="checkTarget">checkTarget</span></button>
@@ -120,9 +121,18 @@
           <article class="panel actions-panel">
             <h2 data-i18n="actions">Actions</h2>
             <div class="button-row">
-              <button data-preview-routes><i data-lucide="flask-conical"></i><span data-i18n="dryRun">Dry run</span></button>
-              <button data-action="check-sources"><i data-lucide="radar"></i><span data-i18n="checkSources">Check sources</span></button>
-              <button data-action="reload" class="danger"><i data-lucide="refresh-cw"></i><span data-i18n="reload">Reload routes</span></button>
+              <span class="action-tooltip">
+                <button data-preview-routes aria-describedby="preview-action-hint"><i data-lucide="flask-conical"></i><span data-i18n="dryRun">Dry run</span></button>
+                <span id="preview-action-hint" class="tooltip-content" role="tooltip" data-i18n="previewActionHint"></span>
+              </span>
+              <span class="action-tooltip">
+                <button data-action="check-sources" aria-describedby="sources-action-hint"><i data-lucide="radar"></i><span data-i18n="checkSources">Check sources</span></button>
+                <span id="sources-action-hint" class="tooltip-content" role="tooltip" data-i18n="sourcesActionHint"></span>
+              </span>
+              <span class="action-tooltip">
+                <button data-action="reload" class="primary" aria-describedby="reload-action-hint"><i data-lucide="refresh-cw"></i><span data-i18n="reload">Reload routes</span></button>
+                <span id="reload-action-hint" class="tooltip-content" role="tooltip" data-i18n="reloadActionHint"></span>
+              </span>
             </div>
             <details class="operation-log-details" id="operation-log-details">
               <summary data-i18n="operationLog">Operation log</summary>
@@ -139,7 +149,7 @@
             <span></span>
             <button class="flow-node" data-stage="bird"><i data-lucide="server"></i><span data-i18n="bird">BIRD</span></button>
             <span></span>
-            <button class="flow-node" data-stage="mikrotik"><i data-lucide="router"></i><span data-i18n="mikrotik">MikroTik</span></button>
+            <button class="flow-node" data-stage="peer"><i data-lucide="router"></i><span data-i18n="peer">BGP peer</span></button>
           </div>
 
           <article class="panel stage-panel" id="stage-panel">
@@ -153,6 +163,12 @@
 
         <section class="view view-stack hidden" id="lists">
           <div class="tabs" id="list-tabs"></div>
+          <div class="filter-toolbar" id="list-filters">
+            <label><span data-i18n="searchEntries">Search entries</span><input id="list-search" type="search" data-placeholder="searchEntries"></label>
+            <label><span data-i18n="sourceFilter">Source status</span><select id="list-status-filter"><option value="all" data-i18n="allEntries">All entries</option><option value="problem" data-i18n="problemSources">Needs attention</option></select></label>
+            <label class="selected-filter hidden" id="country-selected-filter"><input id="country-selected" type="checkbox"><span data-i18n="selectedOnly">Selected only</span></label>
+            <span id="list-count" class="muted" role="status"></span>
+          </div>
           <div id="list-source-settings"></div>
           <article class="panel editor-panel">
             <div class="editor-toolbar">
@@ -229,6 +245,7 @@
                   <button type="button" id="apply-update-btn" class="danger hidden"><i data-lucide="download"></i><span data-i18n="applyUpdate">Update now</span></button>
                   <a id="open-release-link" class="button-link hidden" href="https://github.com/LeonidOz/BGP-Antifilter" target="_blank" rel="noreferrer noopener"><i data-lucide="external-link"></i><span data-i18n="openRelease">Open release</span></a>
                 </div>
+                <details id="release-notes"><summary data-i18n="releaseNotes">Release notes</summary><pre id="release-notes-text"></pre></details>
               </article>
           </article>
         </section>
@@ -267,7 +284,8 @@
               <section class="backup-transfer">
                 <div class="backup-transfer-head"><i data-lucide="download" aria-hidden="true"></i><h3 data-i18n="saveBackup">Save a copy</h3></div>
                 <p class="muted" data-i18n="exportBackupHint">Download a JSON file to keep your current configuration.</p>
-                <a class="button-link" href="/api/backups/export" download="bgp-antifilter-config.json"><i data-lucide="download" aria-hidden="true"></i><span data-i18n="exportConfig">Export configuration</span></a>
+                <a id="export-config" class="button-link" href="/api/backups/export" download="bgp-antifilter-config.json"><i data-lucide="download" aria-hidden="true"></i><span data-i18n="exportConfig">Export configuration</span></a>
+                <span id="backup-export-time" class="muted" role="status"></span>
               </section>
               <section class="backup-transfer">
                 <div class="backup-transfer-head"><i data-lucide="archive-restore" aria-hidden="true"></i><h3 data-i18n="restoreBackup">Restore a copy</h3></div>
@@ -279,6 +297,7 @@
               </section>
             </div>
             <p class="backup-scope muted"><i data-lucide="info" aria-hidden="true"></i><span data-i18n="backupScope">Server .env, Docker files, routes and cache are backed up separately.</span></p>
+            <p class="muted" data-i18n="backupContents"></p>
             <div id="config-import-review" class="result-view"></div>
             <button id="restore-config-btn" class="danger hidden" data-i18n="restoreConfig">Restore reviewed configuration</button>
             <p id="backup-status" role="status"></p>
@@ -294,6 +313,7 @@
         </section>
 
         <section class="view view-stack hidden" id="settings">
+          <p class="muted" data-i18n="settingsHint"></p>
           <form id="settings-form" class="settings-form"></form>
           <div class="settings-actions">
             <button id="save-settings-btn" type="button"><i data-lucide="save"></i><span data-i18n="save">Save</span></button>

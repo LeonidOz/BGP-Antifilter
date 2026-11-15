@@ -13,7 +13,7 @@ cd BGP-Antifilter
 cp .env.example .env
 ```
 
-В `.env` задайте адреса сервера и MikroTik. Для веб-панели добавьте
+В `.env` задайте адреса сервера и BGP peer. Для веб-панели добавьте
 `ADMIN_ENABLED=1` и свой `ADMIN_PASSWORD`.
 Оставьте `BGP_ANTIFILTER_VERSION` незаданной для локальной сборки.
 
@@ -137,11 +137,22 @@ RUN_DOCKER_SMOKE=1 python -m unittest tests.test_smoke_docker -v
 ```
 
 Этот набор отдельно проверяет Compose, HTTP-панель и готовый стек Portainer.
-Он не заменяет проверку реальной BGP-сессии с MikroTik.
+Для проверки конкретного маршрутизатора дополнительно проверьте его фильтры, VPN-шлюз и реальный трафик.
 Команды с переменными перед именем программы используют синтаксис Linux shell.
 CI выполняет Python- и JavaScript-тесты, проверку Compose, сборку, обновление и откат, миграцию volumes,
 Docker smoke-тесты и ShellCheck; см. [workflow](../.github/workflows/ci.yml).
 Порядок выпуска релиза описан в [AGENTS.md](../AGENTS.md).
+
+## Проверка BGP с FRR
+
+```bash
+RUN_DOCKER_FRR=1 BGP_TEST_IMAGE=ghcr.io/leonidoz/bgp-antifilter:dev python -m unittest tests.test_frr_docker -v
+```
+
+На Windows перед командой Python задайте `$env:RUN_DOCKER_FRR = '1'` и `$env:BGP_TEST_IMAGE = 'ghcr.io/leonidoz/bgp-antifilter:dev'`.
+Сначала соберите текущий образ командой `make build`. Тест создаёт отдельную Docker-сеть и два контейнера, использует закреплённый официальный FRR 10.7.1 и [конфигурацию из инструкции](examples/frr.conf).
+Проверяются community, отклонение default route, VPN next hop в Linux FIB, отзыв/замена префиксов и сохранение последнего рабочего набора при ошибке BIRD. Контейнеру FRR нужны NET_ADMIN и SYS_ADMIN для штатных демонов; он не использует host network или пользовательские тома. Все тестовые контейнеры и сеть удаляются после завершения.
+Тот же тест включён в CI. Внешний VPN и реальная передача клиентского трафика им не проверяются.
 
 ## Компоненты образа и браузерные проверки
 

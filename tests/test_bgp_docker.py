@@ -23,11 +23,11 @@ with tempfile.TemporaryDirectory() as directory:
     routes = root / 'routes.conf'
     routes.write_text('route 192.0.2.0/24 blackhole;\n')
     template = Path('/etc/bird/bird.conf.template').read_text()
-    config = Template(template).substitute(ROUTER_ID='10.0.0.1', MY_AS='64500', MT_AS='64501',
-                                            MT_IP='127.0.0.2', BIRD_IP='127.0.0.1', BGP_COMMUNITY='65432,500')
+    config = Template(template).substitute(ROUTER_ID='10.0.0.1', MY_AS='64500', PEER_AS='64501',
+                                            PEER_IP='127.0.0.2', BIRD_IP='127.0.0.1', BGP_COMMUNITY='65432,500', BGP_PROTOCOL='peer')
     config = config.replace('/etc/bird/generated/routes.conf', str(routes))
     config = config.replace('local as MY_AS;', 'local port 1179 as MY_AS;')
-    config = config.replace('neighbor MT_IP as MT_AS;', 'neighbor MT_IP port 2179 as MT_AS;')
+    config = config.replace('neighbor PEER_IP as PEER_AS;', 'neighbor PEER_IP port 2179 as PEER_AS;')
     config = config.replace('    multihop;', '    multihop;\n    connect retry time 1;')
     (root / 'origin.conf').write_text(config)
     (root / 'peer.conf').write_text(r"""
@@ -63,7 +63,7 @@ protocol bgp antifilter {
             log = (root / (name + '.log')).open('w')
             logs.append(log)
             processes.append(subprocess.Popen(['bird', '-f', '-c', str(root / (name + '.conf')), '-s', str(root / (name + '.ctl')), '-P', str(root / (name + '.pid'))], stdout=log, stderr=log))
-        wait_for(lambda: 'Established' in cli('origin', 'show', 'protocols', 'mikrotik'), 'BGP did not establish')
+        wait_for(lambda: 'Established' in cli('origin', 'show', 'protocols', 'peer'), 'BGP did not establish')
         wait_for(lambda: '192.0.2.0/24' in cli('peer', 'show', 'route', 'all'), 'Initial route was not exported')
         output = cli('peer', 'show', 'route', 'all')
         assert '(65432,500)' in output, output

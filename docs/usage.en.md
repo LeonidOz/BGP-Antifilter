@@ -1,6 +1,6 @@
 # Lists, settings, and maintenance
 
-[Installation](../README.en.md) | [MikroTik](mikrotik.en.md) | [Русский](usage.md)
+[Installation](../README.en.md) | [BGP setup](bgp.en.md) | [Русский](usage.md)
 
 This guide assumes the prebuilt image installation from the README.
 Run commands in the directory containing `compose.yaml` and `.env`.
@@ -59,7 +59,7 @@ Scheduled updates continue normally.
 domain addresses and exclusions. Cache refreshes and failed generations cannot
 rewrite that history. Older snapshots without provenance show an explanation;
 apply an update to record it. A matching route does not verify the VPN gateway
-or MikroTik forwarding rules. **Network**, **Routes** and **Logs** are main-menu
+or router forwarding rules. **Network**, **Routes** and **Logs** are main-menu
 pages. The dashboard operation log opens manually. Application updates are
 accessed through the small header button; a dot indicates an available update.
 
@@ -145,6 +145,10 @@ Panel-based application updates are disabled for this stack.
 
 Use a version tag or `latest`, the latest stable release, for a normal installation.
 `edge` and `sha-<commit>` are for testing changes.
+
+### Correcting release numbering: 6.0.x → 1.0.1
+
+Versions 6.0.0–6.0.2 were misnumbered builds. Their work is consolidated in 1.0.1; old tags and images remain available for rollback. Old updaters consider 1.0.1 an older version. For the first transition, follow the manual update steps above: back up your data, set `BGP_ANTIFILTER_VERSION=1.0.1` in `.env`, then run `docker compose pull` and `docker compose up -d`. For Portainer, change the stack image tag. A one-time backport of version checking also enables the panel button. Version 1.0.1 includes the corrected comparison; subsequent 1.x releases update normally.
 
 ### Web updates for repository deployments
 
@@ -277,10 +281,10 @@ docker compose logs --tail=100
 | --- | --- |
 | Panel does not open | Has the first download finished? Check server address, `ADMIN_PORT`, password, and firewall access |
 | `BIRD_IP is not assigned` | `BIRD_IP` must be assigned to the Linux server; check `ip -4 addr` |
-| BGP does not connect | Compare addresses and AS numbers with MikroTik; check TCP 179 between the server and router |
+| BGP does not connect | Compare addresses and AS numbers with the BGP peer; check TCP 179 between the server and router |
 | Container is `unhealthy` | Check route generation and BGP state; for Address List use `HEALTHCHECK_REQUIRE_BGP=0` |
 | New routes were not applied | Inspect URL/DNS errors, exclude domains, and the last operation's details |
-| Routes exist but a site is unavailable | Check whether the IP is listed, the MikroTik VPN gateway, VPN connectivity, NAT, and FastTrack rules |
+| Routes exist but a site is unavailable | Check whether the IP is listed, the router's VPN gateway, VPN connectivity, NAT, and traffic acceleration rules (FastTrack on RouterOS) |
 
 Additional checks:
 

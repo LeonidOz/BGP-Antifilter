@@ -1,6 +1,6 @@
 // List history and portable configuration import with a review step.
 import { api } from "./api.js";
-import { $, escapeHtml, setStatusTone } from "./dom.js";
+import { $, escapeHtml, setStatusTone, downloadText } from "./dom.js";
 import { formatDateTime } from "./format.js";
 import { t } from "./i18n.js";
 import { renderErrorView } from "./results.js";
@@ -12,6 +12,7 @@ let historyRequest = 0;
 const listLabelKeys = {urls: "historyUrls", "domain-list-urls": "historyDomainUrls", asns: "historyAsns", countries: "historyCountries", "include-domains": "historyIncluded", "exclude-domains": "historyExcluded"};
 
 async function loadHistory() {
+  renderBackupDownload();
   const request = ++historyRequest;
   reviewedVersion = null;
   $("restore-list-btn").classList.add("hidden");
@@ -32,12 +33,28 @@ async function loadHistory() {
   }
 }
 
+function renderBackupDownload() {
+  let value = "";
+  try { value = localStorage.getItem("last-config-download") || ""; } catch { /* Storage can be disabled. */ }
+  $("backup-export-time").textContent = value ? `${t("lastBackupDownload")}: ${formatDateTime(value)}` : t("noBackupDownload");
+}
+
 function failure(error) {
   setStatusTone($("backup-status"));
   $("backup-status").innerHTML = renderErrorView(error);
 }
 
 function bindBackupEvents() {
+  $("export-config").addEventListener("click", async event => {
+    event.preventDefault();
+    try {
+      const backup = await api("/api/backups/export");
+      downloadText(JSON.stringify(backup, null, 2), "bgp-antifilter-config.json", "application/json");
+      try { localStorage.setItem("last-config-download", new Date().toISOString()); } catch { /* Download still works. */ }
+      renderBackupDownload();
+      $("backup-status").textContent = t("backupDownloadHint");
+    } catch (error) { failure(error); }
+  });
   $("load-history-btn").addEventListener("click", () => loadHistory().catch(failure));
   $("history-list").addEventListener("change", () => loadHistory().catch(failure));
   $("history-versions").addEventListener("click", async event => {

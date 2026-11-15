@@ -31,7 +31,7 @@ if [ "$HEALTHCHECK_REQUIRE_BGP" = "1" ]; then
   if [ -f "$NETWORK_STATUS_FILE" ]; then
     python3 -m bgp_antifilter.container_runtime check-health network "$NETWORK_STATUS_FILE"
   fi
-  if ! birdc show protocols "$BGP_PROTOCOL" | grep -q Established; then
+  if ! birdc show protocols "'$BGP_PROTOCOL'" | grep -q Established; then
     echo "BGP protocol $BGP_PROTOCOL is not established" >&2
     exit 1
   fi

@@ -13,7 +13,7 @@ cd BGP-Antifilter
 cp .env.example .env
 ```
 
-Set the server and MikroTik addresses in `.env`. For the web panel, set
+Set the server and BGP peer addresses in `.env`. For the web panel, set
 `ADMIN_ENABLED=1` and your own `ADMIN_PASSWORD`.
 Leave `BGP_ANTIFILTER_VERSION` unset for a local build.
 
@@ -137,11 +137,22 @@ RUN_DOCKER_SMOKE=1 python -m unittest tests.test_smoke_docker -v
 ```
 
 This suite separately checks Compose, the HTTP panel and the prebuilt Portainer stack.
-It does not replace testing a real BGP session with MikroTik.
+For a particular router, additionally verify its import policy, VPN next hop, and real forwarded traffic.
 Commands placing variables before the executable use Linux shell syntax.
 CI runs Python/JavaScript tests, Compose validation, image builds, web updates/rollback, volume migration,
 Docker smoke tests and ShellCheck; see the [workflow](../.github/workflows/ci.yml).
 Release instructions are in [AGENTS.md](../AGENTS.md).
+
+## BGP interoperability with FRR
+
+```bash
+RUN_DOCKER_FRR=1 BGP_TEST_IMAGE=ghcr.io/leonidoz/bgp-antifilter:dev python -m unittest tests.test_frr_docker -v
+```
+
+On Windows, set `$env:RUN_DOCKER_FRR = '1'` and `$env:BGP_TEST_IMAGE = 'ghcr.io/leonidoz/bgp-antifilter:dev'` before running the Python command.
+Build the current application image first with `make build`. The test creates a separate Docker network and two containers, using the pinned official FRR 10.7.1 image and the [documented configuration](examples/frr.conf).
+It checks community, default-route rejection, VPN next-hop installation in the Linux FIB, prefix withdrawal/replacement, and last-good retention after BIRD rejects a configuration. FRR needs NET_ADMIN and SYS_ADMIN for its standard daemons; it uses neither host networking nor user volumes. Test containers and the network are removed afterwards.
+CI runs the same test. It does not verify an external VPN or real client traffic forwarding.
 
 ## Runtime components and browser checks
 

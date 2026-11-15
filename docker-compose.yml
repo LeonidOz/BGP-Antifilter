@@ -21,8 +21,10 @@ services:
       org.opencontainers.image.url: "https://github.com/LeonidOz/BGP-Antifilter"
     environment:
       MY_AS: "${MY_AS:-64500}"
-      MT_AS: "${MT_AS:-65455}"
-      MT_IP: "${MT_IP:-192.168.55.1}"
+      PEER_AS: "${PEER_AS:-${MT_AS:-65455}}"
+      PEER_IP: "${PEER_IP:-${MT_IP:-192.168.55.1}}"
+      MT_AS: "${PEER_AS:-${MT_AS:-65455}}"
+      MT_IP: "${PEER_IP:-${MT_IP:-192.168.55.1}}"
       BIRD_IP: "${BIRD_IP:-192.168.55.5}"
       ROUTER_ID: "${ROUTER_ID:-192.168.55.5}"
       BGP_COMMUNITY: "${BGP_COMMUNITY:-65432,500}"

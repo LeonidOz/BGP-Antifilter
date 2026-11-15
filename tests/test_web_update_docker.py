@@ -6,6 +6,7 @@ All containers, image tags and volumes belong to a unique temporary project.
 """
 
 import http.cookiejar
+import inspect
 import json
 import os
 from pathlib import Path
@@ -18,6 +19,8 @@ import unittest
 import urllib.error
 import urllib.request
 import uuid
+
+from bgp_antifilter import updater_server
 
 
 ROOT = Path(__file__).resolve().parents[1]
@@ -69,6 +72,9 @@ class WebUpdateDockerTests(unittest.TestCase):
         if self.docker("info", "--format", "{{.OSType}}") != "linux":
             self.skipTest("requires a Linux Docker engine")
         base = os.environ.get("WEB_UPDATE_TEST_IMAGE", "bgp-antifilter:web-update-test")
+        correction = os.environ.get("WEB_UPDATE_VERSION_CORRECTION") == "1"
+        self.initial_version, self.updated_version, self.missing_version, self.broken_version = (
+            ("6.0.2", "1.0.1", "1.0.2", "1.0.3") if correction else ("1.0.0", "1.0.1", "1.0.2", "1.0.3"))
         if "WEB_UPDATE_TEST_IMAGE" not in os.environ:
             self.docker("build", "-t", base, "-f", str(ROOT / "deploy/Dockerfile"), str(ROOT))
         with socket.socket() as reservation:
@@ -86,19 +92,32 @@ class WebUpdateDockerTests(unittest.TestCase):
             "    v = Path('/workspace/latest').read_text().strip()\n"
             "    return dict(version=v, tag_name='v'+v, html_url='https://example.test/release', name='Test', published_at='')\n"
             "updates.github_latest_release = latest\nraise SystemExit(main())\n", encoding="utf-8")
-        for version in ("1.0.0", "1.0.1", "1.0.3"):
+        helper = inspect.getsource(updater_server.is_newer_version)
+        (self.root / "transition-fixture.py").write_text(
+            "from pathlib import Path\n"
+            "p=Path('/bgp_antifilter/updater_server.py')\ns=p.read_text()\n"
+            "old='if tuple(map(int, target_version.split(\".\"))) <= tuple(map(int, validate_version(previous_version).split(\".\"))):'\n"
+            "assert s.count(old)==1\n"
+            "s=s.replace(old,'if not is_newer_version(target_version, previous_version):')\n"
+            f"s=s.replace('def runtime_payload():',{(helper + chr(10) + 'def runtime_payload():')!r},1)\np.write_text(s)\n"
+            "p=Path('/bgp_antifilter/admin/updates.py')\ns=p.read_text()\n"
+            "old='parse_semver(latest[\"version\"]) > parse_semver(current_version)'\nassert s.count(old)==1\n"
+            "p.write_text(s.replace(old,'updater_server.is_newer_version(latest[\"version\"], current_version)'))\n", encoding="utf-8")
+        for version in (self.initial_version, self.updated_version, self.broken_version):
             tag = f"{self.repository}:{version}"
             self.tags.append(tag)
-            broken = "RUN printf '#!/bin/sh\\nexit 1\\n' > /healthcheck.sh\n" if version == "1.0.3" else ""
-            dockerfile = (f"FROM {base}\nCOPY admin-fixture.py /admin-server.py\n"
+            broken = "RUN printf '#!/bin/sh\\nexit 1\\n' > /healthcheck.sh\n" if version == self.broken_version else ""
+            source = "ghcr.io/leonidoz/bgp-antifilter:6.0.2" if correction and version == self.initial_version else base
+            bootstrap = "COPY transition-fixture.py /tmp/transition.py\nRUN python3 /tmp/transition.py\n" if correction and version == self.initial_version else ""
+            dockerfile = (f"FROM {source}\n" + bootstrap + "COPY admin-fixture.py /admin-server.py\n"
                           f"RUN chmod +x /admin-server.py && echo {version} > /VERSION\n" + broken)
             self.docker("build", "-t", tag, "-f", "-", str(self.root), input=dockerfile)
             self.docker("push", tag)
         # The target image must actually be pulled from the registry during update.
         for tag in self.tags[1:]:
             self.docker("image", "rm", tag)
-        self.env_file.write_text("# preserve this file on rollback\nBGP_ANTIFILTER_VERSION=1.0.0\n", encoding="utf-8")
-        (self.root / "latest").write_text("1.0.1", encoding="utf-8")
+        self.env_file.write_text(f"# preserve this file on rollback\nBGP_ANTIFILTER_VERSION={self.initial_version}\n", encoding="utf-8")
+        (self.root / "latest").write_text(self.updated_version, encoding="utf-8")
         config = self.root / "config"
         config.mkdir()
         (self.root / "generated").mkdir()
@@ -175,39 +194,39 @@ class WebUpdateDockerTests(unittest.TestCase):
         original_id = self.info()["Id"]
         code, payload = self.api("/api/update/status?force=1")
         self.assertTrue(payload["apply_available"], payload)
-        self.assertEqual(self.api("/api/update/apply", {"version": "1.0.1"})[0], 202)
+        self.assertEqual(self.api("/api/update/apply", {"version": self.updated_version})[0], 202)
         result = self.wait(self.finished, "upgrade did not finish")
         self.assertTrue(result["success"], result)
         self.assertNotEqual(self.info()["Id"], original_id)
-        self.assertTrue(self.info()["Config"]["Image"].endswith(":1.0.1"))
+        self.assertTrue(self.info()["Config"]["Image"].endswith(":" + self.updated_version))
         self.assertEqual(self.info()["State"]["Health"]["Status"], "healthy")
         self.assertEqual((self.root / "config/include-domains.txt").read_bytes(), self.marker)
         self.login()
-        self.assertEqual(self.api("/api/update/status?force=1")[1]["current_version"], "1.0.1")
+        self.assertEqual(self.api("/api/update/status?force=1")[1]["current_version"], self.updated_version)
 
         stable_id = self.info()["Id"]
         stable_env = self.env_file.read_bytes()
-        (self.root / "latest").write_text("1.0.2", encoding="utf-8")  # missing registry tag
-        self.assertEqual(self.api("/api/update/apply", {"version": "1.0.2"})[0], 202)
+        (self.root / "latest").write_text(self.missing_version, encoding="utf-8")  # missing registry tag
+        self.assertEqual(self.api("/api/update/apply", {"version": self.missing_version})[0], 202)
         result = self.wait(self.finished, "pull failure did not finish")
         self.assertFalse(result["success"], result)
         self.assertTrue(result["rollback"]["ok"], result)
         self.assertEqual(self.info()["Id"], stable_id, "failed pull must not restart the working container")
         self.assertEqual(self.env_file.read_bytes(), stable_env)
 
-        (self.root / "latest").write_text("1.0.3", encoding="utf-8")  # starts, but fails health check
-        self.assertEqual(self.api("/api/update/apply", {"version": "1.0.3"})[0], 202)
+        (self.root / "latest").write_text(self.broken_version, encoding="utf-8")  # starts, but fails health check
+        self.assertEqual(self.api("/api/update/apply", {"version": self.broken_version})[0], 202)
         result = self.wait(self.finished, "unhealthy upgrade did not roll back")
         self.assertFalse(result["success"], result)
         self.assertIn("health verification failed", result["error"])
         self.assertTrue(result["rollback"]["ok"], result)
-        self.assertTrue(self.info()["Config"]["Image"].endswith(":1.0.1"))
+        self.assertTrue(self.info()["Config"]["Image"].endswith(":" + self.updated_version))
         self.assertEqual(self.info()["State"]["Health"]["Status"], "healthy")
         self.assertEqual(self.env_file.read_bytes(), stable_env)
         self.assertEqual((self.root / "config/include-domains.txt").read_bytes(), self.marker)
         self.login()
         payload = self.api("/api/update/status?force=1")[1]
-        self.assertEqual(payload["current_version"], "1.0.1")
+        self.assertEqual(payload["current_version"], self.updated_version)
         self.assertFalse(payload["runtime"]["success"])
 
 
@@ -229,6 +248,7 @@ class WindowsWebUpdateDockerTests(unittest.TestCase):
                 "-v", f"{volume}:{mountpoint}", "-e", f"TMPDIR={mountpoint}",
                 "-e", "PYTHONPATH=/test-repo:/", "-e", "RUN_DOCKER_WEB_UPDATE=1",
                 "-e", "WEB_UPDATE_TEST_INTERNAL=1",
+                "-e", "WEB_UPDATE_VERSION_CORRECTION=" + os.environ.get("WEB_UPDATE_VERSION_CORRECTION", "0"),
                 "-e", f"WEB_UPDATE_TEST_IMAGE={base}", "-w", "/test-repo", base,
                 "-m", "unittest", "tests.test_web_update_docker.WebUpdateDockerTests", "-v",
             ], text=True, capture_output=True, timeout=600)

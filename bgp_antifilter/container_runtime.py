@@ -11,6 +11,7 @@ import sys
 from .runtime_state import state_path
 from .state_store import read_state, write_state
 from .network_diagnostics import bird_ip_diagnostic
+from .bgp_config import peer_environment, peer_source_key
 
 
 def fail(message):
@@ -19,17 +20,20 @@ def fail(message):
 
 
 def validate_env():
-    for name in ("MY_AS", "MT_AS"):
+    environment = peer_environment(os.environ)
+    for setting in ("MY_AS", "PEER_AS"):
+        name = peer_source_key(os.environ, setting)
         try:
-            number = int(os.environ[name])
+            number = int(environment[setting])
         except ValueError:
             fail(f"{name} must be an integer AS number")
         if not 1 <= number <= 4294967295:
             fail(f"{name} must be between 1 and 4294967295")
 
-    for name in ("MT_IP", "BIRD_IP", "ROUTER_ID"):
+    for setting in ("PEER_IP", "BIRD_IP", "ROUTER_ID"):
+        name = peer_source_key(os.environ, setting)
         try:
-            ipaddress.IPv4Address(os.environ[name])
+            ipaddress.IPv4Address(environment[setting])
         except ValueError:
             fail(f"{name} must be a valid IPv4 address")
 
@@ -63,11 +67,16 @@ def validate_env():
         fail("ADMIN_PORT must be between 1 and 65535")
     if enabled == "1" and not os.environ["ADMIN_PASSWORD"]:
         fail("ADMIN_PASSWORD must be set when ADMIN_ENABLED=1")
+    from .admin.settings import validate_setting
+    try:
+        validate_setting("BGP_PROTOCOL", environment["BGP_PROTOCOL"])
+    except ValueError as exc:
+        fail(str(exc))
 
 
 def render_bird_config(template_file, config_file):
     template = string.Template(Path(template_file).read_text(encoding="utf-8"))
-    Path(config_file).write_text(template.safe_substitute(os.environ), encoding="utf-8")
+    Path(config_file).write_text(template.safe_substitute(peer_environment(os.environ)), encoding="utf-8")
 
 
 def print_snapshot_values(payload):

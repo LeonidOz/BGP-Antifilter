@@ -1,9 +1,9 @@
 // Source list editors, domain-list URLs and their unsaved changes.
 import { api } from "./api.js";
 import { dashboardState } from "./dashboard.js";
-import { $, escapeHtml, renderIcons, setStatusTone } from "./dom.js";
+import { $, escapeHtml, renderIcons, setStatusTone, copyControl, replaceHtmlPreservingState } from "./dom.js";
 import { formatBytes } from "./format.js";
-import { locale, t } from "./i18n.js";
+import { locale, t, sourceStatus } from "./i18n.js";
 import { eventLevel } from "./results.js";
 import { sourceCacheFact } from "./runtime.js";
 import { settingLabel, settingsState } from "./settings.js";
@@ -92,14 +92,10 @@ function setupLists() {
     .map(([name, label]) => `
       <button data-list="${name}">
         <i data-lucide="${listIcons[name]}"></i>
-        <span>${label}</span>
+        <span>${t(name)}</span>
       </button>`)
     .join("");
   renderIcons();
-  tabs.addEventListener("click", event => {
-    const name = event.target.closest("[data-list]")?.dataset.list;
-    if (name) loadList(name);
-  });
 }
 
 async function loadList(name) {
@@ -110,7 +106,10 @@ async function loadList(name) {
   listState.listEditIndex = null;
   listState.domainListEditIndex = null;
   document.querySelectorAll("[data-list]").forEach(button => button.classList.toggle("active", button.dataset.list === name));
-  $("list-title").textContent = listLabels[name];
+  $("list-title").textContent = t(name);
+  $("list-search").value = "";
+  $("list-status-filter").value = "all";
+  $("country-selected").checked = false;
   const special = isSpecialList(name);
   const showHintPanel = special || name === "asns" || name === "include-domains";
   $("add-list-form").classList.toggle("hidden", special);
@@ -133,7 +132,8 @@ async function loadList(name) {
   listState.listSavedPath = data.path || "";
   $("list-editor").value = listState.listSavedContent;
   $("add-list-input").value = "";
-  $("add-list-input").placeholder = `${t("itemPlaceholder")}: ${listLabels[name]}`;
+  $("add-list-input").placeholder = `${t("itemPlaceholder")}: ${t(name)}`;
+  $("add-list-input").setAttribute("aria-label", t(name));
   $("add-list-name-input").value = "";
   $("add-list-name-input").placeholder = `${t("domainListName")} (${t("optional")})`;
   $("add-list-name-input").classList.toggle("hidden", name !== "urls");
@@ -231,7 +231,7 @@ function renderListHint(name) {
   }
   $("list-source-settings").innerHTML = `
     <article class="panel settings-section">
-      <h2>${escapeHtml(listLabels[name] || name)}</h2>
+      <h2>${escapeHtml(t(name))}</h2>
       <p class="muted">${escapeHtml(t(key))}</p>
     </article>
   `;
@@ -329,11 +329,14 @@ function renderCountriesTab() {
     const record = listSourceRecord("countries", option.code);
     const level = record ? eventLevel(record) : (selected.has(option.code) ? "warn" : "");
     return `
-      <label class="country-card ${level}">
+      <label class="country-card ${level}" data-entry="${escapeHtml(`${countryLabel(option)} ${option.code}`)}" data-problem="${Boolean(record && record.status !== "fresh" && record.status !== "disabled")}" data-selected="${selected.has(option.code)}">
         <span class="country-card-head">
-          <span class="country-card-copy">
-            <strong>${escapeHtml(countryLabel(option))}</strong>
-            <small>${escapeHtml(option.code)}</small>
+          <span class="country-card-identity">
+            <img class="country-flag" src="/assets/flags/${option.code.toLowerCase()}.svg" width="28" height="21" alt="" aria-hidden="true" loading="lazy" decoding="async">
+            <span class="country-card-copy">
+              <strong>${escapeHtml(countryLabel(option))}</strong>
+              <small>${escapeHtml(option.code)}</small>
+            </span>
           </span>
           <span class="toggle">
             <input type="checkbox" data-country-code="${option.code}" ${selected.has(option.code) ? "checked" : ""}>
@@ -348,7 +351,7 @@ function renderCountriesTab() {
 
   $("list-source-settings").innerHTML = `
     <article class="panel settings-section">
-      <h2>${escapeHtml(listLabels.countries)}</h2>
+      <h2>${escapeHtml(t("countries"))}</h2>
       <p class="muted">${escapeHtml(t("listHintCountries"))}</p>
       <div class="country-grid">
         ${cards}
@@ -410,13 +413,14 @@ function domainListSourceCardsHtml(content = currentDomainListUrlContent()) {
     const record = listSourceRecord("domain-list-urls", line.value);
     const level = record ? eventLevel(record) : "warn";
     return `
-      <article class="list-card ${level}">
+      <article class="list-card ${level}" data-entry="${escapeHtml(`${entry.name} ${entry.url}`)}" data-problem="${!record || !["fresh", "disabled"].includes(record.status)}">
         <div class="list-card-head domain-list-card-head">
           <div class="named-url-card-copy">
             <strong>${escapeHtml(entry.name)}</strong>
-            <small title="${escapeHtml(entry.url)}">${escapeHtml(entry.url)}</small>
+            ${urlDetails(entry.url)}
           </div>
           <div class="list-card-actions">
+            ${copyControl(entry.url)}
             <button type="button" class="icon-button list-edit-btn" data-domain-list-edit-index="${line.index}" title="${t("editItem")}" aria-label="${t("editItem")}">
               <i data-lucide="square-pen"></i>
             </button>
@@ -433,7 +437,7 @@ function domainListSourceCardsHtml(content = currentDomainListUrlContent()) {
 function refreshDomainListSourceCards() {
   const container = document.querySelector(".domain-list-url-cards");
   if (!container) return;
-  container.innerHTML = domainListSourceCardsHtml();
+  replaceHtmlPreservingState(container, domainListSourceCardsHtml());
   renderIcons();
 }
 
@@ -580,13 +584,34 @@ function renderListSourceStats(record) {
   ].filter(Boolean);
   return `
     <div class="list-card-stats">
-      <span class="chip ${escapeHtml(record.status || "")}">${escapeHtml(record.status || "unknown")}</span>
+      <span class="chip ${escapeHtml(record.status || "")}">${escapeHtml(sourceStatus(record.status))}</span>
       ${stats.map(item => `<span>${escapeHtml(item)}</span>`).join("")}
       ${record.error ? `<div class="error-inline">${escapeHtml(record.error)}</div>` : ""}
     </div>`;
 }
 
+function urlDetails(url) {
+  return `<details class="url-details"><summary><span class="url-preview">${escapeHtml(url)}</span><span>${t("fullUrl")}</span></summary><small>${escapeHtml(url)}</small></details>`;
+}
+
+function applyListFilters() {
+  const query = $("list-search").value.trim().toLocaleLowerCase();
+  const problem = $("list-status-filter").value === "problem";
+  const selectedOnly = listState.currentList === "countries" && $("country-selected").checked;
+  const entries = [...$("lists").querySelectorAll("[data-entry]")];
+  let shown = 0;
+  entries.forEach(card => {
+    const visible = card.dataset.entry.toLocaleLowerCase().includes(query) && (!problem || card.dataset.problem === "true") && (!selectedOnly || card.dataset.selected === "true");
+    card.classList.toggle("hidden", !visible);
+    if (visible) shown++;
+  });
+  $("list-count").textContent = `${t("shown")}: ${shown} / ${entries.length}${shown ? "" : ` · ${t("noMatches")}`}`;
+}
+
 function renderListTiles() {
+  $("list-filters").classList.toggle("hidden", listState.currentList === "google-ranges");
+  $("country-selected-filter").classList.toggle("hidden", listState.currentList !== "countries");
+  $("list-title").textContent = t(listState.currentList);
   if (listState.currentList === "include-domains") {
     refreshDomainListSourceCards();
   }
@@ -601,6 +626,7 @@ function renderListTiles() {
     $("list-tiles").classList.remove("url-source-tiles");
     $("list-tiles").innerHTML = "";
     renderCountriesTab();
+    applyListFilters();
     renderIcons();
     return;
   }
@@ -608,20 +634,21 @@ function renderListTiles() {
   const lines = parseListLines($("list-editor").value);
   const active = lines.filter(line => line.active);
   const comments = lines.filter(line => line.comment);
-  $("list-tiles").innerHTML = active.length ? active.map(line => {
+  const html = active.length ? active.map(line => {
     const record = listSourceRecord(listState.currentList, line.value);
     const level = record ? eventLevel(record) : "warn";
     const namedUrl = listState.currentList === "urls" ? parseNamedUrlSourceLine(line.value) : null;
     const title = namedUrl ? namedUrl.name : line.value;
     const subtitle = namedUrl ? namedUrl.url : "";
     return `
-      <article class="list-card ${level}">
+      <article class="list-card ${level}" data-entry="${escapeHtml(`${title} ${subtitle}`)}" data-problem="${!record || !["fresh", "disabled"].includes(record.status)}">
         <div class="list-card-head">
           <div class="${namedUrl ? "named-url-card-copy" : ""}">
             <strong>${escapeHtml(title)}</strong>
-            ${subtitle ? `<small title="${escapeHtml(subtitle)}">${escapeHtml(subtitle)}</small>` : ""}
+            ${subtitle ? urlDetails(subtitle) : ""}
           </div>
           <div class="list-card-actions">
+            ${namedUrl ? copyControl(subtitle) : ""}
             ${namedUrl ? `
               <button type="button" class="icon-button list-edit-btn" data-edit-index="${line.index}" title="${t("editItem")}" aria-label="${t("editItem")}">
                 <i data-lucide="square-pen"></i>
@@ -634,9 +661,11 @@ function renderListTiles() {
         ${renderListSourceStats(record)}
       </article>`;
   }).join("") : `<div class="muted-box">${t("emptyList")}</div>`;
+  replaceHtmlPreservingState($("list-tiles"), html);
   if (comments.length) {
     $("list-tiles").insertAdjacentHTML("beforeend", `<div class="list-comments muted">${t("comments")}: ${comments.length}</div>`);
   }
+  applyListFilters();
   renderIcons();
 }
 
@@ -706,6 +735,13 @@ async function toggleCountry(code, enabled) {
 }
 
 function bindListsEvents() {
+  $("list-tabs").addEventListener("click", event => {
+    const name = event.target.closest("[data-list]")?.dataset.list;
+    if (name) loadList(name);
+  });
+  $("list-search").addEventListener("input", applyListFilters);
+  $("list-status-filter").addEventListener("change", applyListFilters);
+  $("country-selected").addEventListener("change", applyListFilters);
   $("save-list-btn").addEventListener("click", saveList);
   $("add-list-form").addEventListener("submit", event => {
     event.preventDefault();

@@ -142,11 +142,30 @@ class AdminHttpTests(unittest.TestCase):
         self.assertIsNone(other.updates.cache["payload"])
         self.assertIsNot(other.actions.reload_lock, self.app.actions.reload_lock)
 
+    def test_partial_settings_updates_preserve_other_overrides_and_hidden_values(self):
+        cookie = self.login()
+        with mock.patch.dict(os.environ, {"PEER_IP": "192.168.55.1", "INCLUDE_GOOGLE_RANGES": "1"}):
+            values = {"PEER_IP": "192.0.2.10", "FETCH_TIMEOUT": "45", "INCLUDE_GOOGLE_RANGES": "0"}
+            self.assertEqual(self.request("PUT", "/api/settings", {"values": values}, cookie)[0], 200)
+            for changes in ({"INCLUDE_GOOGLE_RANGES": "1"}, {"FETCH_TIMEOUT": "60"}, {"MT_IP": "192.0.2.20"}):
+                code, _, payload = self.request("PUT", "/api/settings", {"values": changes}, cookie)
+                self.assertEqual(code, 200)
+                values.update({"PEER_IP" if key == "MT_IP" else key: value for key, value in changes.items()})
+                for key, value in values.items():
+                    self.assertEqual(payload["values"][key], value)
+            before = self.app.config.settings_file.read_bytes()
+            self.assertEqual(self.request("PUT", "/api/settings", {"values": {"FETCH_TIMEOUT": "bad"}}, cookie)[0], 400)
+            self.assertEqual(self.app.config.settings_file.read_bytes(), before)
+            self.assertNotIn("INCLUDE_GOOGLE_RANGES", self.app.settings.settings_overrides())
+            # Backup restore still replaces the complete override set.
+            self.app.settings.save_settings({"FETCH_TIMEOUT": "40"})
+            self.assertEqual(self.app.settings.settings_overrides(), {"FETCH_TIMEOUT": "40"})
+
     def test_status_and_route_export_use_existing_payloads_and_confirmed_snapshot(self):
         cookie = self.login()
         code, _headers, payload = self.request("GET", "/api/status", cookie=cookie)
         self.assertEqual(code, 200)
-        self.assertEqual(set(payload), {"version", "status", "runtime", "metrics", "routes_file_count", "bird", "bgp", "reload_result"})
+        self.assertEqual(set(payload), {"version", "status", "runtime", "metrics", "routes_file_count", "bird", "bgp", "bgp_protocol", "reload_result"})
         code, headers, body = self.request("GET", "/api/routes/address-list.rsc?list=vpn", cookie=cookie)
         self.assertEqual(code, 200)
         self.assertIn("198.51.100.0/24", body.decode("utf-8"))
