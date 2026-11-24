@@ -18,7 +18,7 @@ Add these under **Environment variables**:
 
 | Variable | Example | Purpose |
 | --- | --- | --- |
-| `BGP_ANTIFILTER_IMAGE` | `ghcr.io/leonidoz/bgp-antifilter:1.0.1` | Application image |
+| `BGP_ANTIFILTER_IMAGE` | `ghcr.io/leonidoz/bgp-antifilter:1.0.3` | Application image |
 | `ADMIN_PASSWORD` | Your password | Web panel login |
 | `PEER_IP` | `192.168.55.1` | BGP peer address |
 | `BIRD_IP` | `192.168.55.5` | Existing Linux server address |

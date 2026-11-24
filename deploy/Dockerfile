@@ -36,9 +36,9 @@ RUN apt-get update \
 COPY --from=curl-builder /usr/local/bin/curl /usr/local/bin/curl
 COPY --from=curl-builder /usr/local/lib/libcurl.so.4.* /usr/local/lib/
 RUN ldconfig
-COPY deploy/requirements-runtime.txt /tmp/requirements-runtime.txt
+COPY deploy/requirements-runtime.txt deploy/requirements-dns.txt /tmp/
 RUN python -m pip install --no-cache-dir --require-hashes -r /tmp/requirements-runtime.txt \
- && rm /tmp/requirements-runtime.txt
+ && rm /tmp/requirements-runtime.txt /tmp/requirements-dns.txt
 
 RUN mkdir -p /var/log/supervisor /run/bgp-antifilter
 

@@ -25,7 +25,7 @@ def github_latest_release(timeout=5):
     request = urllib.request.Request(
         LATEST_RELEASE_API_URL,
         headers={
-            "User-Agent": "BGP-Antifilter-Admin/1.0",
+            "User-Agent": f"BGP-Antifilter-Admin/{__version__}",
             "Accept": "application/vnd.github+json",
         },
     )

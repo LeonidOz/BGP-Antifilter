@@ -13,10 +13,13 @@ const settingLabels = {
   UPDATE_INTERVAL: {ru: "Интервал автообновления", en: "Auto refresh interval"},
   CACHE_MAX_AGE: {ru: "Время жизни кеша", en: "Cache lifetime"},
   FETCH_TIMEOUT: {ru: "Таймаут загрузки", en: "Fetch timeout"},
+  FETCH_WORKERS: {ru: "Параллельных загрузок", en: "Parallel downloads"},
   FETCH_ATTEMPTS: {ru: "Попыток загрузки", en: "Fetch attempts"},
   FETCH_RETRY_DELAY: {ru: "Пауза между попытками", en: "Retry delay"},
   DNS_RESOLVERS: {ru: "Пользовательские DNS", en: "Custom DNS resolvers"},
   DNS_RESOLVE_TIMEOUT: {ru: "Таймаут DNS-запроса", en: "DNS query timeout"},
+  DNS_WORKERS: {ru: "DNS-воркеры", en: "DNS workers"},
+  DNS_QPS: {ru: "Лимит DNS-запросов", en: "DNS query limit"},
   INCLUDE_GOOGLE_RANGES: {ru: "Добавлять диапазоны Google", en: "Include Google ranges"},
   REQUIRE_ALL_URL_SOURCES: {ru: "Требовать все URL-источники", en: "Require every URL source"},
   MIN_PREFIX_LENGTH: {ru: "Минимальная длина префикса", en: "Minimum prefix length"},
@@ -35,8 +38,20 @@ const settingLabels = {
 
 const settingsSectionLabels = {
   update: "updateSettings",
+  sources: "sourceSettings",
+  dns: "dnsSettings",
   security: "securitySettings",
   bird: "birdSettings",
+};
+
+const settingHints = {
+  REQUIRE_ALL_URL_SOURCES: "requireAllSourcesHint",
+  FETCH_WORKERS: "fetchWorkersHint",
+  DNS_RESOLVERS: "dnsHint",
+  DNS_WORKERS: "dnsWorkersHint",
+  DNS_QPS: "dnsQpsHint",
+  ALLOW_BROAD_ROUTES: "broadRoutesHint",
+  HEALTHCHECK_REQUIRE_BGP: "healthcheckHint",
 };
 
 function settingsPendingLabel(count) {
@@ -123,6 +138,7 @@ function renderSettingInput(item) {
 
 function settingUnit(item) {
   if (!item.unit) return "";
+  if (item.unit === "qps") return t("queriesPerSecondUnit");
   if (["sec", "s"].includes(item.unit)) {
     const factor = item.key === "UPDATE_INTERVAL" ? 60 : item.key === "CACHE_MAX_AGE" ? 86400 : 1;
     return t(Number(item.value) % factor === 0 && factor > 1 ? (factor === 60 ? "minutesUnit" : "daysUnit") : "secondsUnit");
@@ -153,7 +169,7 @@ function renderSettingCard(item, sectionItems) {
         ${renderSettingInput(item)}
         ${item.unit ? `<span class="unit">${escapeHtml(settingUnit(item))}</span>` : ""}
       </span>
-      ${{REQUIRE_ALL_URL_SOURCES: "requireAllSourcesHint", DNS_RESOLVERS: "dnsHint", ALLOW_BROAD_ROUTES: "broadRoutesHint", HEALTHCHECK_REQUIRE_BGP: "healthcheckHint"}[item.key] ? `<small class="muted setting-hint">${t({REQUIRE_ALL_URL_SOURCES: "requireAllSourcesHint", DNS_RESOLVERS: "dnsHint", ALLOW_BROAD_ROUTES: "broadRoutesHint", HEALTHCHECK_REQUIRE_BGP: "healthcheckHint"}[item.key])}</small>` : ""}
+      ${settingHints[item.key] ? `<small class="muted setting-hint">${t(settingHints[item.key])}</small>` : ""}
       ${embeddedDnsTimeout ? `
         <span class="setting-head">
           <strong>${escapeHtml(settingLabel(embeddedDnsTimeout.key))}</strong>

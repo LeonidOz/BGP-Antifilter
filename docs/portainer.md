@@ -18,7 +18,7 @@
 
 | Переменная | Пример | Назначение |
 | --- | --- | --- |
-| `BGP_ANTIFILTER_IMAGE` | `ghcr.io/leonidoz/bgp-antifilter:1.0.1` | Готовый образ приложения |
+| `BGP_ANTIFILTER_IMAGE` | `ghcr.io/leonidoz/bgp-antifilter:1.0.3` | Готовый образ приложения |
 | `ADMIN_PASSWORD` | Ваш пароль | Вход в веб-панель |
 | `PEER_IP` | `192.168.55.1` | Адрес BGP peer |
 | `BIRD_IP` | `192.168.55.5` | Существующий адрес Linux-сервера |

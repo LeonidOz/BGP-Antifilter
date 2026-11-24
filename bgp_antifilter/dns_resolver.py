@@ -1,11 +1,73 @@
+"""IPv4 resolution with dnspython and a shared limit on DNS queries."""
+
+from contextlib import contextmanager
 import ipaddress
-import random
-import socket
-import struct
+import math
+import threading
+import time
+
+import dns.exception
+import dns.nameserver
+import dns.resolver
 
 
 DEFAULT_TIMEOUT = 3.0
-MAX_DNS_PACKET_SIZE = 4096
+DEFAULT_QPS = 50
+
+
+class QueryRateLimiter:
+    """Space query starts across workers without accumulating idle bursts."""
+
+    def __init__(self, qps=DEFAULT_QPS):
+        qps = float(qps)
+        if not math.isfinite(qps) or not 1 <= qps <= 1000:
+            raise ValueError("DNS_QPS must be between 1 and 1000")
+        self.interval = 1.0 / qps
+        self._next_query = 0.0
+        self._lock = threading.Lock()
+
+    def acquire(self):
+        started = time.monotonic()
+        # Wait under the lock so delayed workers cannot reserve slots and then
+        # send them together after a scheduler pause.
+        with self._lock:
+            delay = self._next_query - time.monotonic()
+            if delay > 0:
+                time.sleep(delay)
+            self._next_query = time.monotonic() + self.interval
+        return time.monotonic() - started
+
+
+_default_limiter = QueryRateLimiter()
+_worker_state = threading.local()
+
+
+@contextmanager
+def use_rate_limiter(limiter):
+    """Use one update's limiter for every DNS lookup in the current worker."""
+    previous = getattr(_worker_state, "limiter", None)
+    _worker_state.limiter = limiter
+    try:
+        yield
+    finally:
+        _worker_state.limiter = previous
+
+
+class _RateLimitedNameserver(dns.nameserver.Do53Nameserver):
+    def __init__(self, address, port, limiter, resolver):
+        super().__init__(address, port)
+        self._limiter = limiter
+        self._resolver = resolver
+
+    def query(self, *args, **kwargs):
+        # dnspython calls query() separately for UDP, retries, failover and the
+        # TCP retry of a truncated UDP answer, so each consumes one slot.
+        waited = self._limiter.acquire()
+        # The private resolver belongs to this lookup. Queueing for a QPS slot
+        # must not consume its network timeout, particularly at low QPS with
+        # many workers. Resolve reads this public lifetime value on each retry.
+        self._resolver.lifetime += waited
+        return super().query(*args, **kwargs)
 
 
 def parse_nameservers(value):
@@ -20,114 +82,45 @@ def parse_nameservers(value):
     return result
 
 
-def resolve_ipv4_addresses(domain, *, nameservers=None, timeout=DEFAULT_TIMEOUT):
-    nameservers = list(nameservers or [])
-    if not nameservers:
-        return sorted({
-            item[4][0]
-            for item in socket.getaddrinfo(domain, None, socket.AF_INET, socket.SOCK_STREAM)
-        })
+def resolve_ipv4_addresses(domain, *, nameservers=None, timeout=DEFAULT_TIMEOUT, rate_limiter=None):
+    """Resolve A records, preserving the updater's RuntimeError failure API."""
+    try:
+        return [str(ipaddress.IPv4Address(str(domain).strip()))]
+    except ipaddress.AddressValueError:
+        pass
 
-    last_error = None
-    for nameserver in nameservers:
-        try:
-            addresses = query_a_records(domain, nameserver, timeout=timeout)
-        except (OSError, ValueError) as exc:
-            last_error = exc
-            continue
-        if addresses:
-            return addresses
-        last_error = RuntimeError(f"{domain} has no IPv4 answers from {nameserver}")
-    if last_error is None:
-        raise RuntimeError("no DNS resolvers configured")
-    raise last_error
-
-
-def query_a_records(domain, nameserver, *, timeout=DEFAULT_TIMEOUT):
-    qname = encode_qname(domain)
-    query_id = random.randrange(0, 65536)
-    header = struct.pack("!HHHHHH", query_id, 0x0100, 1, 0, 0, 0)
-    question = qname + struct.pack("!HH", 1, 1)
-    packet = header + question
-
-    with socket.socket(socket.AF_INET, socket.SOCK_DGRAM) as sock:
-        sock.settimeout(timeout)
-        sock.sendto(packet, (nameserver, 53))
-        response, _ = sock.recvfrom(MAX_DNS_PACKET_SIZE)
-
-    return parse_a_response(response, query_id)
-
-
-def encode_qname(domain):
-    labels = str(domain or "").strip().rstrip(".")
-    if not labels:
-        raise ValueError("domain is required")
-    parts = labels.encode("idna").split(b".")
-    encoded = bytearray()
-    for part in parts:
-        if not part:
-            raise ValueError("domain contains an empty label")
-        if len(part) > 63:
-            raise ValueError("domain label is too long")
-        encoded.append(len(part))
-        encoded.extend(part)
-    encoded.append(0)
-    return bytes(encoded)
+    timeout = float(timeout)
+    if not math.isfinite(timeout) or timeout <= 0:
+        raise ValueError("DNS timeout must be a positive finite number")
+    limiter = rate_limiter or getattr(_worker_state, "limiter", None) or _default_limiter
+    try:
+        resolver = dns.resolver.Resolver(configure=False)
+        if nameservers:
+            addresses = [(str(ipaddress.ip_address(server)), 53) for server in nameservers]
+        else:
+            system = dns.resolver.get_default_resolver()
+            addresses = [
+                (server.address, server.port)
+                if isinstance(server, dns.nameserver.Do53Nameserver)
+                else (str(ipaddress.ip_address(server)), system.nameserver_ports.get(server, system.port))
+                for server in system.nameservers
+            ]
+        resolver.timeout = timeout
+        # Allow each configured server a network timeout. Queue waiting is
+        # added by _RateLimitedNameserver, independently of this budget.
+        resolver.lifetime = timeout * max(1, len(addresses))
+        resolver.nameservers = [
+            _RateLimitedNameserver(address, port, limiter, resolver)
+            for address, port in addresses
+        ]
+        answer = resolver.resolve(domain, "A", search=False)
+        return sorted({str(record.address) for record in answer})
+    except (dns.exception.DNSException, OSError, ValueError) as exc:
+        raise RuntimeError(str(exc)) from exc
 
 
-def parse_a_response(message, expected_id):
-    if len(message) < 12:
-        raise RuntimeError("short DNS response")
-    response_id, flags, questions, answers, authority, additional = struct.unpack("!HHHHHH", message[:12])
-    if response_id != expected_id:
-        raise RuntimeError("mismatched DNS response id")
-    if not flags & 0x8000:
-        raise RuntimeError("invalid DNS response")
-
-    rcode = flags & 0x000F
-    if rcode == 3:
-        raise socket.gaierror(socket.EAI_NONAME, "Name or service not known")
-    if rcode != 0:
-        raise RuntimeError(f"DNS server returned error code {rcode}")
-
-    offset = 12
-    for _ in range(questions):
-        offset = skip_name(message, offset)
-        if offset + 4 > len(message):
-            raise RuntimeError("truncated DNS question")
-        offset += 4
-
-    addresses = set()
-    total_records = answers + authority + additional
-    for _ in range(total_records):
-        offset = skip_name(message, offset)
-        if offset + 10 > len(message):
-            raise RuntimeError("truncated DNS record header")
-        rr_type, rr_class, _, rdlength = struct.unpack("!HHIH", message[offset:offset + 10])
-        offset += 10
-        end = offset + rdlength
-        if end > len(message):
-            raise RuntimeError("truncated DNS record data")
-        if rr_type == 1 and rr_class == 1 and rdlength == 4:
-            addresses.add(socket.inet_ntoa(message[offset:end]))
-        offset = end
-
-    return sorted(addresses)
-
-
-def skip_name(message, offset):
-    steps = 0
-    while True:
-        if offset >= len(message):
-            raise RuntimeError("truncated DNS name")
-        length = message[offset]
-        if length == 0:
-            return offset + 1
-        if length & 0xC0 == 0xC0:
-            if offset + 1 >= len(message):
-                raise RuntimeError("truncated DNS pointer")
-            return offset + 2
-        offset += 1 + length
-        steps += 1
-        if steps > 128:
-            raise RuntimeError("DNS name is too deep")
+def query_a_records(domain, nameserver, *, timeout=DEFAULT_TIMEOUT, rate_limiter=None):
+    """Resolve through one explicit nameserver using the same transport."""
+    return resolve_ipv4_addresses(
+        domain, nameservers=[nameserver], timeout=timeout, rate_limiter=rate_limiter,
+    )

@@ -5,7 +5,7 @@ import json
 
 from ..logging import progress
 from ..route_builder import subtract_networks
-from .fetch import cache_path, fetch_text_source
+from .fetch import cache_path
 
 
 def read_ipv4_prefixes_from_google_json(text):
@@ -26,14 +26,14 @@ def collect_url_sources(ctx, url_sources):
         source_name = source["name"] or url
         current_index = ctx.processed_items + 1
         ctx.update_progress(
-            f"Fetching URL {current_index}/{ctx.total_items}",
+            f"Processing URL {current_index}/{ctx.total_items}",
             current_kind="url",
             current_name=source_name,
             current_index=current_index,
             current_step=0.15,
         )
         progress("fetching url", index=index, total=len(url_sources), name=source_name, url=url)
-        text, record, ok = fetch_text_source(
+        text, record, ok = ctx.fetch_source(
             "url",
             source_name,
             url,
@@ -42,7 +42,7 @@ def collect_url_sources(ctx, url_sources):
             ctx.cache_max_age,
             dns_nameservers=ctx.dns_nameservers,
             progress_callback=lambda attempt, attempts, current_index=current_index, url=url: ctx.update_progress(
-                f"Fetching URL {current_index}/{ctx.total_items}",
+                f"Processing URL {current_index}/{ctx.total_items}",
                 current_kind="url",
                 current_name=source_name,
                 current_index=current_index,
@@ -77,7 +77,7 @@ def collect_asn_sources(ctx, asn_sources):
     for index, asn in enumerate(asn_sources, 1):
         current_index = ctx.processed_items + 1
         ctx.update_progress(
-            f"Fetching ASN {current_index}/{ctx.total_items}",
+            f"Processing ASN {current_index}/{ctx.total_items}",
             current_kind="asn",
             current_name=asn,
             current_index=current_index,
@@ -100,7 +100,7 @@ def collect_asn_sources(ctx, asn_sources):
             continue
 
         url = f"https://api.routeviews.org/asn/{asn_number}"
-        text, record, ok = fetch_text_source(
+        text, record, ok = ctx.fetch_source(
             "asn",
             f"AS{asn_number}",
             url,
@@ -109,7 +109,7 @@ def collect_asn_sources(ctx, asn_sources):
             ctx.cache_max_age,
             dns_nameservers=ctx.dns_nameservers,
             progress_callback=lambda attempt, attempts, current_index=current_index, asn=asn: ctx.update_progress(
-                f"Fetching ASN {current_index}/{ctx.total_items}",
+                f"Processing ASN {current_index}/{ctx.total_items}",
                 current_kind="asn",
                 current_name=asn,
                 current_index=current_index,
@@ -137,19 +137,19 @@ def collect_google_ranges(ctx, include_google):
     if include_google:
         current_index = ctx.processed_items + 1
         ctx.update_progress(
-            f"Fetching Google ranges {current_index}-{current_index + 1}/{ctx.total_items}",
+            f"Processing Google ranges {current_index}-{current_index + 1}/{ctx.total_items}",
             current_kind="google",
             current_name="goog.json / cloud.json",
             current_index=current_index,
             current_step=0.15,
         )
         progress("fetching Google ranges")
-        google_text, google_record, google_ok = fetch_text_source(
+        google_text, google_record, google_ok = ctx.fetch_source(
             "google", "goog.json", "https://www.gstatic.com/ipranges/goog.json",
             cache_path(ctx.cache_dir, "google", "goog.json", ".json"), ctx.now, ctx.cache_max_age,
             dns_nameservers=ctx.dns_nameservers,
             progress_callback=lambda attempt, attempts, current_index=current_index: ctx.update_progress(
-                f"Fetching Google ranges {current_index}-{current_index + 1}/{ctx.total_items}",
+                f"Processing Google ranges {current_index}-{current_index + 1}/{ctx.total_items}",
                 current_kind="google",
                 current_name="goog.json",
                 current_index=current_index,
@@ -158,12 +158,12 @@ def collect_google_ranges(ctx, include_google):
                 current_step=min(0.45, attempt / max(1, attempts) * 0.45),
             ),
         )
-        cloud_text, cloud_record, cloud_ok = fetch_text_source(
+        cloud_text, cloud_record, cloud_ok = ctx.fetch_source(
             "google", "cloud.json", "https://www.gstatic.com/ipranges/cloud.json",
             cache_path(ctx.cache_dir, "google", "cloud.json", ".json"), ctx.now, ctx.cache_max_age,
             dns_nameservers=ctx.dns_nameservers,
             progress_callback=lambda attempt, attempts, current_index=current_index: ctx.update_progress(
-                f"Fetching Google ranges {current_index}-{current_index + 1}/{ctx.total_items}",
+                f"Processing Google ranges {current_index}-{current_index + 1}/{ctx.total_items}",
                 current_kind="google",
                 current_name="cloud.json",
                 current_index=current_index + 1,

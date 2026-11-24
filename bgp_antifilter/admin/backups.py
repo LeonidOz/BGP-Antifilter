@@ -43,6 +43,10 @@ class BackupService:
         if not isinstance(settings, dict) or set(settings) - (set(SETTINGS_BY_KEY) | set(ALIASES)):
             raise ValueError("backup must contain all supported settings and no unknown settings")
         normalized = canonical_settings({key: validate_setting(key, value) for key, value in settings.items()}, reject_conflicts=True)
+        # Backups from releases before parallel collection lack these options.
+        for key, spec in SETTINGS_BY_KEY.items():
+            if spec.get("legacy_backup_default"):
+                normalized.setdefault(key, spec["default"])
         if set(normalized) != set(SETTINGS_BY_KEY):
             raise ValueError("backup must contain all supported settings and no unknown settings")
         return {"schema": 1, "lists": lists, "settings": normalized}

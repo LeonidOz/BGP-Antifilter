@@ -161,6 +161,37 @@ class AdminHttpTests(unittest.TestCase):
             self.app.settings.save_settings({"FETCH_TIMEOUT": "40"})
             self.assertEqual(self.app.settings.settings_overrides(), {"FETCH_TIMEOUT": "40"})
 
+    def test_collection_settings_bounds_groups_and_runtime_values(self):
+        cookie = self.login()
+        code, _, payload = self.request("GET", "/api/settings", cookie=cookie)
+        self.assertEqual(code, 200)
+        sections = {section["id"]: {item["key"] for item in section["items"]}
+                    for section in payload["sections"]}
+        self.assertEqual(sections["update"], {"UPDATE_INTERVAL", "CACHE_MAX_AGE"})
+        self.assertEqual(sections["dns"], {"DNS_RESOLVERS", "DNS_RESOLVE_TIMEOUT", "DNS_WORKERS", "DNS_QPS"})
+        self.assertIn("FETCH_WORKERS", sections["sources"])
+        self.assertNotIn("DNS_WORKERS", sections["sources"])
+        self.assertEqual({key: payload["values"][key] for key in ("DNS_WORKERS", "DNS_QPS", "FETCH_WORKERS")},
+                         {"DNS_WORKERS": "16", "DNS_QPS": "50", "FETCH_WORKERS": "8"})
+
+        for key, invalid_values in {"DNS_WORKERS": ("15", "129", "16.5"),
+                                    "DNS_QPS": ("0", "1001", "nan"),
+                                    "FETCH_WORKERS": ("0", "33", "1.5")}.items():
+            for value in invalid_values:
+                with self.subTest(key=key, value=value):
+                    self.assertEqual(self.request("PUT", "/api/settings", {"values": {key: value}}, cookie)[0], 400)
+
+        values = {"DNS_WORKERS": "128", "DNS_QPS": "1000", "FETCH_WORKERS": "32"}
+        code, _, payload = self.request("PUT", "/api/settings", {"values": values}, cookie)
+        self.assertEqual(code, 200)
+        for key, value in values.items():
+            self.assertEqual(payload["values"][key], value)
+            self.assertEqual(self.app.settings.command_environment()[key], value)
+            self.assertIn(f"{key}={value}", self.app.config.settings_env_file.read_text(encoding="utf-8"))
+        restarted = admin_application(self.root)
+        for key, value in values.items():
+            self.assertEqual(restarted.settings.effective_settings()[key], value)
+
     def test_status_and_route_export_use_existing_payloads_and_confirmed_snapshot(self):
         cookie = self.login()
         code, _headers, payload = self.request("GET", "/api/status", cookie=cookie)

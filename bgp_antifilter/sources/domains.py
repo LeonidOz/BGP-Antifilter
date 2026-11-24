@@ -6,7 +6,7 @@ import socket
 
 from .. import dns_resolver
 from ..logging import progress
-from .fetch import cache_path, fetch_text_source, read_cache
+from .fetch import cache_path, read_cache
 
 DOMAIN_LABEL_RE = re.compile(r"^[A-Za-z0-9](?:[A-Za-z0-9-]{0,61}[A-Za-z0-9])?$")
 
@@ -55,7 +55,8 @@ def parse_ipv4_literal(value):
         return None
 
 
-def resolve_domain(kind, domain, cache_file, now, max_age, dns_nameservers=None, dns_timeout=dns_resolver.DEFAULT_TIMEOUT):
+def resolve_domain(kind, domain, cache_file, now, max_age, dns_nameservers=None,
+                   dns_timeout=dns_resolver.DEFAULT_TIMEOUT, dns_results=None):
     record = {
         "kind": kind,
         "name": domain,
@@ -70,6 +71,13 @@ def resolve_domain(kind, domain, cache_file, now, max_age, dns_nameservers=None,
         literal_ipv4 = parse_ipv4_literal(domain)
         if literal_ipv4 is not None:
             addresses = [literal_ipv4]
+        elif dns_results is not None:
+            normalized = normalize_domain_name(domain)
+            if normalized is None:
+                raise RuntimeError("invalid domain name")
+            addresses, error = dns_results[normalized]
+            if error is not None:
+                raise RuntimeError(error)
         else:
             addresses = dns_resolver.resolve_ipv4_addresses(
                 domain,
@@ -112,14 +120,14 @@ def collect_domain_list_sources(ctx, domain_list_sources):
         source_name = source["name"] or url
         current_index = ctx.processed_items + 1
         ctx.update_progress(
-            f"Fetching domain list URL {current_index}/{ctx.total_items}",
+            f"Processing domain list URL {current_index}/{ctx.total_items}",
             current_kind="domain-list-url",
             current_name=source_name,
             current_index=current_index,
             current_step=0.15,
         )
         progress("fetching domain list url", index=index, total=len(domain_list_sources), name=source_name, url=url)
-        text, record, ok = fetch_text_source(
+        text, record, ok = ctx.fetch_source(
             "domain-list-url",
             source_name,
             url,
@@ -128,7 +136,7 @@ def collect_domain_list_sources(ctx, domain_list_sources):
             ctx.cache_max_age,
             dns_nameservers=ctx.dns_nameservers,
             progress_callback=lambda attempt, attempts, current_index=current_index, url=url: ctx.update_progress(
-                f"Fetching domain list URL {current_index}/{ctx.total_items}",
+                f"Processing domain list URL {current_index}/{ctx.total_items}",
                 current_kind="domain-list-url",
                 current_name=source_name,
                 current_index=current_index,
@@ -162,6 +170,7 @@ def collect_domain_list_sources(ctx, domain_list_sources):
                     ctx.cache_max_age,
                     dns_nameservers=ctx.dns_nameservers,
                     dns_timeout=ctx.dns_timeout,
+                    dns_results=ctx.dns_results,
                 )
                 if domain_ok:
                     if _domain_record["status"] == "cache":
@@ -175,7 +184,7 @@ def collect_domain_list_sources(ctx, domain_list_sources):
                     if len(skipped_domains) < 10:
                         skipped_domains.append(domain)
                 ctx.update_progress(
-                    f"Resolving domains from list {current_index}/{ctx.total_items}: {domain_index}/{max(1, len(domains))}",
+                    f"Processing domains from list {current_index}/{ctx.total_items}: {domain_index}/{max(1, len(domains))}",
                     current_kind="domain-list-url",
                     current_name=source_name,
                     current_index=current_index,
@@ -222,7 +231,7 @@ def collect_exclude_domains(ctx, exclude_domains):
     for index, domain in enumerate(exclude_domains, 1):
         current_index = ctx.processed_items + 1
         ctx.update_progress(
-            f"Resolving exclude domain {current_index}/{ctx.total_items}",
+            f"Processing exclude domain {current_index}/{ctx.total_items}",
             current_kind="exclude-domain",
             current_name=domain,
             current_index=current_index,
@@ -239,6 +248,7 @@ def collect_exclude_domains(ctx, exclude_domains):
             ctx.cache_max_age,
             dns_nameservers=ctx.dns_nameservers,
             dns_timeout=ctx.dns_timeout,
+            dns_results=ctx.dns_results,
         )
         ctx.sources.append(record)
         ctx.source_failed = ctx.source_failed or not ok
@@ -259,7 +269,7 @@ def collect_include_domains(ctx, include_domains):
     for index, domain in enumerate(include_domains, 1):
         current_index = ctx.processed_items + 1
         ctx.update_progress(
-            f"Resolving include domain {current_index}/{ctx.total_items}",
+            f"Processing include domain {current_index}/{ctx.total_items}",
             current_kind="include-domain",
             current_name=domain,
             current_index=current_index,
@@ -276,6 +286,7 @@ def collect_include_domains(ctx, include_domains):
             ctx.cache_max_age,
             dns_nameservers=ctx.dns_nameservers,
             dns_timeout=ctx.dns_timeout,
+            dns_results=ctx.dns_results,
         )
         if ok:
             ctx.include_text.append(text)

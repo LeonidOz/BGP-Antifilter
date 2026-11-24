@@ -11,6 +11,11 @@ EXCLUDE_DOMAINS_FILE="${EXCLUDE_DOMAINS_FILE:-$CONFIG_DIR/exclude-domains.txt}"
 INCLUDE_GOOGLE_RANGES="${INCLUDE_GOOGLE_RANGES:-1}"
 UPDATE_INTERVAL="${UPDATE_INTERVAL:-1800}"
 CACHE_MAX_AGE="${CACHE_MAX_AGE:-604800}"
+# Keep the container's base values when saved collection overrides are removed.
+BGP_BASE_DNS_WORKERS="${BGP_BASE_DNS_WORKERS:-${DNS_WORKERS:-16}}"
+BGP_BASE_DNS_QPS="${BGP_BASE_DNS_QPS:-${DNS_QPS:-50}}"
+BGP_BASE_FETCH_WORKERS="${BGP_BASE_FETCH_WORKERS:-${FETCH_WORKERS:-8}}"
+export BGP_BASE_DNS_WORKERS BGP_BASE_DNS_QPS BGP_BASE_FETCH_WORKERS
 MY_AS="${MY_AS:-64500}"
 PEER_AS="${PEER_AS:-${MT_AS:-65455}}"
 PEER_IP="${PEER_IP:-${MT_IP:-192.168.55.1}}"
@@ -51,6 +56,9 @@ prepare_user_config() {
 }
 
 load_settings_env() {
+  DNS_WORKERS="$BGP_BASE_DNS_WORKERS"
+  DNS_QPS="$BGP_BASE_DNS_QPS"
+  FETCH_WORKERS="$BGP_BASE_FETCH_WORKERS"
   # A legacy persisted MT_* override must still override Compose's PEER_* base.
   unset PEER_AS PEER_IP MT_AS MT_IP
   if [ -f "$SETTINGS_ENV_FILE" ]; then
@@ -64,6 +72,7 @@ load_settings_env() {
   MT_AS="$PEER_AS"
   MT_IP="$PEER_IP"
   export PEER_AS PEER_IP MT_AS MT_IP BGP_PROTOCOL
+  export DNS_WORKERS DNS_QPS FETCH_WORKERS
 }
 
 validate_env() {
