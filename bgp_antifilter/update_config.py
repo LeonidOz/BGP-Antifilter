@@ -1,5 +1,6 @@
 """Environment options shared by source collection and the update CLI."""
 
+import math
 import os
 
 DEFAULT_CACHE_MAX_AGE = 7 * 24 * 60 * 60
@@ -13,14 +14,16 @@ def env_bool(name, default=False):
     return value.strip().lower() in {"1", "true", "yes", "on"}
 
 
-def env_int(name, default):
+def env_int(name, default, *, minimum=1, maximum=None):
     value = os.environ.get(name, str(default))
     try:
         number = int(value)
     except ValueError:
         raise SystemExit(f"{name} must be an integer")
 
-    if number <= 0:
+    if number < minimum or (maximum is not None and number > maximum):
+        if maximum is not None:
+            raise SystemExit(f"{name} must be between {minimum} and {maximum}")
         raise SystemExit(f"{name} must be greater than zero")
 
     return number
@@ -32,6 +35,6 @@ def env_float(name, default):
         number = float(value)
     except ValueError:
         raise SystemExit(f"{name} must be a number")
-    if number <= 0:
-        raise SystemExit(f"{name} must be greater than zero")
+    if not math.isfinite(number) or number <= 0:
+        raise SystemExit(f"{name} must be a finite number greater than zero")
     return number

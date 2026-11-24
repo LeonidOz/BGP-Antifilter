@@ -62,6 +62,24 @@ class BackupTests(unittest.TestCase):
                 self.app.backups.preview(data)
             self.assertEqual(self.app.lists.read("urls")["content"], "old\n")
 
+    def test_backup_from_before_parallel_collection_restores_with_defaults(self):
+        old_backup = self.app.backups.export()
+        for key in ("DNS_WORKERS", "DNS_QPS", "FETCH_WORKERS"):
+            old_backup["settings"].pop(key)
+        self.app.settings.update_settings({"DNS_WORKERS": "64", "DNS_QPS": "100", "FETCH_WORKERS": "4"})
+        preview = self.app.backups.preview(old_backup)
+        self.assertEqual(preview["settings"]["DNS_WORKERS"], {"before": "64", "after": "16"})
+        self.app.backups.restore(preview["id"])
+        values = self.app.settings.effective_settings()
+        self.assertEqual((values["DNS_WORKERS"], values["DNS_QPS"], values["FETCH_WORKERS"]), ("16", "50", "8"))
+
+    def test_legacy_backup_still_requires_original_settings(self):
+        backup = self.app.backups.export()
+        for key in ("DNS_WORKERS", "DNS_QPS", "FETCH_WORKERS", "FETCH_TIMEOUT"):
+            backup["settings"].pop(key)
+        with self.assertRaisesRegex(ValueError, "all supported settings"):
+            self.app.backups.validate(backup)
+
     def test_stale_import_and_partial_write_are_rejected_or_rolled_back(self):
         backup = self.app.backups.export()
         backup["lists"]["urls"] = "replacement\n"

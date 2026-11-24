@@ -276,6 +276,7 @@ class CustomDnsFetchTests(unittest.TestCase):
                 finally:
                     connection.close()
 
+    @mock.patch.dict(os.environ, {"DNS_RESOLVE_TIMEOUT": "3"})
     def test_fetch_url_uses_custom_dns_for_http_sources(self):
         response = mock.Mock()
         response.status = 200
@@ -294,7 +295,7 @@ class CustomDnsFetchTests(unittest.TestCase):
                 )
 
         self.assertEqual(text, "192.0.2.0/24\n")
-        resolve_mock.assert_called_once_with("example.com", nameservers=["1.1.1.1", "8.8.8.8"], timeout=4)
+        resolve_mock.assert_called_once_with("example.com", nameservers=["1.1.1.1", "8.8.8.8"], timeout=3)
         http_mock.assert_called_once_with("203.0.113.5", 80, timeout=4)
         connection.putrequest.assert_called_once_with("GET", "/routes.txt", skip_host=True)
         connection.putheader.assert_any_call("Host", "example.com")
@@ -463,9 +464,9 @@ class MainTests(unittest.TestCase):
             exclude_domains.write_text("", encoding="utf-8")
 
             old_env = os.environ.copy()
-            old_getaddrinfo = socket.getaddrinfo
+            old_resolve = update_routes.dns_resolver.resolve_ipv4_addresses
 
-            def fake_getaddrinfo(*args, **kwargs):
+            def fake_resolve(*args, **kwargs):
                 raise socket.gaierror("not found")
 
             os.environ.update(
@@ -489,14 +490,14 @@ class MainTests(unittest.TestCase):
                 "--metrics",
                 str(metrics),
             ]
-            socket.getaddrinfo = fake_getaddrinfo
+            update_routes.dns_resolver.resolve_ipv4_addresses = fake_resolve
 
             try:
                 exit_code, _ = run_main_quiet(argv)
             finally:
                 os.environ.clear()
                 os.environ.update(old_env)
-                socket.getaddrinfo = old_getaddrinfo
+                update_routes.dns_resolver.resolve_ipv4_addresses = old_resolve
 
             self.assertEqual(exit_code, 0)
             self.assertIn("route 192.0.2.0/24 blackhole;", output.read_text(encoding="utf-8"))
@@ -1012,9 +1013,9 @@ class MainTests(unittest.TestCase):
             exclude_domains.write_text("missing.example.invalid\n", encoding="utf-8")
 
             old_env = os.environ.copy()
-            old_getaddrinfo = socket.getaddrinfo
+            old_resolve = update_routes.dns_resolver.resolve_ipv4_addresses
 
-            def fake_getaddrinfo(*args, **kwargs):
+            def fake_resolve(*args, **kwargs):
                 raise socket.gaierror("not found")
 
             os.environ.update(
@@ -1028,14 +1029,14 @@ class MainTests(unittest.TestCase):
                     "CACHE_MAX_AGE": "604800",
                 }
             )
-            socket.getaddrinfo = fake_getaddrinfo
+            update_routes.dns_resolver.resolve_ipv4_addresses = fake_resolve
 
             try:
                 exit_code, _ = run_main_quiet(["--output", str(output), "--status", str(status), "--metrics", str(metrics)])
             finally:
                 os.environ.clear()
                 os.environ.update(old_env)
-                socket.getaddrinfo = old_getaddrinfo
+                update_routes.dns_resolver.resolve_ipv4_addresses = old_resolve
 
             self.assertEqual(exit_code, 1)
             self.assertFalse(output.exists())

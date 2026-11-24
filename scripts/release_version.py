@@ -9,6 +9,10 @@ FILES = {
     "version": ROOT / "VERSION",
     "readme_ru": ROOT / "README.md",
     "readme_en": ROOT / "README.en.md",
+    "portainer_ru": ROOT / "docs" / "portainer.md",
+    "portainer_en": ROOT / "docs" / "portainer.en.md",
+    "usage_ru": ROOT / "docs" / "usage.md",
+    "usage_en": ROOT / "docs" / "usage.en.md",
     "changelog": ROOT / "CHANGELOG.md",
 }
 
@@ -47,8 +51,10 @@ def prepend_changelog(version, date_text):
 
 def update_version(version, date_text=None, add_changelog=False):
     write_text(FILES["version"], f"{version}\n")
-    replace_min(FILES["readme_ru"], r"BGP_ANTIFILTER_VERSION=\d+\.\d+\.\d+", f"BGP_ANTIFILTER_VERSION={version}")
-    replace_min(FILES["readme_en"], r"BGP_ANTIFILTER_VERSION=\d+\.\d+\.\d+", f"BGP_ANTIFILTER_VERSION={version}")
+    for key in ("readme_ru", "readme_en", "usage_ru", "usage_en"):
+        replace_min(FILES[key], r"BGP_ANTIFILTER_VERSION=\d+\.\d+\.\d+", f"BGP_ANTIFILTER_VERSION={version}")
+    for key in ("portainer_ru", "portainer_en"):
+        replace_min(FILES[key], r"ghcr\.io/leonidoz/bgp-antifilter:\d+\.\d+\.\d+", f"ghcr.io/leonidoz/bgp-antifilter:{version}")
     if add_changelog:
         if not date_text:
             raise SystemExit("--date is required with --add-changelog")

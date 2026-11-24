@@ -17,6 +17,7 @@ Manage lists and route updates in the web panel.
 ## Features
 
 - Collect IPv4 routes from URL lists, ASNs, countries, domains, and Google ranges excluding Google Cloud.
+- Download sources and resolve unique domains in parallel through `dnspython`, with 16 DNS workers by default and configurable worker counts and query limits.
 - Publish routes over BGP with a community; MikroTik and FRRouting setup examples and MikroTik Address List export.
 - Russian and English web panel for list editing, settings, and manual or scheduled route updates.
 - Preview changes before applying them, cache sources, and retain the last working routes after generation or application failures.
@@ -59,7 +60,7 @@ nano .env
 Paste these settings and replace the addresses and password:
 
 ```dotenv
-BGP_ANTIFILTER_VERSION=1.0.2
+BGP_ANTIFILTER_VERSION=1.0.3
 BGP_ANTIFILTER_IMAGE=ghcr.io/leonidoz/bgp-antifilter:${BGP_ANTIFILTER_VERSION}
 PEER_IP=192.168.55.1
 BIRD_IP=192.168.55.5

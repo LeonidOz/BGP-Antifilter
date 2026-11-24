@@ -72,13 +72,14 @@ def fetch_country_prefixes_with_fallback(
     max_age,
     dns_nameservers,
     progress_callback=None,
+    fetch_source=fetch_text_source,
 ):
     primary_url = (
         "https://stat.ripe.net/data/country-resource-list/data.json"
         f"?resource={country_code.lower()}&v4_format=prefix"
     )
     primary_cache = cache_path(cache_dir, "country", country_code)
-    primary_text, primary_record, primary_ok = fetch_text_source(
+    primary_text, primary_record, primary_ok = fetch_source(
         "country",
         country_code,
         primary_url,
@@ -102,7 +103,7 @@ def fetch_country_prefixes_with_fallback(
     for registry in DELEGATED_REGISTRIES:
         delegated_url = f"{DELEGATED_STATS_BASE_URL}/{registry}/delegated-{registry}-latest"
         delegated_cache = cache_path(cache_dir, "country-registry", registry)
-        delegated_text, delegated_record, delegated_ok = fetch_text_source(
+        delegated_text, delegated_record, delegated_ok = fetch_source(
             "country-registry",
             registry,
             delegated_url,
@@ -135,7 +136,7 @@ def collect_country_sources(ctx, country_sources):
     for index, country in enumerate(country_sources, 1):
         current_index = ctx.processed_items + 1
         ctx.update_progress(
-            f"Fetching country {current_index}/{ctx.total_items}",
+            f"Processing country {current_index}/{ctx.total_items}",
             current_kind="country",
             current_name=country,
             current_index=current_index,
@@ -165,8 +166,9 @@ def collect_country_sources(ctx, country_sources):
                 now=ctx.now,
                 max_age=ctx.cache_max_age,
                 dns_nameservers=ctx.dns_nameservers,
+                fetch_source=ctx.fetch_source,
                 progress_callback=lambda attempt, attempts, current_index=current_index, country_code=country_code: ctx.update_progress(
-                    f"Fetching country {current_index}/{ctx.total_items}",
+                    f"Processing country {current_index}/{ctx.total_items}",
                     current_kind="country",
                     current_name=country_code,
                     current_index=current_index,

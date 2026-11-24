@@ -116,6 +116,37 @@ test("Google toggling and settings saves preserve unrelated and hidden overrides
   expect(values.INCLUDE_GOOGLE_RANGES).toBe("1");
 });
 
+test("DNS and download settings are grouped, bounded and saved", async ({page}) => {
+  await navigate(page, "settings");
+  await expect(page.locator(".settings-section h2")).toHaveText([
+    "Updates and cache", "Source downloads", "DNS", "Route policy", "BIRD / BGP"
+  ]);
+  const dns = page.locator(".settings-section").filter({has: page.getByRole("heading", {name: "DNS", exact: true})});
+  const workers = dns.getByLabel("DNS workers", {exact: true});
+  await expect(workers).toHaveValue("16");
+  await expect(workers).toHaveAttribute("min", "16");
+  await expect(workers).toHaveAttribute("max", "128");
+  await expect(dns.getByLabel("DNS query limit", {exact: true})).toHaveValue("50");
+  await expect(dns.locator('[data-setting-key="FETCH_WORKERS"]')).toHaveCount(0);
+  await expect(page.getByLabel("Parallel downloads", {exact: true})).toHaveValue("8");
+  await workers.fill("129");
+  expect(await workers.evaluate(input => input.validity.rangeOverflow)).toBeTruthy();
+  await workers.fill("64");
+  await dns.getByLabel("DNS query limit", {exact: true}).fill("25");
+  await page.getByLabel("Parallel downloads", {exact: true}).fill("4");
+  await page.locator("#save-settings-btn").click();
+  await expect(page.locator("#settings-save-status")).toContainText("Saved");
+  const {values} = await (await page.request.get("/api/settings")).json();
+  expect([values.DNS_WORKERS, values.DNS_QPS, values.FETCH_WORKERS]).toEqual(["64", "25", "4"]);
+  await language(page, "ru");
+  await expect(page.locator(".settings-section h2")).toHaveText([
+    "Обновление и кеш", "Загрузка источников", "DNS", "Правила маршрутов", "BIRD / BGP"
+  ]);
+  await expect(page.getByLabel("DNS-воркеры", {exact: true})).toHaveValue("64");
+  await expect(page.getByLabel("Лимит DNS-запросов", {exact: true})).toHaveValue("25");
+  expect(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth)).toBeTruthy();
+});
+
 test("copy works without Clipboard API and restores focus", async ({page}) => {
   await navigate(page, "lists");
   await page.locator('[data-list="urls"]').click();

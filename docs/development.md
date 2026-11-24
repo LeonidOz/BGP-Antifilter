@@ -83,6 +83,7 @@ docker compose -f docker-compose.yml -f docker-compose.dev.yml up -d --build
 Node.js 22, как в CI. Из корня репозитория:
 
 ```bash
+python -m pip install --require-hashes -r deploy/requirements-dns.txt
 python -m unittest discover -s tests
 node --test tests/js/admin-modules.test.mjs
 docker compose --env-file .env.example config --quiet

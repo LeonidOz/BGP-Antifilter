@@ -15,6 +15,43 @@ import urllib.request
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
 
+import dns.exception
+import dns.message
+import dns.query
+
+
+DNS_FIXTURE_SCRIPT = textwrap.dedent("""
+    import os
+    import socket
+    import dns.exception
+    import dns.flags
+    import dns.message
+    import dns.rcode
+    import dns.rdatatype
+    import dns.rrset
+
+    with socket.socket(socket.AF_INET, socket.SOCK_DGRAM) as server:
+        server.bind((os.environ.get('DNS_TEST_ADDRESS', '127.0.0.2'),
+                     int(os.environ.get('DNS_TEST_PORT', '53'))))
+        while True:
+            packet, peer = server.recvfrom(4096)
+            try:
+                request = dns.message.from_wire(packet)
+            except dns.exception.DNSException:
+                continue
+            response = dns.message.make_response(request)
+            response.flags |= dns.flags.AA | dns.flags.RA
+            question = request.question[0] if request.question else None
+            if (question is not None
+                    and question.name.to_text().lower() == 'domains.example.test.'
+                    and question.rdtype == dns.rdatatype.A):
+                response.answer.append(dns.rrset.from_text(
+                    question.name, 60, 'IN', 'A', '198.51.100.10'))
+            else:
+                response.set_rcode(dns.rcode.NXDOMAIN)
+            server.sendto(response.to_wire(), peer)
+""")
+
 
 class RouteSourceServer(ThreadingHTTPServer):
     def __init__(self, server_address, request_handler_class, state):
@@ -186,14 +223,15 @@ class DockerSmokeTests(unittest.TestCase):
             reservation.bind(("127.0.0.1", 0))
             admin_port = reservation.getsockname()[1]
         volume = self.project_name + "-data"
+        dns_container = self.project_name + "-dns"
         settings = {"BGP_ANTIFILTER_IMAGE": "bgp-antifilter:smoke", "ADMIN_PASSWORD": "smoke-test",
                     "BGP_DATA_VOLUME": volume, "BGP_DATA_EXTERNAL": "false", "ADMIN_PORT": str(admin_port),
                     "BGP_CONFIG_VOLUME": self.project_name + "-config", "BGP_CONFIG_EXTERNAL": "false",
                     "HEALTHCHECK_REQUIRE_BGP": "0", "INCLUDE_GOOGLE_RANGES": "0",
+                    "DNS_RESOLVERS": "127.0.0.2",
                     "HTTP_PROXY": "", "HTTPS_PROXY": "", "NO_PROXY": "localhost,127.0.0.1"}
         stack = (self.repo_root / "deploy/portainer-stack.yml").read_text()
         stack = stack.replace("    container_name: bgp-antifilter", f"    container_name: {self.project_name}", 1)
-        stack = stack.replace("  bgp-antifilter:\n", "  bgp-antifilter:\n    extra_hosts: ['domains.example.test:198.51.100.10']\n", 1)
         self.compose_file.write_text(stack, encoding="utf-8")
         opener = urllib.request.build_opener(urllib.request.ProxyHandler({}),
                                              urllib.request.HTTPCookieProcessor(http.cookiejar.CookieJar()))
@@ -215,6 +253,35 @@ class DockerSmokeTests(unittest.TestCase):
             try:
                 subprocess.run(["docker", "build", "-q", "-t", "bgp-antifilter:smoke", "-f", "deploy/Dockerfile", "."],
                                cwd=self.repo_root, check=True, capture_output=True, text=True)
+                # dnspython reads DNS answers rather than Docker's /etc/hosts.
+                # Keep this fixture outside Compose so the stack still contains
+                # exactly the one production service asserted below.
+                subprocess.run(
+                    ["docker", "run", "--detach", "--rm", "--name", dns_container,
+                     "--network", "host", "--entrypoint", "python3",
+                     "bgp-antifilter:smoke", "-c", DNS_FIXTURE_SCRIPT],
+                    cwd=self.repo_root, check=True, capture_output=True, text=True,
+                )
+                dns_ready = False
+                deadline = time.monotonic() + 10
+                while time.monotonic() < deadline:
+                    try:
+                        answer = dns.query.udp(
+                            dns.message.make_query("domains.example.test", "A"), "127.0.0.2", timeout=0.2,
+                        )
+                        dns_ready = any(
+                            record.to_text() == "198.51.100.10"
+                            for rrset in answer.answer for record in rrset
+                        )
+                        if dns_ready:
+                            break
+                    except (dns.exception.DNSException, OSError):
+                        pass
+                    time.sleep(0.1)
+                if not dns_ready:
+                    logs = subprocess.run(["docker", "logs", dns_container], check=False,
+                                          capture_output=True, text=True)
+                    self.fail(f"DNS fixture did not start: {logs.stdout}{logs.stderr}")
                 seed = ("from pathlib import Path; p=Path('/etc/bird/generated/config'); p.mkdir(parents=True, exist_ok=True); "
                         "[(p/n).write_text('') for n in ('include-asns.txt','include-countries.txt','include-domains.txt','exclude-domains.txt')]; "
                         f"(p/'lists.txt').write_text('http://127.0.0.1:{self.port}/routes.txt\\n'); "
@@ -255,7 +322,11 @@ class DockerSmokeTests(unittest.TestCase):
                 self.wait_until(login, 30, "Portainer admin did not restart")
                 self.assertEqual(api("/api/lists/domain-list-urls")["content"], "# saved from panel\n")
             finally:
-                self.compose("down", "--volumes", "--remove-orphans", check=False)
+                try:
+                    self.compose("down", "--volumes", "--remove-orphans", check=False)
+                finally:
+                    subprocess.run(["docker", "rm", "--force", dns_container], check=False,
+                                   capture_output=True, text=True)
 
     def test_restart_uses_previous_snapshot_until_background_refresh_completes(self):
         old_route = "route 192.0.2.0/24 blackhole;"

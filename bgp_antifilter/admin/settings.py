@@ -16,23 +16,38 @@ from ..state_store import state_lock
 SETTINGS_SECTIONS = [
     {
         "id": "update",
-        "title": "Обновление",
+        "title": "Обновление и кеш",
         "items": [
             {"key": "UPDATE_INTERVAL", "type": "int", "default": "1800", "min": 30, "max": 86400, "unit": "sec"},
             {"key": "CACHE_MAX_AGE", "type": "int", "default": "604800", "min": 60, "max": 2592000, "unit": "sec"},
+        ],
+    },
+    {
+        "id": "sources",
+        "title": "Загрузка источников",
+        "items": [
+            {"key": "FETCH_WORKERS", "type": "int", "default": "8", "min": 1, "max": 32, "legacy_backup_default": True},
             {"key": "FETCH_TIMEOUT", "type": "int", "default": "30", "min": 1, "max": 300, "unit": "sec"},
             {"key": "FETCH_ATTEMPTS", "type": "int", "default": "5", "min": 1, "max": 20},
             {"key": "FETCH_RETRY_DELAY", "type": "number", "default": "5", "min": 0, "max": 120, "unit": "sec"},
-            {"key": "INCLUDE_GOOGLE_RANGES", "type": "bool", "default": "1", "hidden": True},
             {"key": "REQUIRE_ALL_URL_SOURCES", "type": "bool", "default": "0"},
-            {"key": "DNS_RESOLVE_TIMEOUT", "type": "number", "default": "3", "min": 0.1, "max": 30, "unit": "sec"},
+        ],
+    },
+    {
+        "id": "dns",
+        "title": "DNS",
+        "items": [
             {"key": "DNS_RESOLVERS", "type": "dns_list", "default": "", "allow_empty": True},
+            {"key": "DNS_RESOLVE_TIMEOUT", "type": "number", "default": "3", "min": 0.1, "max": 30, "unit": "sec"},
+            {"key": "DNS_WORKERS", "type": "int", "default": "16", "min": 16, "max": 128, "legacy_backup_default": True},
+            {"key": "DNS_QPS", "type": "int", "default": "50", "min": 1, "max": 1000, "unit": "qps", "legacy_backup_default": True},
         ],
     },
     {
         "id": "security",
-        "title": "Безопасность генерации",
+        "title": "Правила маршрутов",
         "items": [
+            {"key": "INCLUDE_GOOGLE_RANGES", "type": "bool", "default": "1", "hidden": True},
             {"key": "MIN_PREFIX_LENGTH", "type": "int", "default": "8", "min": 1, "max": 32},
             {"key": "ALLOW_BROAD_ROUTES", "type": "bool", "default": "0"},
         ],

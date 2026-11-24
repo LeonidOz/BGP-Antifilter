@@ -83,6 +83,7 @@ Python 3.15.2 from the Debian image works for Python checks; use Node.js 22 for 
 From the repository root:
 
 ```bash
+python -m pip install --require-hashes -r deploy/requirements-dns.txt
 python -m unittest discover -s tests
 node --test tests/js/admin-modules.test.mjs
 docker compose --env-file .env.example config --quiet

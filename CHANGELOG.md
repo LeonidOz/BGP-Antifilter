@@ -1,5 +1,13 @@
 # Changelog
 
+## 1.0.3 - 2026-11-24
+
+- Resolve domains through dnspython with 16–128 workers (default 16), globally deduplicating domains before DNS resolution and retaining source attribution and exclusion priority.
+- Limit DNS queries across workers with configurable `DNS_QPS` (default 50), including retries and TCP fallback, and download external sources in parallel with `FETCH_WORKERS` (default 8).
+- Group panel settings into updates/cache, source downloads, DNS, route policy and BGP; expose concurrency and QPS settings in the panel, Compose and Portainer.
+- Keep configuration backups from 1.0.2 importable by filling missing concurrency settings with their defaults.
+- Query configured DNS servers directly for route domains; local `/etc/hosts` entries and Docker `extra_hosts` no longer provide domain answers. IPv4 literals remain supported.
+
 ## 1.0.2 - 2026-11-15
 
 - Consolidate each list tab into one editor panel, keeping filters, entries, raw editing and actions together; use compact hints and shorten displayed configuration paths.

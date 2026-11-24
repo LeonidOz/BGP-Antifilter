@@ -172,5 +172,44 @@ runtime_next_update_unix
                     self.assertIn("status reports zero routes", result.stderr)
 
 
+@unittest.skipUnless(shutil.which("sh"), "Settings reload requires POSIX sh")
+class ShellSettingsReloadTests(unittest.TestCase):
+    def test_collection_overrides_reset_to_base_in_scheduler_and_child_shells(self):
+        keys = ("DNS_WORKERS", "DNS_QPS", "FETCH_WORKERS")
+        cases = (({}, "16 50 8"),
+                 ({"DNS_WORKERS": "32", "DNS_QPS": "75", "FETCH_WORKERS": "3"}, "32 75 3"))
+        script = r'''
+. "$LIB"
+load_settings_env
+printf '%s %s %s\n' "$DNS_WORKERS" "$DNS_QPS" "$FETCH_WORKERS"
+sh -eu -c 'printf "%s %s %s\n" "$DNS_WORKERS" "$DNS_QPS" "$FETCH_WORKERS"'
+printf 'DNS_WORKERS=64\nDNS_QPS=100\nFETCH_WORKERS=4\n' > "$SETTINGS_ENV_FILE"
+load_settings_env
+printf '%s %s %s\n' "$DNS_WORKERS" "$DNS_QPS" "$FETCH_WORKERS"
+sh -eu -c '. "$LIB"; load_settings_env; printf "%s %s %s\n" "$DNS_WORKERS" "$DNS_QPS" "$FETCH_WORKERS"'
+if [ "$RESET_KIND" = delete ]; then
+  rm "$SETTINGS_ENV_FILE"
+else
+  : > "$SETTINGS_ENV_FILE"
+fi
+sh -eu -c '. "$LIB"; load_settings_env; printf "%s %s %s\n" "$DNS_WORKERS" "$DNS_QPS" "$FETCH_WORKERS"'
+load_settings_env
+printf '%s %s %s\n' "$DNS_WORKERS" "$DNS_QPS" "$FETCH_WORKERS"
+'''
+        for base, expected in cases:
+            for reset_kind in ("empty", "delete"):
+                with self.subTest(base=base, reset=reset_kind), tempfile.TemporaryDirectory() as tmp:
+                    env = {key: value for key, value in os.environ.items()
+                           if key not in keys and key not in {"BGP_BASE_" + name for name in keys}}
+                    env.update(base)
+                    env.update(LIB=(ROOT / "deploy/lib.sh").as_posix(),
+                               SETTINGS_ENV_FILE=(Path(tmp) / "settings.env").as_posix(), RESET_KIND=reset_kind)
+                    result = subprocess.run(["sh", "-eu", "-c", script], cwd=ROOT, env=env,
+                                            capture_output=True, text=True, timeout=30)
+                    self.assertEqual(result.returncode, 0, result.stderr)
+                    self.assertEqual(result.stdout.splitlines(),
+                                     [expected, expected, "64 100 4", "64 100 4", expected, expected])
+
+
 if __name__ == "__main__":
     unittest.main()

@@ -47,7 +47,7 @@ const dict = {
     comments: "Comments", emptyList: "No entries yet", itemPlaceholder: "New entry",
     logs: "Logs", containerLogs: "Container logs", checkedAddresses: "Checked addresses",
     downloadRoutes: "Download routes.conf", downloadAddressList: "MikroTik Address List .rsc", addressListName: "Address List name", restartRequired: "restart", overridden: "changed",
-    updateSettings: "Update", securitySettings: "Generation safety", birdSettings: "BIRD / BGP",
+    updateSettings: "Updates and cache", sourceSettings: "Source downloads", dnsSettings: "DNS", securitySettings: "Route policy", birdSettings: "BIRD / BGP",
     applySettings: "Apply now", applying: "Applying...", unsavedChanges: "Unsaved changes",
     noChanges: "No changes", backupSaved: "Backup", discardListChanges: "Discard unsaved list changes?",
     discardSettingsChanges: "Discard unsaved settings changes?", leavePageWarning: "You have unsaved changes.",
@@ -137,7 +137,7 @@ const dict = {
     comments: "Комментарии", emptyList: "Записей пока нет", itemPlaceholder: "Новая запись",
     logs: "Логи", containerLogs: "Логи контейнера", checkedAddresses: "Проверенные адреса",
     downloadRoutes: "Скачать routes.conf", downloadAddressList: "MikroTik Address List .rsc", addressListName: "Имя Address List", restartRequired: "перезапуск", overridden: "изменено",
-    updateSettings: "Обновление", securitySettings: "Безопасность генерации", birdSettings: "BIRD / BGP",
+    updateSettings: "Обновление и кеш", sourceSettings: "Загрузка источников", dnsSettings: "DNS", securitySettings: "Правила маршрутов", birdSettings: "BIRD / BGP",
     applySettings: "Применить сейчас", applying: "Применяем...", unsavedChanges: "Есть несохраненные изменения",
     noChanges: "Изменений нет", backupSaved: "Бэкап", discardListChanges: "Отбросить несохраненные изменения списка?",
     discardSettingsChanges: "Отбросить несохраненные изменения настроек?", leavePageWarning: "Есть несохраненные изменения.",
@@ -190,6 +190,10 @@ const dict = {
 };
 
 Object.assign(dict.en, {
+  queriesPerSecondUnit: "queries/sec",
+  fetchWorkersHint: "Download up to 1–32 sources at once. Default: 8.",
+  dnsWorkersHint: "Resolve up to 16–128 domains at once. Default: 16. The query limit is shared by all workers.",
+  dnsQpsHint: "Shared limit for domain resolution and downloads through custom DNS, including retries. Default: 50; range: 1–1000.",
   bgpHelp: "BGP connection help",
   menu: "Menu", searchEntries: "Search entries", sourceFilter: "Source status", allEntries: "All entries", problemSources: "Needs attention", selectedOnly: "Selected only", shown: "Shown", noMatches: "No matches",
   urls: "IP list URLs", asns: "ASNs", countries: "Countries", "google-ranges": "Google ranges", "include-domains": "Included domains", "exclude-domains": "Excluded domains",
@@ -211,6 +215,10 @@ Object.assign(dict.en, {
   lastBackupDownload: "Last download in this browser", noBackupDownload: "No recorded download in this browser", backupDownloadHint: "The browser download was started; keep the file in a safe place.", backupContents: "Includes: IP list URLs, domain list URLs, ASNs, countries, included/excluded domains and application settings.",
 });
 Object.assign(dict.ru, {
+  queriesPerSecondUnit: "запросов/с",
+  fetchWorkersHint: "От 1 до 32 одновременных загрузок. По умолчанию — 8.",
+  dnsWorkersHint: "От 16 до 128 одновременных задач разрешения доменов. По умолчанию — 16. Лимит запросов общий для всех воркеров.",
+  dnsQpsHint: "Общий лимит для разрешения доменов и загрузок через пользовательский DNS, включая повторные попытки. По умолчанию — 50; диапазон — 1–1000.",
   bgpHelp: "Почему нет BGP-соединения",
   menu: "Меню", searchEntries: "Поиск записей", sourceFilter: "Статус источника", allEntries: "Все записи", problemSources: "Требуют внимания", selectedOnly: "Только выбранные", shown: "Показано", noMatches: "Совпадений нет",
   urls: "URL списков IP", asns: "Автономные системы", countries: "Страны", "google-ranges": "Диапазоны Google", "include-domains": "Добавляемые домены", "exclude-domains": "Исключаемые домены",
